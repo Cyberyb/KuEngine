@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
+  "name": "kuengine",
+  "version": "0.1.0",
+  "dependencies": [
+    "vulkan",
+    "sdl3",
+    "spdlog",
+    "glm",
+    "fmt",
+    "gtest"
+  ]
+}
