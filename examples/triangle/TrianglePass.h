@@ -1,10 +1,10 @@
-#pragma once
+﻿#pragma once
 
 #include <string_view>
 #include <memory>
 #include <array>
 
-// TrianglePass 在 examples/ 目录下，通过 src/ 路径引用核心库
+#include <KuEngine/RHI/CommandList.h>
 #include <KuEngine/Render/RenderPass.h>
 #include <KuEngine/RHI/RHIDevice.h>
 #include <KuEngine/RHI/RHIShader.h>
@@ -33,8 +33,8 @@ public:
     }
 
 private:
-    std::unique_ptr<RHIShader>  m_vertShader;
-    std::unique_ptr<RHIShader>  m_fragShader;
+    std::unique_ptr<RHIShader>   m_vertShader;
+    std::unique_ptr<RHIShader>   m_fragShader;
     std::unique_ptr<RHIPipeline> m_pipeline;
 
     std::array<float, 4> m_clearColor = {0.05f, 0.05f, 0.05f, 1.0f};

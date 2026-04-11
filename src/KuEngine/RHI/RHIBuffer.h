@@ -1,8 +1,8 @@
-#pragma once
+﻿#pragma once
 
 #include "RHICommon.h"
 #include <vulkan/vulkan.h>
-#include <vk_mem_alloc.h>
+#include <vma/vk_mem_alloc.h>
 
 namespace ku {
 
@@ -10,31 +10,21 @@ class RHIDevice;
 
 class RHIBuffer {
 public:
-    RHIBuffer() = default;
-    RHIBuffer(const RHIDevice& device, VkDeviceSize size, 
-              VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+    RHIBuffer(const RHIDevice& device, VmaMemoryUsage usage);
     ~RHIBuffer();
 
-    // 禁止拷贝
-    RHIBuffer(const RHIBuffer&) = delete;
-    RHIBuffer& operator=(const RHIBuffer&) = delete;
-
-    // 支持移动
-    RHIBuffer(RHIBuffer&& other) noexcept;
-    RHIBuffer& operator=(RHIBuffer&& other) noexcept;
-
-    void uploadData(const void* data, VkDeviceSize size, VkDeviceSize offset = 0);
-    [[nodiscard]] void* mapMemory();
-    void unmapMemory();
-
     [[nodiscard]] VkBuffer buffer() const { return m_buffer; }
-    [[nodiscard]] VkDeviceSize size() const { return m_size; }
+    [[nodiscard]] VmaAllocation allocation() const { return m_allocation; }
+
+    void* map();
+    void unmap();
+    void flush();
+    void invalidate();
 
 private:
-    VkBuffer     m_buffer = VK_NULL_HANDLE;
-    VmaAllocation m_allocation = VK_NULL_HANDLE;
-    VkDeviceSize m_size = 0;
-    VmaAllocator m_allocator = VK_NULL_HANDLE;
+    const RHIDevice* m_device = nullptr;
+    VkBuffer         m_buffer = VK_NULL_HANDLE;
+    VmaAllocation    m_allocation = VK_NULL_HANDLE;
 };
 
 } // namespace ku

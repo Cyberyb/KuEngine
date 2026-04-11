@@ -3,15 +3,16 @@
 #include <string_view>
 #include <vector>
 #include <memory>
+#include <type_traits>
 #include <utility>
-#include <typeindex>
+
+#include "RenderPass.h"
 
 namespace ku {
 
-class RenderPass;
 class RHIDevice;
-class SwapChain;
 class CommandList;
+struct FrameData;
 
 class RenderPipeline {
 public:

@@ -4,10 +4,12 @@
   "version": "0.1.0",
   "dependencies": [
     "vulkan",
+    "vulkan-memory-allocator",
     "glfw3",
     "spdlog",
     "glm",
     "fmt",
-    "gtest"
+    "gtest",
+    "imgui"
   ]
 }

@@ -1,21 +1,23 @@
-#include "Log.h"
+﻿#include "Log.h"
 
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 namespace ku::log {
 
-void init() {
-    auto console = spdlog::stdout_color_mt("console");
-    spdlog::set_default_logger(console);
-    
-    // 设置日志格式
-    spdlog::set_pattern("[%H:%M:%S] [%^%l%$] %v");
+void init()
+{
+    auto logger = spdlog::get("KuEngine");
+    if (!logger) {
+        logger = spdlog::stdout_color_mt("KuEngine");
+    }
 
-#ifdef KU_DEBUG_BUILD
+    spdlog::set_default_logger(logger);
+#if KU_DEBUG_BUILD
     spdlog::set_level(spdlog::level::debug);
 #else
     spdlog::set_level(spdlog::level::info);
 #endif
+    spdlog::set_pattern("[%T] [%n] [%^%l%$] %v");
 }
 
 } // namespace ku::log

@@ -3,6 +3,7 @@
 #include "RHICommon.h"
 #include <vulkan/vulkan.h>
 #include <vector>
+#include <span>
 
 namespace ku {
 
@@ -26,15 +27,13 @@ public:
     [[nodiscard]] uint32_t currentFrame() const { return m_currentFrame; }
     [[nodiscard]] uint32_t currentImage() const { return m_currentImage; }
     [[nodiscard]] FrameSync& frameSync(uint32_t frame) { return m_frames[frame]; }
-    [[nodiscard]] void incrementFrame() { m_currentFrame = (m_currentFrame + 1) % m_frames.size(); }
-
     void setCurrentImage(uint32_t img) { m_currentImage = img; }
+    void incrementFrame() { m_currentFrame = (m_currentFrame + 1) % m_frames.size(); }
 
 private:
     std::vector<FrameSync> m_frames;
     uint32_t m_currentFrame = 0;
     uint32_t m_currentImage = 0;
-
     const RHIDevice* m_device = nullptr;
 };
 

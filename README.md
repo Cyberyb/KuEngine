@@ -8,7 +8,7 @@ A modern real-time rendering framework built on Vulkan 1.3, designed for fast al
 
 - **Vulkan 1.3** with Dynamic Rendering (no traditional RenderPass objects)
 - **GLFW3** window and input management
-- **Dear ImGui** integration for real-time parameter tuning
+- **UIOverlay** interface reserved for Dear ImGui integration
 - **RenderGraph** architecture for flexible pass management
 - **RAII** resource management with VMA
 - Modern **C++20** codebase
@@ -50,18 +50,21 @@ TriangleApp.exe
 
 ```
 KuEngine/
-├── src/KuEngine/          # Core engine library
-│   ├── Core/              # Engine, Window (GLFW3), Input, Log
-│   ├── RHI/               # Vulkan abstraction layer
-│   ├── Render/            # RenderPass, RenderPipeline
-│   └── UI/                # ImGui integration
-├── examples/              # Example applications
+├── src/
+│   ├── CMakeLists.txt
+│   └── KuEngine/          # Core engine library
+│       ├── Core/          # Engine, Window (GLFW3), Input, Log
+│       ├── RHI/           # Vulkan abstraction layer
+│       ├── Render/        # RenderPass, RenderPipeline
+│       ├── UI/            # UI overlay abstraction
+│       └── KuEngine.h     # Aggregated public include
+├── examples/
+│   ├── CMakeLists.txt
 │   └── triangle/          # MVP: fullscreen triangle
 ├── docs/                  # Design documents
 │   ├── design/            # Architecture specs
 │   └── bugs/             # Bug reports
-├── tests/                 # Unit tests
-└── shaders/              # Global shader sources
+└── tests/                 # Unit tests
 ```
 
 ## Documentation
@@ -70,6 +73,7 @@ KuEngine/
 - [RHI Layer Design](docs/design/01-rhi-layer.md)
 - [RenderPass Interface](docs/design/02-render-pass.md)
 - [Logging & Debugging](docs/design/03-logging.md)
+- [Triangle 示例运行指南](docs/usage/triangle-example.md)
 
 ## Version History
 

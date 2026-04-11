@@ -16,7 +16,7 @@
 | 语言 | C++20 | Concepts, Modules, Ranges |
 | 构建系统 | CMake 3.27+ | + vcpkg 管理依赖 |
 | 图形 API | Vulkan 1.3 | Dynamic Rendering |
-| 窗口/输入 | SDL3 | 现代跨平台 |
+| 窗口/输入 | GLFW3 | 现代跨平台 |
 | 数学库 | GLM | 通用矩阵/向量运算 |
 | UI | Dear ImGui (Docking) | 调参面板 |
 | 资产加载 | tinygltf | glTF 2.0 支持 |
@@ -41,8 +41,8 @@
 │                     RHI                           │  ← src/KuEngine/RHI/
 │        (Vulkan 封装, Device, SwapChain)          │
 ├─────────────────────────────────────────────────┤
-│                   Platform                        │  ← src/KuEngine/Platform/
-│              (SDL3 封装, 窗口, 输入)              │
+│                   Platform                        │  ← src/KuEngine/Core/
+│              (GLFW3 封装, 窗口, 输入)             │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -98,7 +98,7 @@ struct RenderPass {
 ## 6. MVP 功能范围 (v0.1)
 
 ### 包含
-- SDL3 窗口初始化
+- GLFW3 窗口初始化
 - Vulkan 1.3 实例创建（带 Validation Layer）
 - 物理设备选择（离散 GPU 优先）
 - 交换链创建与重建
@@ -134,11 +134,13 @@ KuEngine/
 │   └── bugs/
 │       └── template.md             ← Bug 模板
 ├── src/
+│   ├── CMakeLists.txt
 │   └── KuEngine/
 │       ├── Core/
 │       │   ├── Engine.h / .cpp
 │       │   ├── Window.h / .cpp
-│       │   └── Input.h / .cpp
+│       │   ├── Input.h / .cpp
+│       │   └── Log.h / .cpp
 │       ├── RHI/
 │       │   ├── RHICommon.h         ← 公共类型、错误检查宏
 │       │   ├── RHIInstance.h / .cpp
@@ -147,11 +149,16 @@ KuEngine/
 │       │   ├── RHIBuffer.h / .cpp
 │       │   ├── RHITexture.h / .cpp
 │       │   ├── RHIShader.h / .cpp
-│       │   └── RHIPipeline.h / .cpp
+│       │   ├── RHIPipeline.h / .cpp
+│       │   ├── CommandList.h / .cpp
+│       │   ├── SyncManager.h / .cpp
+│       │   └── vma.cpp
 │       ├── Render/
-│       │   └── RenderGraph.h / .cpp
-│       └── UI/
-│           └── UIOverlay.h / .cpp
+│       │   ├── RenderPass.h
+│       │   └── RenderPipeline.h / .cpp
+│       ├── UI/
+│       │   └── UIOverlay.h / .cpp
+│       └── KuEngine.h
 ├── examples/
 │   └── triangle/
 │       ├── main.cpp

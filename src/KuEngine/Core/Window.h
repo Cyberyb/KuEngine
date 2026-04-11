@@ -14,6 +14,7 @@ public:
     ~Window();
 
     [[nodiscard]] GLFWwindow* handle() { return m_window; }
+    [[nodiscard]] const GLFWwindow* handle() const { return m_window; }
     [[nodiscard]] int width() const { return m_width; }
     [[nodiscard]] int height() const { return m_height; }
     [[nodiscard]] bool shouldClose() const { return glfwWindowShouldClose(m_window) != 0; }
