@@ -1,9 +1,5 @@
 #include "TrianglePass.h"
 
-#include "RHI/RHIDevice.h"
-#include "RHI/RHIShader.h"
-#include "RHI/RHIPipeline.h"
-
 #include <spdlog/spdlog.h>
 #include <filesystem>
 
@@ -16,10 +12,8 @@ TrianglePass::~TrianglePass() = default;
 void TrianglePass::initialize(RHIDevice& device) {
     KU_INFO("TrianglePass: initializing...");
 
-    // 着色器路径：相对于当前工作目录（运行时在 build/bin）
-    // 用户需从 build/bin 目录运行，或将 shaders/ 复制到运行目录
+    // 着色器路径：相对于可执行文件所在目录（build/bin/shaders/）
     std::filesystem::path shaderDir = std::filesystem::current_path() / "shaders";
-
     auto vertPath = shaderDir / "triangle.vert.spv";
     auto fragPath = shaderDir / "triangle.frag.spv";
 
@@ -35,7 +29,6 @@ void TrianglePass::initialize(RHIDevice& device) {
         return;
     }
 
-    // 创建管线
     GraphicsPipelineDesc desc{};
     desc.shaders.push_back(*m_vertShader);
     desc.shaders.push_back(*m_fragShader);

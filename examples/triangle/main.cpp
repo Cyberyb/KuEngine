@@ -1,24 +1,15 @@
-// KuEngine - Main Entry Point
+// KuEngine - Triangle App
 // v0.1.0 MVP
 
-#include "Core/Engine.h"
-#include "Core/Log.h"
-#include "RenderPipeline.h"
-#include "examples/triangle/TrianglePass.h"
-
-using namespace ku;
+#include <KuEngine/Core/Engine.h>
+#include <KuEngine/Render/RenderPipeline.h>
 
 int main(int argc, char* argv[]) {
     (void)argc;
     (void)argv;
 
     try {
-        Engine engine;
-
-        // 注册 TrianglePass
-        auto& pipeline = engine.renderPipeline();
-        pipeline.addPass<TrianglePass>();
-
+        ku::Engine engine;
         engine.run();
     } catch (const std::exception& e) {
         std::cerr << "Fatal error: " << e.what() << "\n";

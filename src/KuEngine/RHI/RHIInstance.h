@@ -5,6 +5,9 @@
 #include <vector>
 #include <string>
 
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
+
 namespace ku {
 
 class RHIInstance {
@@ -15,22 +18,17 @@ public:
     [[nodiscard]] VkInstance instance() const { return m_instance; }
     [[nodiscard]] bool validationEnabled() const { return m_validationEnabled; }
 
-    // 创建 Surface（从 SDL_Window）
-    [[nodiscard]] VkSurfaceKHR createSurface(SDL_Window* window) const;
+    // 创建 Surface（从 GLFW window）
+    [[nodiscard]] VkSurfaceKHR createSurface(GLFWwindow* window) const;
 
     static const std::vector<const char*>& requiredExtensions();
 
 private:
-    void create();
-    void destroy();
     void setupDebugMessenger();
 
     VkInstance               m_instance = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT  m_debugMessenger = VK_NULL_HANDLE;
     bool                     m_validationEnabled = false;
-
-    static constexpr const char* APP_NAME = "KuEngine";
-    static constexpr uint32_t ENGINE_VERSION = VK_MAKE_VERSION(0, 1, 0);
 
     // Validation layers
     static constexpr std::array VALIDATION_LAYERS = {

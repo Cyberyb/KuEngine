@@ -1,14 +1,16 @@
 #pragma once
 
-#include "RenderPass.h"
-#include <array>
+#include <string_view>
 #include <memory>
+#include <array>
+
+// TrianglePass 在 examples/ 目录下，通过 src/ 路径引用核心库
+#include <KuEngine/Render/RenderPass.h>
+#include <KuEngine/RHI/RHIDevice.h>
+#include <KuEngine/RHI/RHIShader.h>
+#include <KuEngine/RHI/RHIPipeline.h>
 
 namespace ku {
-
-class RHIDevice;
-class RHIShader;
-class RHIPipeline;
 
 class TrianglePass : public RenderPass {
 public:
@@ -17,7 +19,7 @@ public:
 
     [[nodiscard]] std::string_view name() const override { return "Triangle"; }
     
-    void initialize(const RHIDevice& device) override;
+    void initialize(RHIDevice& device) override;
     void execute(CommandList& cmd, const FrameData& frame) override;
     void drawUI() override;
     void onResize(uint32_t width, uint32_t height) override;
@@ -36,7 +38,7 @@ private:
     std::unique_ptr<RHIPipeline> m_pipeline;
 
     std::array<float, 4> m_clearColor = {0.05f, 0.05f, 0.05f, 1.0f};
-    float m_rotationSpeed = 0.0f; // 简单匀速旋转（0 表示静止）
+    float m_rotationSpeed = 0.0f;
 };
 
 } // namespace ku

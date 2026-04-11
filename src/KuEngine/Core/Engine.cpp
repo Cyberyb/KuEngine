@@ -29,7 +29,7 @@ Engine::Engine() {
     KU_INFO("Vulkan instance created, validation: {}", m_instance->validationEnabled());
 
     // 3. Surface
-    m_surface = m_instance->createSurface(m_window->sdlWindow());
+    m_surface = m_instance->createSurface(m_window->handle());
     KU_INFO("Surface created");
 
     // 4. 逻辑设备
@@ -40,7 +40,7 @@ Engine::Engine() {
     m_commandPool = m_device->createCommandPool();
 
     // 6. 交换链
-    m_swapChain = std::make_unique<SwapChain>(*m_device, m_window->sdlWindow(), m_surface);
+    m_swapChain = std::make_unique<SwapChain>(*m_device, m_window->handle(), m_surface);
     KU_INFO("SwapChain created ({}x{})", m_swapChain->width(), m_swapChain->height());
 
     // 7. 同步
@@ -62,7 +62,7 @@ Engine::Engine() {
     m_window->onResize([this](int w, int h) {
         KU_INFO("Window resized to {}x{}", w, h);
         m_device->waitIdle();
-        m_swapChain->recreate(m_window->sdlWindow(), m_surface);
+        m_swapChain->recreate(m_window->handle(), m_surface);
         m_renderPipeline->onResize(w, h);
     });
 
@@ -119,7 +119,6 @@ void Engine::mainLoop() {
 
 void Engine::pollEvents() {
     m_window->processEvents();
-    Input::update();
 }
 
 void Engine::render() {
@@ -174,7 +173,7 @@ void Engine::render() {
 
     if (needsRebuild) {
         m_device->waitIdle();
-        m_swapChain->recreate(m_window->sdlWindow(), m_surface);
+        m_swapChain->recreate(m_window->handle(), m_surface);
     }
 
     if (!m_window->wasResized()) {

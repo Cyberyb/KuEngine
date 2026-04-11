@@ -39,7 +39,7 @@ public:
     [[nodiscard]] SyncManager&      syncManager()    const { return *m_syncManager; }
     [[nodiscard]] CommandList&      commandList()    const { return *m_commandList; }
     [[nodiscard]] UIOverlay&        ui()             const { return *m_ui; }
-    [[nodiscard]] RenderPipeline&    renderPipeline() const { return *m_renderPipeline; }
+    [[nodiscard]] RenderPipeline&   renderPipeline() const { return *m_renderPipeline; }
     [[nodiscard]] VkSurfaceKHR      surface()        const { return m_surface; }
     [[nodiscard]] VkCommandPool     commandPool()    const { return m_commandPool; }
 
@@ -67,11 +67,11 @@ private:
     VkSurfaceKHR  m_surface = VK_NULL_HANDLE;
     VkCommandPool m_commandPool = VK_NULL_HANDLE;
 
-    bool   m_running = false;
-    bool   m_minimized = false;
+    bool    m_running = false;
+    bool    m_minimized = false;
     uint32_t m_currentFrame = 0;
-    float  m_deltaTime = 0.0f;
-    float  m_totalTime = 0.0f;
+    float   m_deltaTime = 0.0f;
+    float   m_totalTime = 0.0f;
     Clock::time_point m_lastTime;
 
     static constexpr uint32_t FRAMES_IN_FLIGHT = 2;

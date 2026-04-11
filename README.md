@@ -7,7 +7,7 @@ A modern real-time rendering framework built on Vulkan 1.3, designed for fast al
 ## Features
 
 - **Vulkan 1.3** with Dynamic Rendering (no traditional RenderPass objects)
-- **SDL3** window and input management
+- **GLFW3** window and input management
 - **Dear ImGui** integration for real-time parameter tuning
 - **RenderGraph** architecture for flexible pass management
 - **RAII** resource management with VMA
@@ -30,18 +30,20 @@ A modern real-time rendering framework built on Vulkan 1.3, designed for fast al
 git clone https://github.com/Cyberyb/KuEngine.git
 cd KuEngine
 
-# Install dependencies (vcpkg)
+# Install dependencies
 vcpkg install
 
 # Configure
 cmake -B build -DCMAKE_TOOLCHAIN_FILE=[vcpkg]/scripts/buildsystems/vcpkg.cmake
 cmake --build build --config Debug
 
-# Compile shaders
-cd build/bin/shaders && ..\compile_shaders.bat
+# Compile shaders (requires glslc in PATH)
+cd build/bin/shaders
+compile_shaders.bat
 
 # Run
-./build/bin/TriangleApp.exe
+cd build/bin
+TriangleApp.exe
 ```
 
 ## Project Structure
@@ -49,16 +51,17 @@ cd build/bin/shaders && ..\compile_shaders.bat
 ```
 KuEngine/
 ├── src/KuEngine/          # Core engine library
-│   ├── Core/              # Engine, Window, Input, Log
+│   ├── Core/              # Engine, Window (GLFW3), Input, Log
 │   ├── RHI/               # Vulkan abstraction layer
+│   ├── Render/            # RenderPass, RenderPipeline
 │   └── UI/                # ImGui integration
 ├── examples/              # Example applications
 │   └── triangle/          # MVP: fullscreen triangle
 ├── docs/                  # Design documents
 │   ├── design/            # Architecture specs
-│   └── bugs/              # Bug reports
+│   └── bugs/             # Bug reports
 ├── tests/                 # Unit tests
-└── shaders/               # Global shader sources
+└── shaders/              # Global shader sources
 ```
 
 ## Documentation
@@ -72,7 +75,7 @@ KuEngine/
 
 | Version | Description |
 |---------|-------------|
-| v0.1.0 | MVP: Vulkan init + Triangle render + ImGui |
+| v0.1.0 | MVP: Vulkan init + Triangle render + GLFW3 + ImGui |
 
 ## License
 

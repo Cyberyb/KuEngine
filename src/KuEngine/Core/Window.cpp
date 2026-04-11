@@ -1,8 +1,6 @@
 #include "Window.h"
 #include "Input.h"
 
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_events.h>
 #include <spdlog/spdlog.h>
 
 namespace ku {
@@ -10,19 +8,30 @@ namespace ku {
 Window::Window(std::string_view title, int width, int height)
     : m_width(width), m_height(height) {
     
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        throw std::runtime_error("Failed to initialize SDL: " + std::string(SDL_GetError()));
+    if (!glfwInit()) {
+        throw std::runtime_error("Failed to initialize GLFW");
     }
 
-    m_window = SDL_CreateWindow(
-        std::string(title).c_str(),
-        width, height,
-        SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN
-    );
+    // Vulkan 需要，不创建 OpenGL 上下文
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
+    m_window = glfwCreateWindow(width, height, std::string(title).c_str(), nullptr, nullptr);
     if (!m_window) {
-        SDL_Quit();
-        throw std::runtime_error("Failed to create window: " + std::string(SDL_GetError()));
+        glfwTerminate();
+        throw std::runtime_error("Failed to create GLFW window");
+    }
+
+    // 设置用户指针，方便回调访问
+    glfwSetWindowUserPointer(m_window, this);
+
+    // 设置回调
+    glfwSetFramebufferSizeCallback(m_window, framebufferResizeCallback);
+    glfwSetWindowCloseCallback(m_window, windowCloseCallback);
+
+    // 设置 raw mouse input（可选）
+    if (glfwRawMouseMotionSupported()) {
+        glfwSetInputMode(m_window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
     }
 
     KU_INFO("Window created: {}x{}", width, height);
@@ -30,50 +39,47 @@ Window::Window(std::string_view title, int width, int height)
 
 Window::~Window() {
     if (m_window) {
-        SDL_DestroyWindow(m_window);
+        glfwDestroyWindow(m_window);
     }
-    SDL_Quit();
+    glfwTerminate();
 }
 
 void Window::setTitle(std::string_view title) {
-    SDL_SetWindowTitle(m_window, std::string(title).c_str());
+    glfwSetWindowTitle(m_window, std::string(title).c_str());
 }
 
 void Window::processEvents() {
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-        switch (event.type) {
-        case SDL_EVENT_QUIT:
-            m_shouldClose = true;
-            if (m_onClose) m_onClose();
-            break;
+    glfwPollEvents();
 
-        case SDL_EVENT_WINDOW_RESIZED:
-            m_width = event.window.data1;
-            m_height = event.window.data2;
-            m_resized = true;
-            if (m_onResize) m_onResize(m_width, m_height);
-            break;
+    // 更新 Input 状态
+    Input::update(m_window);
+}
 
-        case SDL_EVENT_WINDOW_MINIMIZED:
-            m_minimized = true;
-            break;
+void Window::swapBuffers() {
+    glfwSwapBuffers(m_window);
+}
 
-        case SDL_EVENT_WINDOW_RESTORED:
-            m_minimized = false;
-            m_resized = true;
-            if (m_onResize) m_onResize(m_width, m_height);
-            break;
+void Window::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+    auto* self = static_cast<Window*>(glfwGetWindowUserPointer(window));
+    if (self) {
+        self->m_width = width;
+        self->m_height = height;
+        self->m_resized = true;
 
-        case SDL_EVENT_KEY_DOWN:
-            Input::update();
-            break;
+        // 检查是否最小化
+        self->m_minimized = (width == 0 || height == 0);
+
+        if (self->m_onResize && !self->m_minimized) {
+            self->m_onResize(width, height);
         }
     }
 }
 
-void Window::swap() {
-    SDL_Vulkan_SetSwapchainMode ? SDL_Vulkan_SetSwapchainMode(nullptr, SDL_VULKAN_SWAPCHAIN_MODE_MAILBOX) : (void)0;
+void Window::windowCloseCallback(GLFWwindow* window) {
+    auto* self = static_cast<Window*>(glfwGetWindowUserPointer(window));
+    if (self && self->m_onClose) {
+        self->m_onClose();
+    }
 }
 
 } // namespace ku

@@ -1,12 +1,11 @@
 #include "RHIInstance.h"
 
-#include <SDL3/SDL_vulkan.h>
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
 #include <spdlog/spdlog.h>
 #include <vector>
 
 namespace ku {
-
-// ============== RHIInstance ==============
 
 RHIInstance::RHIInstance(const char* appName, uint32_t appVersion) {
     // 检查 Validation Layer 支持
@@ -25,13 +24,14 @@ RHIInstance::RHIInstance(const char* appName, uint32_t appVersion) {
     appInfo.engineVersion = VK_MAKE_VERSION(KU_VERSION_MAJOR, KU_VERSION_MINOR, KU_VERSION_PATCH);
     appInfo.apiVersion = VK_API_VERSION_1_3;
 
-    // 获取 SDL 要求的扩展
-    uint32_t sdlExtensionCount = 0;
-    if (!SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount, nullptr)) {
-        throw std::runtime_error("Failed to get SDL Vulkan extensions");
+    // 获取 GLFW 要求的扩展
+    uint32_t glfwExtensionCount = 0;
+    const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+    if (!glfwExtensions) {
+        throw std::runtime_error("Failed to get GLFW required instance extensions");
     }
-    std::vector<const char*> extensions(sdlExtensionCount);
-    SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount, extensions.data());
+
+    std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
     // 添加 Debug Utils 扩展
     if (m_validationEnabled) {
@@ -74,10 +74,10 @@ RHIInstance::~RHIInstance() {
     vkDestroyInstance(m_instance, nullptr);
 }
 
-VkSurfaceKHR RHIInstance::createSurface(SDL_Window* window) const {
+VkSurfaceKHR RHIInstance::createSurface(GLFWwindow* window) const {
     VkSurfaceKHR surface = VK_NULL_HANDLE;
-    if (!SDL_Vulkan_CreateSurface(window, m_instance, nullptr, &surface)) {
-        throw std::runtime_error("Failed to create Vulkan surface");
+    if (glfwCreateWindowSurface(m_instance, window, nullptr, &surface) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create Vulkan surface from GLFW window");
     }
     return surface;
 }

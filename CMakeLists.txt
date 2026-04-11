@@ -24,10 +24,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ===== 第三方依赖（vcpkg） =====
 find_package(Vulkan REQUIRED CONFIG)
-find_package(SDL3 REQUIRED CONFIG)
-find_package(spdlog REQUIRED)
-find_package(glm REQUIRED)
-find_package(fmt REQUIRED)
+find_package(glfw3 CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
+find_package(glm CONFIG REQUIRED)
+find_package(fmt CONFIG REQUIRED)
 
 # ===== KuEngine 核心库 =====
 add_library(KuEngine STATIC)
@@ -52,7 +52,7 @@ target_include_directories(KuEngine PUBLIC
 )
 target_link_libraries(KuEngine PUBLIC
     Vulkan::Vulkan
-    SDL3::SDL3
+    glfw
     spdlog::spdlog
     glm::glm
     fmt::fmt
@@ -76,7 +76,7 @@ add_custom_command(TARGET TriangleApp POST_BUILD
 
 # ===== 单元测试 =====
 enable_testing()
-find_package(GTest REQUIRED)
+find_package(GTest CONFIG REQUIRED)
 add_executable(test_core tests/core/test_engine.cpp)
 target_link_libraries(test_core PRIVATE KuEngine GTest::gtest GTest::gtest_main)
 add_test(NAME core.test_engine COMMAND test_core)
