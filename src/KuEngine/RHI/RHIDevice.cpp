@@ -101,6 +101,12 @@ void RHIDevice::createLogicalDevice()
     info.enabledExtensionCount = 1;
     info.ppEnabledExtensionNames = extensions;
 
+    VkPhysicalDeviceVulkan13Features features13{};
+    features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    features13.dynamicRendering = VK_TRUE;
+    features13.synchronization2 = VK_TRUE;
+    info.pNext = &features13;
+
     VK_CHECK(vkCreateDevice(m_physicalDevice, &info, nullptr, &m_device));
     vkGetDeviceQueue(m_device, m_graphicsQueueFamily, 0, &m_graphicsQueue);
     vkGetDeviceQueue(m_device, m_presentQueueFamily, 0, &m_presentQueue);

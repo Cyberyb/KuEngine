@@ -28,7 +28,12 @@ Engine::Engine()
         m_swapChain = std::make_unique<SwapChain>(*m_device, m_window->handle(), m_surface);
         m_syncManager = std::make_unique<SyncManager>(*m_device, FRAMES_IN_FLIGHT);
         m_commandList = std::make_unique<CommandList>(*m_device, m_commandPool);
-        m_ui = std::make_unique<UIOverlay>(*m_device, m_swapChain->imageFormat());
+        m_ui = std::make_unique<UIOverlay>(
+            *m_device,
+            m_window->handle(),
+            m_instance->instance(),
+            m_swapChain->imageFormat(),
+            static_cast<uint32_t>(m_swapChain->imageCount()));
         m_renderPipeline = std::make_unique<RenderPipeline>();
         m_lastTime = Clock::now();
     } catch (...) {

@@ -2,6 +2,7 @@
 #include <KuEngine/RHI/CommandList.h>
 
 #include <KuEngine/Core/Log.h>
+#include <imgui.h>
 #include <filesystem>
 
 namespace ku {
@@ -32,12 +33,15 @@ void TrianglePass::initialize(RHIDevice& device)
     GraphicsPipelineDesc desc{};
     desc.shaders.push_back(*m_vertShader);
     desc.shaders.push_back(*m_fragShader);
-    desc.colorFormats = {VK_FORMAT_B8G8R8A8_SRGB};
-    desc.depthFormat = VK_FORMAT_D32_SFLOAT;
+    desc.colorFormats = {VK_FORMAT_B8G8R8A8_UNORM};
+    desc.pushConstantRanges = {
+        VkPushConstantRange{VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float) * 4}
+    };
+    desc.depthFormat = VK_FORMAT_UNDEFINED;
     desc.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    desc.cullMode = VK_CULL_MODE_BACK_BIT;
-    desc.depthTest = true;
-    desc.depthWrite = true;
+    desc.cullMode = VK_CULL_MODE_NONE;
+    desc.depthTest = false;
+    desc.depthWrite = false;
 
     m_pipeline = std::make_unique<RHIPipeline>(device, desc);
     KU_INFO("TrianglePass: initialized");
@@ -46,16 +50,24 @@ void TrianglePass::initialize(RHIDevice& device)
 void TrianglePass::execute(CommandList& cmd, const FrameData&)
 {
     if (!m_pipeline) return;
+
     m_pipeline->bind(cmd);
+    vkCmdPushConstants(
+        cmd,
+        m_pipeline->layout(),
+        VK_SHADER_STAGE_FRAGMENT_BIT,
+        0,
+        sizeof(float) * 4,
+        m_triangleColor.data());
+
     vkCmdDraw(cmd, 3, 1, 0, 0);
 }
 
 void TrianglePass::drawUI()
 {
-    // ImGui::Text
-    // ImGui::Separator
-    // ImGui::ColorEdit4
-    // ImGui::SliderFloat
+    ImGui::Begin("Triangle Controls");
+    ImGui::ColorEdit4("Color", m_triangleColor.data());
+    ImGui::End();
 }
 
 void TrianglePass::onResize(uint32_t width, uint32_t height)

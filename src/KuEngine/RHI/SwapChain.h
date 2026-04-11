@@ -21,6 +21,7 @@ public:
 
     [[nodiscard]] VkSwapchainKHR swapChain() const { return m_swapChain; }
     [[nodiscard]] VkFormat imageFormat() const { return m_imageFormat; }
+    [[nodiscard]] const std::vector<VkImage>& images() const { return m_images; }
     [[nodiscard]] VkExtent2D extent() const { return m_extent; }
     [[nodiscard]] const std::vector<VkImageView>& imageViews() const { return m_imageViews; }
     [[nodiscard]] size_t imageCount() const { return m_images.size(); }

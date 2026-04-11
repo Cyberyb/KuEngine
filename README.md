@@ -73,6 +73,9 @@ KuEngine/
 - [RHI Layer Design](docs/design/01-rhi-layer.md)
 - [RenderPass Interface](docs/design/02-render-pass.md)
 - [Logging & Debugging](docs/design/03-logging.md)
+- [Triangle 示例技术说明](docs/design/04-triangle-example-tech.md)
+- [UI 层架构与自定义开发](docs/design/05-ui-layer.md)
+- [工作日志（2026-04-12）](docs/logs/2026-04-12-worklog.md)
 - [Triangle 示例运行指南](docs/usage/triangle-example.md)
 
 ## Version History

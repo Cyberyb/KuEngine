@@ -5,7 +5,10 @@
 
 layout(location = 0) out vec4 outColor;
 
+layout(push_constant) uniform TriangleColorPC {
+    vec4 color;
+} pc;
+
 void main() {
-    // 固定颜色 - 可以后续通过 uniform 传递
-    outColor = vec4(0.2, 0.4, 0.9, 1.0);
+    outColor = pc.color;
 }

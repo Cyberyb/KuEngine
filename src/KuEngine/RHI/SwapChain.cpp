@@ -110,8 +110,15 @@ void SwapChain::createImageViews()
 uint32_t SwapChain::acquireNextImage(VkSemaphore semaphore)
 {
     uint32_t imageIndex = 0;
-    vkAcquireNextImageKHR(m_device->device(), m_swapChain, UINT64_MAX,
-                          semaphore, VK_NULL_HANDLE, &imageIndex);
+    VkResult result = vkAcquireNextImageKHR(m_device->device(), m_swapChain, UINT64_MAX,
+                                            semaphore, VK_NULL_HANDLE, &imageIndex);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        return UINT32_MAX;
+    }
+    if (result != VK_SUBOPTIMAL_KHR) {
+        VK_CHECK(result);
+    }
+
     return imageIndex;
 }
 

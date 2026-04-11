@@ -30,16 +30,30 @@ cmake --build build --config Debug --target TriangleApp
 cmake --build build --config Debug
 ```
 
-## 3. 编译着色器
+## 2.1 一键脚本（推荐）
+
+如果你希望一次性完成“配置 + 编译 + shader 编译 + 运行”，可直接执行：
+
+```powershell
+./examples/triangle/run_triangle.bat
+```
+
+可选参数：构建配置（默认 `Debug`）
+
+```powershell
+./examples/triangle/run_triangle.bat Release
+```
+
+## 3. 着色器处理方式
 
 TrianglePass 会在当前工作目录下查找：
 
 - `shaders/triangle.vert.spv`
 - `shaders/triangle.frag.spv`
 
-项目已在构建后自动把 `examples/triangle/shaders` 复制到可执行文件目录。
+当前构建流程会在 `glslc` 可用时自动编译 `.spv` 到运行目录，并同时复制 shader 源文件与脚本。
 
-进入输出目录并编译着色器：
+如果自动编译失败，可手动执行：
 
 ```powershell
 Set-Location build/bin/Debug/shaders
@@ -78,4 +92,9 @@ Set-Location build/bin/Debug
 
 ### 5.3 能启动窗口但画面不符合预期
 
-当前仓库处于 MVP 整理阶段，渲染管线实现正在逐步补齐；若窗口可启动，说明示例执行链路已正常，后续可继续完善渲染输出。
+请优先检查以下两点：
+
+- `build/bin/Debug/shaders` 是否存在 `triangle.vert.spv` 和 `triangle.frag.spv`
+- 运行路径是否为 `build/bin/Debug`（避免相对路径找不到 shader）
+
+如仍有问题，可开启 Vulkan Validation Layer 进一步定位。

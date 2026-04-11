@@ -130,7 +130,11 @@ KuEngine/
 │   │   ├── 00-overview.md          ← 本文档
 │   │   ├── 01-rhi-layer.md         ← RHI 层详细设计
 │   │   ├── 02-render-pass.md       ← RenderPass 接口设计
-│   │   └── 03-logging.md           ← 日志规范
+│   │   ├── 03-logging.md           ← 日志规范
+│   │   ├── 04-triangle-example-tech.md  ← Triangle 示例技术说明
+│   │   └── 05-ui-layer.md          ← UI 层架构与自定义开发
+│   ├── logs/
+│   │   └── 2026-04-12-worklog.md   ← 工作日志示例
 │   └── bugs/
 │       └── template.md             ← Bug 模板
 ├── src/

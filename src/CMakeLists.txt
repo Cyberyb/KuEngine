@@ -29,6 +29,7 @@ target_link_libraries(KuEngine PUBLIC
     Vulkan::Vulkan
     GPUOpen::VulkanMemoryAllocator
     glfw
+    imgui::imgui
     spdlog::spdlog
     glm::glm
     fmt::fmt

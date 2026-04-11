@@ -24,12 +24,12 @@ public:
     void drawUI() override;
     void onResize(uint32_t width, uint32_t height) override;
 
-    void setClearColor(float r, float g, float b, float a) {
-        m_clearColor = {r, g, b, a};
+    void setTriangleColor(float r, float g, float b, float a) {
+        m_triangleColor = {r, g, b, a};
     }
 
-    [[nodiscard]] std::array<float, 4> clearColor() const {
-        return {m_clearColor[0], m_clearColor[1], m_clearColor[2], m_clearColor[3]};
+    [[nodiscard]] std::array<float, 4> triangleColor() const {
+        return {m_triangleColor[0], m_triangleColor[1], m_triangleColor[2], m_triangleColor[3]};
     }
 
 private:
@@ -37,7 +37,7 @@ private:
     std::unique_ptr<RHIShader>   m_fragShader;
     std::unique_ptr<RHIPipeline> m_pipeline;
 
-    std::array<float, 4> m_clearColor = {0.05f, 0.05f, 0.05f, 1.0f};
+    std::array<float, 4> m_triangleColor = {0.2f, 0.4f, 0.9f, 1.0f};
     float m_rotationSpeed = 0.0f;
 };
 

@@ -21,8 +21,11 @@ CommandList::~CommandList()
 
 void CommandList::begin()
 {
+    VK_CHECK(vkResetCommandBuffer(m_cmd, 0));
+
     VkCommandBufferBeginInfo info{};
     info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     VK_CHECK(vkBeginCommandBuffer(m_cmd, &info));
     m_recording = true;
 }
