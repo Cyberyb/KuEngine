@@ -28,7 +28,7 @@
 实现位于 [src/KuEngine/RHI/RHIPipeline.cpp](src/KuEngine/RHI/RHIPipeline.cpp)。
 
 - 使用 2 个 shader stage：Vertex + Fragment
-- 无顶点缓冲输入（全屏三角形由 `gl_VertexIndex` 生成）
+- 无顶点缓冲输入（由 `gl_VertexIndex` 生成可见几何三角形）
 - 开启动态状态：Viewport / Scissor
 - 通过 `VkPipelineRenderingCreateInfo` 绑定 color attachment format（无需传统 `VkRenderPass`）
 
@@ -55,8 +55,8 @@ Shader 源码位置：
 
 关键设计：
 
-- 顶点着色器不依赖顶点缓冲，直接构造覆盖屏幕的三角形坐标
-- 片段着色器输出固定颜色，便于验证渲染链路是否打通
+- 顶点着色器不依赖顶点缓冲，直接构造居中可见三角形坐标
+- 片段着色器颜色由 push constants 传入，可通过 UI 实时调整
 
 ## 6. CMake 集成点
 
@@ -69,5 +69,5 @@ Shader 源码位置：
 ## 7. 当前实现边界
 
 - 该示例目标是“最小可运行三角形链路”，优先验证 RHI 与渲染流程
-- 尚未接入完整 UI、资源系统、复杂材质与多 Pass 调度
+- 已接入基础 UI（FPS 与颜色面板），尚未接入资源系统、复杂材质与多 Pass 调度
 - 可作为后续扩展（纹理、uniform、相机、RenderGraph）的基线示例

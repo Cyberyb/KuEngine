@@ -2,16 +2,29 @@
 
 A modern real-time rendering framework built on Vulkan 1.3, designed for fast algorithm experimentation and research.
 
-**Status**: v0.1.0 MVP — under development
+**Status**: v0.1.x MVP baseline complete, entering v0.2 planning
 
 ## Features
 
 - **Vulkan 1.3** with Dynamic Rendering (no traditional RenderPass objects)
 - **GLFW3** window and input management
-- **UIOverlay** interface reserved for Dear ImGui integration
-- **RenderGraph** architecture for flexible pass management
+- **Dear ImGui** integrated via `UIOverlay` (FPS panel + pass parameter panels)
+- **Pass-based RenderPipeline** with `initialize/setup/execute/drawUI/onResize` lifecycle
+- **Stable swapchain flow** with per-image layout tracking and resize recreation
+- **TriangleApp baseline** with runtime color tuning through push constants
 - **RAII** resource management with VMA
 - Modern **C++20** codebase
+
+## Current Progress
+
+- Completed in v0.1.x
+	- Vulkan instance/device/swapchain/command/sync pipeline is runnable.
+	- Triangle sample renders with Dynamic Rendering and ImGui controls.
+	- UI responsibilities are separated between `UIOverlay` and `RenderPass::drawUI`.
+- In progress
+	- Documentation synchronization and milestone refinement.
+- Planned next
+	- RenderGraph introduction, multi-pass scheduling, and resource dependency compilation.
 
 ## Build
 
@@ -38,11 +51,11 @@ cmake -B build -DCMAKE_TOOLCHAIN_FILE=[vcpkg]/scripts/buildsystems/vcpkg.cmake
 cmake --build build --config Debug
 
 # Compile shaders (requires glslc in PATH)
-cd build/bin/shaders
+cd build/bin/Debug/shaders
 compile_shaders.bat
 
 # Run
-cd build/bin
+cd build/bin/Debug
 TriangleApp.exe
 ```
 
@@ -60,7 +73,7 @@ KuEngine/
 │       └── KuEngine.h     # Aggregated public include
 ├── examples/
 │   ├── CMakeLists.txt
-│   └── triangle/          # MVP: fullscreen triangle
+│   └── triangle/          # MVP: visible triangle + runtime UI control
 ├── docs/                  # Design documents
 │   ├── design/            # Architecture specs
 │   └── bugs/             # Bug reports
@@ -83,6 +96,15 @@ KuEngine/
 | Version | Description |
 |---------|-------------|
 | v0.1.0 | MVP: Vulkan init + Triangle render + GLFW3 + ImGui |
+
+## Roadmap Summary
+
+| Version | Product Goal |
+|---------|--------------|
+| v0.2 | RenderGraph alpha, multi-pass orchestration, deterministic resize recovery |
+| v0.3 | Algorithm-validation workflow: texture/material inputs + glTF scene baseline |
+| v0.4 | Compute-enabled validation loop and GPU timing instrumentation |
+| v0.5 | Research-ready toolkit: capture/replay, reproducible benchmark presets |
 
 ## License
 
