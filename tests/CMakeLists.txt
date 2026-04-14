@@ -1,6 +1,9 @@
 find_package(GTest CONFIG REQUIRED)
 
-add_executable(test_core core/test_engine.cpp)
+add_executable(test_core
+    core/test_engine.cpp
+    core/test_render_graph.cpp
+)
 
 target_include_directories(test_core PRIVATE
     ${CMAKE_SOURCE_DIR}/src

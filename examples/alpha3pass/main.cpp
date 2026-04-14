@@ -1,21 +1,19 @@
-#include <iostream>
 #include <chrono>
+#include <iostream>
 #include <span>
 #include <vector>
 
-#include <KuEngine/Core/Window.h>
 #include <KuEngine/Core/Log.h>
-#include <KuEngine/RHI/RHIInstance.h>
+#include <KuEngine/Core/Window.h>
+#include <KuEngine/RHI/CommandList.h>
 #include <KuEngine/RHI/RHIDevice.h>
+#include <KuEngine/RHI/RHIInstance.h>
 #include <KuEngine/RHI/SwapChain.h>
 #include <KuEngine/RHI/SyncManager.h>
-#include <KuEngine/RHI/CommandList.h>
 #include <KuEngine/Render/RenderPipeline.h>
 #include <KuEngine/UI/UIOverlay.h>
 
-#include <GLFW/glfw3.h>
-
-#include "CubePass.h"
+#include "AlphaPasses.h"
 
 int main(int argc, char* argv[])
 {
@@ -25,8 +23,8 @@ int main(int argc, char* argv[])
     try {
         ku::log::init();
 
-        ku::Window window("KuEngine Cube", 1280, 720);
-        ku::RHIInstance instance("KuEngineCube", 1u);
+        ku::Window window("KuEngine Alpha3Pass", 1280, 720);
+        ku::RHIInstance instance("KuEngineAlpha3Pass", 1u);
         VkSurfaceKHR surface = instance.createSurface(window.handle());
 
         {
@@ -45,10 +43,25 @@ int main(int argc, char* argv[])
                     static_cast<uint32_t>(swapChain.imageCount()));
 
                 ku::RenderPipeline renderPipeline;
-                ku::CubePass& cubePass = renderPipeline.addPass<ku::CubePass>();
+                renderPipeline.addPass<ku::AlphaShapePass>(
+                    "Background",
+                    std::array<float, 4>{0.14f, 0.18f, 0.30f, 1.0f},
+                    std::array<float, 2>{0.0f, -0.15f},
+                    std::array<float, 2>{1.9f, 1.4f});
+                renderPipeline.addPass<ku::AlphaShapePass>(
+                    "MainTriangle",
+                    std::array<float, 4>{0.95f, 0.45f, 0.18f, 0.95f},
+                    std::array<float, 2>{0.0f, 0.03f},
+                    std::array<float, 2>{0.78f, 0.78f},
+                    "Background");
+                renderPipeline.addPass<ku::AlphaShapePass>(
+                    "Accent",
+                    std::array<float, 4>{0.15f, 0.85f, 0.70f, 0.92f},
+                    std::array<float, 2>{0.45f, -0.34f},
+                    std::array<float, 2>{0.35f, 0.35f},
+                    "MainTriangle");
                 renderPipeline.compile(device);
                 renderPipeline.setExecuteInsideRendering(true);
-                cubePass.onResize(swapChain.width(), swapChain.height());
 
                 std::vector<VkImageLayout> imageLayouts(
                     swapChain.imageCount(),
@@ -58,10 +71,6 @@ int main(int argc, char* argv[])
                 window.onResize([&](int, int) {
                     resizeRequested = true;
                 });
-
-                bool dragging = false;
-                double lastMouseX = 0.0;
-                double lastMouseY = 0.0;
 
                 using Clock = std::chrono::high_resolution_clock;
                 auto lastTime = Clock::now();
@@ -74,28 +83,6 @@ int main(int argc, char* argv[])
                     const float deltaTime = std::chrono::duration<float>(now - lastTime).count();
                     lastTime = now;
                     totalTime += deltaTime;
-
-                    GLFWwindow* glfwWindow = window.handle();
-                    const bool leftDown = glfwGetMouseButton(glfwWindow, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-                    double mouseX = 0.0;
-                    double mouseY = 0.0;
-                    glfwGetCursorPos(glfwWindow, &mouseX, &mouseY);
-
-                    if (leftDown) {
-                        if (!dragging) {
-                            dragging = true;
-                            lastMouseX = mouseX;
-                            lastMouseY = mouseY;
-                        } else {
-                            const float dx = static_cast<float>(mouseX - lastMouseX);
-                            const float dy = static_cast<float>(mouseY - lastMouseY);
-                            cubePass.addRotation(dx * 0.01f, dy * 0.01f);
-                            lastMouseX = mouseX;
-                            lastMouseY = mouseY;
-                        }
-                    } else {
-                        dragging = false;
-                    }
 
                     uiOverlay.newFrame();
 
@@ -114,7 +101,6 @@ int main(int argc, char* argv[])
                         uiOverlay.onSwapChainRecreated(static_cast<uint32_t>(swapChain.imageCount()));
                         imageLayouts.assign(swapChain.imageCount(), VK_IMAGE_LAYOUT_UNDEFINED);
                         renderPipeline.clearExternalResources();
-                        cubePass.onResize(swapChain.width(), swapChain.height());
                         resizeRequested = false;
                         continue;
                     }
@@ -128,6 +114,7 @@ int main(int argc, char* argv[])
                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
                     imageLayouts[imageIndex] = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
                     renderPipeline.bindExternalImage(
                         "SwapChainColor",
                         swapChain.images()[imageIndex],
@@ -153,7 +140,7 @@ int main(int argc, char* argv[])
                     colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
                     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
                     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-                    colorAttachment.clearValue.color = {{0.06f, 0.07f, 0.10f, 1.0f}};
+                    colorAttachment.clearValue.color = {{0.05f, 0.06f, 0.08f, 1.0f}};
 
                     VkRenderingInfo renderingInfo{};
                     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -189,7 +176,7 @@ int main(int argc, char* argv[])
                     commandList.end();
 
                     VkCommandBuffer buffer = commandList.cmd();
-                    syncManager.submit(frameIndex, device.graphicsQueue(), {&buffer, 1});
+                    syncManager.submit(frameIndex, device.graphicsQueue(), std::span<VkCommandBuffer>(&buffer, 1));
 
                     const bool presented =
                         syncManager.present(frameIndex, device.presentQueue(), swapChain.swapChain(), imageIndex);

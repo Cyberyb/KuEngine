@@ -4,6 +4,7 @@
 #include "Core/Input.h"
 #include "Core/Log.h"
 #include "Core/Window.h"
+#include "Render/RenderGraph.h"
 #include "Render/RenderPass.h"
 #include "Render/RenderPipeline.h"
 #include "RHI/CommandList.h"

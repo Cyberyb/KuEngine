@@ -17,6 +17,7 @@ target_sources(KuEngine PRIVATE
     KuEngine/RHI/SyncManager.cpp
     KuEngine/RHI/CommandList.cpp
     KuEngine/RHI/vma.cpp
+    KuEngine/Render/RenderGraph.cpp
     KuEngine/Render/RenderPipeline.cpp
     KuEngine/UI/UIOverlay.cpp
 )

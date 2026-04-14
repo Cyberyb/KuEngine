@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <cstdint>
 #include <string_view>
 #include <memory>
 #include <array>
@@ -8,6 +9,7 @@ namespace ku {
 
 class RHIDevice;
 class CommandList;
+class RenderGraphBuilder;
 
 struct FrameData {
     uint32_t frameIndex;
@@ -26,6 +28,7 @@ public:
 
     virtual void initialize(RHIDevice& device) {(void)device; }
     virtual void setup() {}
+    virtual void setup(RenderGraphBuilder& builder) {(void)builder; setup(); }
     virtual void execute(CommandList& cmd, const FrameData& frame) {(void)cmd; (void)frame; }
     virtual void drawUI() {}
     virtual void onResize(uint32_t width, uint32_t height) {(void)width; (void)height; }

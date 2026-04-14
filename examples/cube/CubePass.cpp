@@ -1,6 +1,7 @@
 #include "CubePass.h"
 
 #include <KuEngine/Core/Log.h>
+#include <KuEngine/Render/RenderGraph.h>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <imgui.h>
@@ -15,6 +16,12 @@ namespace ku {
 
 CubePass::CubePass() = default;
 CubePass::~CubePass() = default;
+
+void CubePass::setup(RenderGraphBuilder& builder)
+{
+    const ResourceHandle swapChainColor = builder.importExternal("SwapChainColor");
+    builder.write(swapChainColor);
+}
 
 void CubePass::initialize(RHIDevice& device)
 {

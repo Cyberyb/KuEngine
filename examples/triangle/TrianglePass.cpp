@@ -1,5 +1,6 @@
 ﻿#include "TrianglePass.h"
 #include <KuEngine/RHI/CommandList.h>
+#include <KuEngine/Render/RenderGraph.h>
 
 #include <KuEngine/Core/Log.h>
 #include <imgui.h>
@@ -9,6 +10,12 @@ namespace ku {
 
 TrianglePass::TrianglePass() = default;
 TrianglePass::~TrianglePass() = default;
+
+void TrianglePass::setup(RenderGraphBuilder& builder)
+{
+    const ResourceHandle swapChainColor = builder.importExternal("SwapChainColor");
+    builder.write(swapChainColor);
+}
 
 void TrianglePass::initialize(RHIDevice& device)
 {

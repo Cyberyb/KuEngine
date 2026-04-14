@@ -1,0 +1,51 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 27,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "vs2022-vcpkg",
+      "displayName": "VS2022 x64 + vcpkg",
+      "description": "Default KuEngine configure preset for CMake Tools",
+      "generator": "Visual Studio 17 2022",
+      "architecture": {
+        "value": "x64"
+      },
+      "binaryDir": "${sourceDir}/build/cmake-tools/vs2022-vcpkg",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "KUENGINE_BUILD_EXAMPLES": "ON",
+        "KUENGINE_BUILD_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug",
+      "displayName": "Debug",
+      "configurePreset": "vs2022-vcpkg",
+      "configuration": "Debug"
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "configurePreset": "vs2022-vcpkg",
+      "configuration": "Release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "debug",
+      "displayName": "Debug Tests",
+      "configurePreset": "vs2022-vcpkg",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

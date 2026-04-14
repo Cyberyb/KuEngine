@@ -251,3 +251,32 @@ Examples:
   对策：每个版本增加“文档一致性检查”作为发布前置门禁。
 - 风险 3：性能结论不可复现，算法对比缺说服力。  
   对策：v0.4 起引入统一 benchmark preset 与结果归档格式。
+
+---
+
+## 11. v0.2 阶段0冻结结论（2026-04-14）
+
+### 11.1 冻结范围
+
+- In Scope：RenderGraph Alpha 最小数据模型、依赖编译与拓扑执行、基础自动 barrier、三 Pass 验收路径。
+- Out of Scope：glTF/材质系统、Compute 完整链路、Capture/Replay、大规模性能优化。
+
+### 11.2 阶段门禁
+
+- 功能门禁：至少 3 Pass 稳定执行，拓扑顺序正确，resize 恢复稳定。
+- 工程门禁：Debug 构建通过，Triangle/Cube 示例不回归。
+- 可观测门禁：compile/execute 阶段具备可读日志与错误分类。
+
+### 11.3 执行文档
+
+- v0.2 详细执行步骤、任务看板与风险应对见：`docs/design/06-v0.2-execution-plan.md`。
+
+### 11.4 当前进度
+
+- 2026-04-14：已完成阶段1（RenderGraph 最小数据模型 + RenderPipeline 桥接层）。
+- 2026-04-14：已完成阶段2（依赖图构建、拓扑排序、循环依赖检测、基础 barrier 计划）。
+- 2026-04-14：已完成阶段3（执行器对接 RHI barrier、示例切换至 CommandList 统一屏障路径）。
+- 2026-04-14：已完成阶段4（三 Pass Alpha 场景 `Alpha3PassApp`）。
+- 2026-04-14：已完成阶段5（RenderGraph 调试面板、执行摘要、测试补强与回归说明）。
+- 2026-04-15：已完成阶段6（发布收尾、门禁复核、发布说明同步）。
+- 当前状态：v0.2 Alpha 阶段0-6全部完成。

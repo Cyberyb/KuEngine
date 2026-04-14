@@ -23,6 +23,10 @@ struct RenderPass {
     // ========== 生命周期 ==========
     virtual void initialize(RHIDevice& device) { (void)device; }
     virtual void setup() {}
+    virtual void setup(RenderGraphBuilder& builder) {
+        (void)builder;
+        setup(); // 兼容旧 Pass：未迁移时仍调用原 setup()
+    }
 
     // ========== 执行阶段 ==========
     virtual void execute(CommandList& cmd, const FrameData& frame) {}
@@ -65,18 +69,25 @@ private:
 
 ## 4. MVP 中的当前用法
 
-当前版本不使用完整 RenderGraph，而是由 RenderPipeline 顺序调用每个 Pass：
+v0.2 阶段1中，RenderPipeline 已接入 RenderGraph 的声明桥接层：
 
 ```cpp
 void RenderPipeline::compile(RHIDevice& device) {
+    m_renderGraph.reset();
+
     for (auto& pass : m_passes) {
         pass->initialize(device);
-        pass->setup();
+
+        const size_t graphIndex = m_renderGraph.registerPass(*pass);
+        auto builder = m_renderGraph.buildPass(graphIndex);
+        pass->setup(builder);
     }
+
+    m_renderGraph.compile();
 }
 
 void RenderPipeline::execute(CommandList& cmd, const FrameData& frame) {
-    for (auto& pass : m_passes) {
+    for (RenderPass* pass : m_compiledExecution) {
         if (pass->enabled()) {
             pass->execute(cmd, frame);
         }
@@ -94,43 +105,54 @@ void RenderPipeline::drawUI() {
 
 ## 5. 后续扩展（RenderGraph）
 
-在 v0.2 中将引入完整 RenderGraph，`setup()` 将扩展为可声明资源依赖：
+v0.2 阶段1已提供最小声明接口：
 
 ```cpp
 // RenderGraphBuilder - 用于在 setup() 中声明资源
 class RenderGraphBuilder {
 public:
+    // 创建图内资源
+    ResourceHandle createResource(std::string_view name);
+
+    // 引用外部资源（例如 SwapChainColor）
+    ResourceHandle importExternal(std::string_view name);
+
     // 声明读取的资源
     void read(ResourceHandle handle);
-    
+
     // 声明写入的资源
     void write(ResourceHandle handle);
-    
-    // 创建新资源
-    ResourceHandle create(const ResourceDesc& desc);
-    
-    // 引用交换链图像
-    ResourceHandle swapChainImage();
+
+    // 显式声明 Pass 依赖（按名称）
+    void dependsOn(std::string_view passName);
 };
 
 // 示例
-void GeometryPass::setup(RenderGraphBuilder& builder) {
-    m_outputColor = builder.create({
-        .width = builder.swapChainImage().width(),
-        .height = builder.swapChainImage().height(),
-        .format = VK_FORMAT_R8G8B8A8_SRGB
-    });
-    
-    m_depthBuffer = builder.create({
-        .width = builder.swapChainImage().width(),
-        .height = builder.swapChainImage().height(),
-        .format = VK_FORMAT_D32_SFLOAT
-    });
-    
-    builder.write(m_outputColor);  // 作为颜色输出
-    builder.write(m_depthBuffer);  // 作为深度输出
+void TrianglePass::setup(RenderGraphBuilder& builder) {
+    auto swapChainColor = builder.importExternal("SwapChainColor");
+    builder.write(swapChainColor);
 }
 ```
+
+v0.2 阶段2已完成以下编译能力：
+
+- 基于资源读写冲突自动生成依赖边。
+- 支持 `dependsOn()` 的显式依赖边。
+- 使用拓扑排序生成执行顺序。
+- 检测并报告循环依赖。
+- 生成基础 barrier 计划数据（用于阶段3执行器接入）。
+
+v0.2 阶段3已完成以下执行器对接：
+
+- `RenderPipeline::execute` 可消费 barrier 计划。
+- 对已绑定的外部图像资源，执行期通过 `CommandList::imageBarrier` 发射屏障。
+- 示例层 swapchain 布局转换已统一收敛到 `CommandList` 屏障接口。
+
+v0.2 阶段5已完成以下可观测补强：
+
+- `RenderPipeline::drawUI` 提供 `RenderGraph Debug` 面板。
+- 面板可查看 compile 摘要、依赖边、barrier 计划与最近一帧执行摘要。
+- 执行期 barrier 事件支持区分 applied 与 skipped 原因。
 
 ## 6. RenderPass 注册机制
 
@@ -147,10 +169,17 @@ public:
     }
 
     void compile(RHIDevice& device) {
+        m_renderGraph.reset();
+
         for (auto& pass : m_passes) {
             pass->initialize(device);
-            pass->setup();
+
+            const size_t graphIndex = m_renderGraph.registerPass(*pass);
+            auto builder = m_renderGraph.buildPass(graphIndex);
+            pass->setup(builder);
         }
+
+        m_renderGraph.compile();
     }
 
     void execute(CommandList& cmd, const FrameData& frame) {
