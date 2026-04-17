@@ -18,7 +18,8 @@ public:
         ::GLFWwindow* window,
         VkInstance instance,
         VkFormat imageFormat,
-        uint32_t imageCount);
+        uint32_t imageCount,
+        VkFormat depthFormat = VK_FORMAT_UNDEFINED);
     ~UIOverlay();
 
     void newFrame();
@@ -27,7 +28,12 @@ public:
     void onSwapChainRecreated(uint32_t imageCount);
 
 private:
-    void init(::GLFWwindow* window, VkInstance instance, VkFormat imageFormat, uint32_t imageCount);
+    void init(
+        ::GLFWwindow* window,
+        VkInstance instance,
+        VkFormat imageFormat,
+        uint32_t imageCount,
+        VkFormat depthFormat);
     [[nodiscard]] VkDescriptorPool createDescriptorPool() const;
     static void checkVkResult(VkResult result);
 

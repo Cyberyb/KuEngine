@@ -24,6 +24,7 @@ public:
                       VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
 
     void copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
+    void copyBufferToImage(VkBuffer src, VkImage dst, uint32_t width, uint32_t height);
 
 private:
     VkCommandBuffer m_cmd = VK_NULL_HANDLE;

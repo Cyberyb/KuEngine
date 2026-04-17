@@ -17,10 +17,11 @@ UIOverlay::UIOverlay(
     ::GLFWwindow* window,
     VkInstance instance,
     VkFormat imageFormat,
-    uint32_t imageCount)
+    uint32_t imageCount,
+    VkFormat depthFormat)
     : m_device(&device)
 {
-    init(window, instance, imageFormat, imageCount);
+    init(window, instance, imageFormat, imageCount, depthFormat);
 }
 
 UIOverlay::~UIOverlay()
@@ -68,7 +69,12 @@ void UIOverlay::checkVkResult(VkResult result)
     KU_ERROR("ImGui Vulkan backend error: {}", static_cast<int>(result));
 }
 
-void UIOverlay::init(::GLFWwindow* window, VkInstance instance, VkFormat imageFormat, uint32_t imageCount)
+void UIOverlay::init(
+    ::GLFWwindow* window,
+    VkInstance instance,
+    VkFormat imageFormat,
+    uint32_t imageCount,
+    VkFormat depthFormat)
 {
     if (m_initialized) {
         return;
@@ -89,6 +95,8 @@ void UIOverlay::init(::GLFWwindow* window, VkInstance instance, VkFormat imageFo
     pipelineRenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     pipelineRenderingInfo.colorAttachmentCount = 1;
     pipelineRenderingInfo.pColorAttachmentFormats = &imageFormat;
+    pipelineRenderingInfo.depthAttachmentFormat = depthFormat;
+    pipelineRenderingInfo.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
 
     ImGui_ImplVulkan_InitInfo initInfo{};
     initInfo.ApiVersion = VK_API_VERSION_1_3;

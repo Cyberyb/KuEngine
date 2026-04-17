@@ -3,6 +3,7 @@ add_library(KuEngine STATIC)
 target_compile_features(KuEngine PUBLIC cxx_std_20)
 
 target_sources(KuEngine PRIVATE
+    KuEngine/Asset/Model.cpp
     KuEngine/Core/Engine.cpp
     KuEngine/Core/Window.cpp
     KuEngine/Core/Input.cpp

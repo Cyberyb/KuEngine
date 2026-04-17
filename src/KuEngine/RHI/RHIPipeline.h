@@ -14,6 +14,9 @@ class RHIShader;
 struct GraphicsPipelineDesc {
     std::vector<std::reference_wrapper<RHIShader>> shaders;
     std::vector<VkFormat>         colorFormats;
+    std::vector<VkVertexInputBindingDescription> vertexBindings;
+    std::vector<VkVertexInputAttributeDescription> vertexAttributes;
+    std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
     std::vector<VkPushConstantRange> pushConstantRanges;
     VkFormat                      depthFormat = VK_FORMAT_UNDEFINED;
     VkSampleCountFlagBits          samples = VK_SAMPLE_COUNT_1_BIT;

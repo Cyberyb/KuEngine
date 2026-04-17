@@ -4,19 +4,34 @@
 namespace ku {
 
 RHIBuffer::RHIBuffer(const RHIDevice& device, VmaMemoryUsage usage)
+    : RHIBuffer(device, CreateInfo{
+        1024 * 1024,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        usage,
+        0,
+    })
+{}
+
+RHIBuffer::RHIBuffer(const RHIDevice& device, const CreateInfo& info)
     : m_device(&device)
+    , m_size(info.size)
 {
-    // Default buffer: 1MB, host-visible
-    VkBufferCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    info.size = 1024 * 1024;
-    info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = info.size;
+    bufferInfo.usage = info.usage;
 
     VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = usage;
+    allocInfo.usage = info.memoryUsage;
+    allocInfo.flags = info.allocationFlags;
 
-    VK_CHECK(vmaCreateBuffer(m_device->allocator(), &info, &allocInfo,
-                            &m_buffer, &m_allocation, nullptr));
+    VK_CHECK(vmaCreateBuffer(
+        m_device->allocator(),
+        &bufferInfo,
+        &allocInfo,
+        &m_buffer,
+        &m_allocation,
+        nullptr));
 }
 
 RHIBuffer::~RHIBuffer()

@@ -1,0 +1,15 @@
+{
+  "version": "0.1.0",
+  "generatedAt": "2026-04-17",
+  "assets": [
+    {
+      "id": "crate-wood",
+      "type": "model",
+      "category": "props",
+      "path": "models/props/crate-wood/runtime/crate-wood.glb",
+      "material": "materials/pbr/crate-wood.material.json",
+      "license": "CC0",
+      "source": "example"
+    }
+  ]
+}

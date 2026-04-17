@@ -27,6 +27,12 @@ RHIPipeline::RHIPipeline(const RHIDevice& device, const GraphicsPipelineDesc& de
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = static_cast<uint32_t>(desc.vertexBindings.size());
+    vertexInput.pVertexBindingDescriptions =
+        desc.vertexBindings.empty() ? nullptr : desc.vertexBindings.data();
+    vertexInput.vertexAttributeDescriptionCount = static_cast<uint32_t>(desc.vertexAttributes.size());
+    vertexInput.pVertexAttributeDescriptions =
+        desc.vertexAttributes.empty() ? nullptr : desc.vertexAttributes.data();
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -96,6 +102,9 @@ RHIPipeline::RHIPipeline(const RHIDevice& device, const GraphicsPipelineDesc& de
 
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount = static_cast<uint32_t>(desc.descriptorSetLayouts.size());
+    layoutInfo.pSetLayouts =
+        desc.descriptorSetLayouts.empty() ? nullptr : desc.descriptorSetLayouts.data();
     layoutInfo.pushConstantRangeCount = static_cast<uint32_t>(desc.pushConstantRanges.size());
     layoutInfo.pPushConstantRanges =
         desc.pushConstantRanges.empty() ? nullptr : desc.pushConstantRanges.data();

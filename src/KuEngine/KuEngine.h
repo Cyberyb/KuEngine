@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Asset/Model.h"
 #include "Core/Engine.h"
 #include "Core/Input.h"
 #include "Core/Log.h"

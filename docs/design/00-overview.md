@@ -132,7 +132,10 @@ KuEngine/
 │   │   ├── 02-render-pass.md       ← RenderPass 接口设计
 │   │   ├── 03-logging.md           ← 日志规范
 │   │   ├── 04-triangle-example-tech.md  ← Triangle 示例技术说明
-│   │   └── 05-ui-layer.md          ← UI 层架构与自定义开发
+│   │   ├── 05-ui-layer.md          ← UI 层架构与自定义开发
+│   │   ├── 06-v0.2-execution-plan.md    ← v0.2 执行计划（阶段记录）
+│   │   ├── 07-resource-asset-spec.md    ← v0.3 资产规范（models/textures/materials）
+│   │   └── 08-gltf-model-loading.md     ← glTF/glb 读取与渲染接入说明
 │   ├── logs/
 │   │   └── 2026-04-12-worklog.md   ← 工作日志示例
 │   └── bugs/
@@ -174,7 +177,7 @@ KuEngine/
 ├── tests/
 │   └── core/
 │       └── test_engine.cpp
-└── resources/                      ← 模型/纹理等资产
+└── resources/                      ← 按 docs/design/07-resource-asset-spec.md 分类存放
 ```
 
 ---

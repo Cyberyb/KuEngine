@@ -9,6 +9,7 @@
     "spdlog",
     "glm",
     "fmt",
+    "tinygltf",
     "gtest",
     {
       "name": "imgui",
