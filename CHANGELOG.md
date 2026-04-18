@@ -15,6 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - New stage-4 sample `Alpha3PassApp` with three-pass alpha pipeline and runtime UI tuning.
 - Usage guide for the new sample (`docs/usage/alpha3pass-example.md`).
 - Stage-5 regression checklist (`docs/usage/v0.2-regression-checks.md`).
+- v0.3 asset config parser module (`src/KuEngine/Asset/AssetConfig.h`, `src/KuEngine/Asset/AssetConfig.cpp`) for scene/material JSON loading with default fallback.
+- New regression tests for asset config parsing (`tests/core/test_asset_config.cpp`).
+- v0.3 sample asset descriptors (`resources/scenes/sandbox/mclaren-sandbox.scene.json`, `resources/materials/pbr/mclaren-765lt.material.json`, `resources/manifests/asset-registry.json`).
 
 ### Changed
 - Documentation sync for current engine status, roadmap, and module responsibilities.
@@ -30,6 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - RenderPipeline execute path now supports `setExecuteInsideRendering(bool)` to guard dynamic-rendering scope and avoid invalid image barriers (VUID-08719).
 - Stage-6 release wrap-up completed: gate checklist verification, release notes, and final documentation sync.
 - VS Code workspace settings now pin C/C++ IntelliSense to CMake Tools + C++20 for better diagnostics consistency.
+- Mclaren sample now reads scene/material JSON config first (with fallback), and drives camera FOV/near/far + basic lighting params through runtime UI and shader push constants.
 
 ## [0.1.0] - 2026-04-11
 

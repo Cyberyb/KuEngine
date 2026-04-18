@@ -233,8 +233,8 @@ Examples:
 
 ### 10.1 当前阶段判断
 
-- 结论：当前处于 **v0.1.x 已完成、可进入 v0.2 设计实现** 阶段。
-- 依据：渲染主链路、UI 调参、swapchain 稳定性已具备；但 RenderGraph 与实验评估工具链尚未落地。
+- 结论：当前处于 **v0.2 已完成、v0.3 开发中** 阶段。
+- 依据：RenderGraph Alpha 与三 Pass 验证链路已完成；v0.3 的模型/材质输入、scene/material 配置读取与相机/基础光照参数已打通最小闭环。
 
 ### 10.2 产品视角评分（5 分制）
 
@@ -283,3 +283,20 @@ Examples:
 - 2026-04-14：已完成阶段5（RenderGraph 调试面板、执行摘要、测试补强与回归说明）。
 - 2026-04-15：已完成阶段6（发布收尾、门禁复核、发布说明同步）。
 - 当前状态：v0.2 Alpha 阶段0-6全部完成。
+
+---
+
+## 12. v0.3 当期进展（2026-04-19）
+
+### 12.1 已完成
+
+- 新增资产目录规范与示例 JSON 资产（scene/material/registry）并接入 Mclaren 示例。
+- `MclarenPass` 已支持 scene/material 配置读取，并保留默认回退路径。
+- 相机参数（FOV/near/far）与基础光照参数（direction/color/intensity）已驱动 shader。
+- 新增资产配置解析模块与回归测试：`AssetConfig` + `test_asset_config.cpp`。
+
+### 12.2 剩余项
+
+- 材质 JSON 到运行时纹理绑定的完整接管（当前仍以 glTF 内材质为主）。
+- 场景多节点实例化与批量材质装配。
+- 扩展 PBR（emissive/clearcoat/transmission 等）与完整 TBN 路径。

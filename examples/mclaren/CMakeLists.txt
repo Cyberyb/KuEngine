@@ -14,6 +14,7 @@ target_compile_definitions(MclarenApp PRIVATE
 target_link_libraries(MclarenApp PRIVATE
     KuEngine
     imgui::imgui
+    nlohmann_json::nlohmann_json
 )
 
 set_target_properties(MclarenApp PROPERTIES
@@ -60,6 +61,48 @@ if(EXISTS ${MCLAREN_MODEL_SOURCE})
     )
 else()
     message(WARNING "mclaren_765lt.glb not found under resources/models/props")
+endif()
+
+set(MCLAREN_SCENE_SOURCE ${CMAKE_SOURCE_DIR}/resources/scenes/sandbox/mclaren-sandbox.scene.json)
+if(EXISTS ${MCLAREN_SCENE_SOURCE})
+    add_custom_command(TARGET MclarenApp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            $<TARGET_FILE_DIR:MclarenApp>/resources/scenes/sandbox
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${MCLAREN_SCENE_SOURCE}
+            $<TARGET_FILE_DIR:MclarenApp>/resources/scenes/sandbox/mclaren-sandbox.scene.json
+        COMMENT "Copying mclaren scene config to runtime resources"
+    )
+else()
+    message(WARNING "mclaren-sandbox.scene.json not found under resources/scenes/sandbox")
+endif()
+
+set(MCLAREN_MATERIAL_SOURCE ${CMAKE_SOURCE_DIR}/resources/materials/pbr/mclaren-765lt.material.json)
+if(EXISTS ${MCLAREN_MATERIAL_SOURCE})
+    add_custom_command(TARGET MclarenApp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            $<TARGET_FILE_DIR:MclarenApp>/resources/materials/pbr
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${MCLAREN_MATERIAL_SOURCE}
+            $<TARGET_FILE_DIR:MclarenApp>/resources/materials/pbr/mclaren-765lt.material.json
+        COMMENT "Copying mclaren material config to runtime resources"
+    )
+else()
+    message(WARNING "mclaren-765lt.material.json not found under resources/materials/pbr")
+endif()
+
+set(MCLAREN_MANIFEST_SOURCE ${CMAKE_SOURCE_DIR}/resources/manifests/asset-registry.json)
+if(EXISTS ${MCLAREN_MANIFEST_SOURCE})
+    add_custom_command(TARGET MclarenApp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            $<TARGET_FILE_DIR:MclarenApp>/resources/manifests
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${MCLAREN_MANIFEST_SOURCE}
+            $<TARGET_FILE_DIR:MclarenApp>/resources/manifests/asset-registry.json
+        COMMENT "Copying asset registry to runtime resources"
+    )
+else()
+    message(WARNING "asset-registry.json not found under resources/manifests")
 endif()
 
 add_custom_command(TARGET MclarenApp POST_BUILD

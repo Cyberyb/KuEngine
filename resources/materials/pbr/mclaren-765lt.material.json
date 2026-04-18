@@ -1,0 +1,31 @@
+{
+  "id": "mclaren-765lt",
+  "version": "1.0.0",
+  "pipeline": "pbr-metallic-roughness",
+  "doubleSided": false,
+  "alphaMode": "OPAQUE",
+  "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
+  "metallicFactor": 1.0,
+  "roughnessFactor": 1.0,
+  "normalScale": 1.0,
+  "occlusionStrength": 1.0,
+  "textureBindings": {
+    "baseColor": {
+      "source": "gltf:baseColorTexture",
+      "colorSpace": "sRGB",
+      "uvSet": 0
+    },
+    "normal": {
+      "source": "gltf:normalTexture",
+      "colorSpace": "Linear",
+      "uvSet": 0
+    },
+    "orm": {
+      "source": "gltf:metallicRoughnessTexture|occlusionTexture",
+      "channelMapping": "R=occlusion,G=roughness,B=metallic",
+      "colorSpace": "Linear",
+      "uvSet": 0
+    }
+  },
+  "notes": "Use embedded glTF textures from mclaren_765lt.glb"
+}

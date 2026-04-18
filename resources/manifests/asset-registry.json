@@ -1,0 +1,17 @@
+{
+  "version": "0.3.0",
+  "generatedAt": "2026-04-18",
+  "assets": [
+    {
+      "id": "mclaren-765lt",
+      "type": "model",
+      "category": "props",
+      "path": "models/props/mclaren_765lt.glb",
+      "material": "materials/pbr/mclaren-765lt.material.json",
+      "scene": "scenes/sandbox/mclaren-sandbox.scene.json",
+      "license": "CHECK_REQUIRED",
+      "source": "example",
+      "tags": ["vehicle", "pbr", "gltf"]
+    }
+  ]
+}

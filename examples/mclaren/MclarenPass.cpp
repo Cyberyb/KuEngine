@@ -1,5 +1,6 @@
 #include "MclarenPass.h"
 
+#include <KuEngine/Asset/AssetConfig.h>
 #include <KuEngine/Core/Log.h>
 #include <KuEngine/Render/RenderGraph.h>
 
@@ -75,6 +76,100 @@ std::filesystem::path MclarenPass::resolveModelPath() const
     return runtimePath;
 }
 
+std::filesystem::path MclarenPass::resolveScenePath() const
+{
+    const std::filesystem::path runtimePath =
+        std::filesystem::current_path() / "resources" / "scenes" / "sandbox" / "mclaren-sandbox.scene.json";
+
+    if (std::filesystem::exists(runtimePath)) {
+        return runtimePath;
+    }
+
+#ifdef KUENGINE_SOURCE_DIR
+    const std::filesystem::path sourcePath =
+        std::filesystem::path(KUENGINE_SOURCE_DIR) / "resources" / "scenes" / "sandbox" / "mclaren-sandbox.scene.json";
+    if (std::filesystem::exists(sourcePath)) {
+        return sourcePath;
+    }
+#endif
+
+    return runtimePath;
+}
+
+void MclarenPass::loadMaterialConfig(const std::filesystem::path& materialPath)
+{
+    asset::MaterialConfig materialConfig{};
+    std::string error;
+    if (!asset::loadMaterialConfigFromFile(materialPath, materialConfig, &error)) {
+        KU_WARN("MclarenPass: material config fallback to glTF defaults: {}", error);
+        return;
+    }
+
+    if (materialConfig.hasBaseColorFactor) {
+        m_globalBaseColorFactor = materialConfig.baseColorFactor;
+        KU_INFO("MclarenPass: applied baseColorFactor from material config");
+    }
+
+    m_materialPathString = materialPath.string();
+    m_materialConfigUsed = true;
+}
+
+void MclarenPass::loadSceneAndMaterialConfig()
+{
+    m_modelPathOverride.clear();
+    m_scenePathString.clear();
+    m_materialPathString.clear();
+    m_sceneConfigUsed = false;
+    m_materialConfigUsed = false;
+
+    const std::filesystem::path scenePath = resolveScenePath();
+    asset::SceneConfig sceneConfig{};
+    std::string error;
+    if (!asset::loadSceneConfigFromFile(scenePath, sceneConfig, &error)) {
+        KU_WARN("MclarenPass: scene config fallback to hardcoded model path: {}", error);
+        return;
+    }
+
+    m_cameraPosition = sceneConfig.camera.position;
+    m_cameraTarget = sceneConfig.camera.target;
+    m_cameraUp = sceneConfig.camera.up;
+    m_cameraFovYDegrees = sceneConfig.camera.fovYDeg;
+    m_cameraNear = sceneConfig.camera.nearPlane;
+    m_cameraFar = sceneConfig.camera.farPlane;
+
+    m_lightDirection = sceneConfig.lighting.direction;
+    m_lightColor = sceneConfig.lighting.color;
+    m_lightIntensity = sceneConfig.lighting.intensity;
+
+    const float distance = glm::length(m_cameraPosition - m_cameraTarget);
+    if (distance > 0.001f) {
+        m_distance = distance;
+    }
+
+    const std::filesystem::path resourcesRoot = asset::findResourcesRoot(scenePath);
+    if (resourcesRoot.empty()) {
+        KU_WARN("MclarenPass: cannot resolve resources root from scene path: {}", scenePath.string());
+    } else if (!sceneConfig.nodes.empty()) {
+        const asset::SceneNodeConfig& node = sceneConfig.nodes.front();
+        if (!node.model.empty()) {
+            const std::filesystem::path modelPath = resourcesRoot / node.model;
+            if (std::filesystem::exists(modelPath)) {
+                m_modelPathOverride = modelPath;
+            } else {
+                KU_WARN("MclarenPass: model from scene config does not exist: {}", modelPath.string());
+            }
+        }
+
+        if (!node.material.empty()) {
+            const std::filesystem::path materialPath = resourcesRoot / node.material;
+            loadMaterialConfig(materialPath);
+        }
+    }
+
+    m_scenePathString = scenePath.string();
+    m_sceneConfigUsed = true;
+}
+
 void MclarenPass::initialize(RHIDevice& device)
 {
     KU_INFO("MclarenPass: initializing...");
@@ -89,6 +184,22 @@ void MclarenPass::initialize(RHIDevice& device)
     m_fallbackWhiteTexture.reset();
     m_fallbackNormalTexture.reset();
     m_fallbackOrmTexture.reset();
+    m_modelPathOverride.clear();
+    m_scenePathString.clear();
+    m_materialPathString.clear();
+    m_sceneConfigUsed = false;
+    m_materialConfigUsed = false;
+
+    m_distance = 4.0f;
+    m_cameraPosition = glm::vec3(0.0f, 0.0f, 4.0f);
+    m_cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
+    m_cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
+    m_cameraFovYDegrees = 60.0f;
+    m_cameraNear = 0.1f;
+    m_cameraFar = 200.0f;
+    m_lightDirection = glm::vec3(0.35f, 1.0f, 0.45f);
+    m_lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
+    m_lightIntensity = 1.0f;
 
     std::filesystem::path shaderDir = std::filesystem::current_path() / "shaders";
     const auto vertPath = shaderDir / "mclaren.vert.spv";
@@ -103,7 +214,10 @@ void MclarenPass::initialize(RHIDevice& device)
         return;
     }
 
-    const std::filesystem::path modelPath = resolveModelPath();
+    loadSceneAndMaterialConfig();
+
+    const std::filesystem::path modelPath =
+        m_modelPathOverride.empty() ? resolveModelPath() : m_modelPathOverride;
     m_modelPathString = modelPath.string();
 
     asset::MeshData mesh;
@@ -193,6 +307,7 @@ void MclarenPass::initialize(RHIDevice& device)
     attrUv1.format = VK_FORMAT_R32G32_SFLOAT;
     attrUv1.offset = static_cast<uint32_t>(offsetof(asset::MeshVertex, uv1));
 
+    // 每个材质固定绑定 3 张采样纹理：BaseColor、Normal、ORM。
     std::array<VkDescriptorSetLayoutBinding, 3> textureBindings{};
     for (uint32_t i = 0; i < textureBindings.size(); ++i) {
         textureBindings[i].binding = i;
@@ -242,6 +357,7 @@ void MclarenPass::initialize(RHIDevice& device)
     poolInfo.pPoolSizes = &poolSize;
     VK_CHECK(vkCreateDescriptorPool(m_deviceHandle, &poolInfo, nullptr, &m_descriptorPool));
 
+    // 为缺失贴图的材质准备 1x1 兜底纹理，避免采样空资源导致渲染异常。
     if (!createSolidColorTexture(device, {255, 255, 255, 255}, VK_FORMAT_R8G8B8A8_SRGB, m_fallbackWhiteTexture)) {
         m_loadError = "Fallback baseColor texture upload failed";
         KU_ERROR("MclarenPass: {}", m_loadError);
@@ -285,6 +401,7 @@ void MclarenPass::initialize(RHIDevice& device)
         std::unique_ptr<RHITexture> normalTex;
         std::unique_ptr<RHITexture> ormTex;
 
+        // 尝试上传该材质对应纹理；上传失败或源纹理无效时会退回兜底纹理。
         bool hasBase = material.baseColorTexture.valid()
             && createAndUploadTexture(device, material.baseColorTexture, VK_FORMAT_R8G8B8A8_SRGB, baseTex);
         bool hasNormal = material.normalTexture.valid()
@@ -292,6 +409,7 @@ void MclarenPass::initialize(RHIDevice& device)
         bool hasOrm = material.ormTexture.valid()
             && createAndUploadTexture(device, material.ormTexture, VK_FORMAT_R8G8B8A8_UNORM, ormTex);
 
+        // 默认先使用兜底视图，若上传成功再替换为真实纹理视图。
         VkImageView baseView = m_fallbackWhiteTexture->imageView();
         VkImageView normalView = m_fallbackNormalTexture->imageView();
         VkImageView ormView = m_fallbackOrmTexture->imageView();
@@ -312,6 +430,7 @@ void MclarenPass::initialize(RHIDevice& device)
             m_materialTextures.push_back(std::move(ormTex));
         }
 
+        // 将当前材质的三张纹理写入对应 descriptor set 的 0/1/2 号 binding。
         std::array<VkDescriptorImageInfo, 3> imageInfos{};
         imageInfos[0] = VkDescriptorImageInfo{m_sampler, baseView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         imageInfos[1] = VkDescriptorImageInfo{m_sampler, normalView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
@@ -328,6 +447,7 @@ void MclarenPass::initialize(RHIDevice& device)
         }
         vkUpdateDescriptorSets(m_deviceHandle, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
+        // 把 glTF 材质参数拷贝到运行时结构，供每次 draw 时通过 push constants 使用。
         MaterialBinding materialBinding{};
         materialBinding.baseColorFactor = {
             material.baseColorFactor.r,
@@ -420,12 +540,31 @@ void MclarenPass::execute(CommandList& cmd, const FrameData&)
     model = glm::scale(model, glm::vec3(m_fitScale));
     model = glm::translate(model, -m_modelCenter);
 
-    const glm::mat4 view = glm::lookAt(
-        glm::vec3(0.0f, 0.0f, m_distance),
-        glm::vec3(0.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::vec3 cameraForward = m_cameraPosition - m_cameraTarget;
+    if (glm::length(cameraForward) < 1e-4f) {
+        cameraForward = glm::vec3(0.0f, 0.0f, 1.0f);
+    } else {
+        cameraForward = glm::normalize(cameraForward);
+    }
 
-    glm::mat4 proj = glm::perspective(glm::radians(60.0f), std::max(m_aspect, 0.01f), 0.1f, 200.0f);
+    glm::vec3 cameraUp = m_cameraUp;
+    if (glm::length(cameraUp) < 1e-4f) {
+        cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
+    } else {
+        cameraUp = glm::normalize(cameraUp);
+    }
+
+    const glm::vec3 cameraPosition = m_cameraTarget + cameraForward * std::max(m_distance, 0.1f);
+
+    const glm::mat4 view = glm::lookAt(
+        cameraPosition,
+        m_cameraTarget,
+        cameraUp);
+
+    const float safeNear = std::max(0.001f, m_cameraNear);
+    const float safeFar = std::max(safeNear + 0.1f, m_cameraFar);
+    const float safeFov = std::clamp(m_cameraFovYDegrees, 1.0f, 179.0f);
+    glm::mat4 proj = glm::perspective(glm::radians(safeFov), std::max(m_aspect, 0.01f), safeNear, safeFar);
     proj[1][1] *= -1.0f;
 
     const glm::mat4 mvp = proj * view * model;
@@ -438,8 +577,19 @@ void MclarenPass::execute(CommandList& cmd, const FrameData&)
         push.normalRows[row * 4 + 0] = normalMatrix[0][row];
         push.normalRows[row * 4 + 1] = normalMatrix[1][row];
         push.normalRows[row * 4 + 2] = normalMatrix[2][row];
-        push.normalRows[row * 4 + 3] = 0.0f;
+        push.normalRows[row * 4 + 3] = m_lightColor[row];
     }
+
+    glm::vec3 lightDirection = m_lightDirection;
+    if (glm::length(lightDirection) < 1e-4f) {
+        lightDirection = glm::vec3(0.35f, 1.0f, 0.45f);
+    } else {
+        lightDirection = glm::normalize(lightDirection);
+    }
+    push.lightDirIntensity[0] = lightDirection.x;
+    push.lightDirIntensity[1] = lightDirection.y;
+    push.lightDirIntensity[2] = lightDirection.z;
+    push.lightDirIntensity[3] = std::max(0.0f, m_lightIntensity);
 
     m_pipeline->bind(cmd);
 
@@ -545,9 +695,27 @@ void MclarenPass::drawUI()
     ImGui::Checkbox("Enable ORM Map", &m_enableOrmMap);
     ImGui::Checkbox("Flip UV-Y (Vulkan)", &m_flipUvY);
     ImGui::ColorEdit4("Global BaseColor Factor", m_globalBaseColorFactor.data());
+
+    ImGui::Separator();
+    ImGui::Text("Camera");
     ImGui::SliderFloat("Camera Distance", &m_distance, 2.0f, 12.0f);
+    ImGui::SliderFloat("Camera FOV Y", &m_cameraFovYDegrees, 20.0f, 120.0f);
+    ImGui::SliderFloat("Camera Near", &m_cameraNear, 0.01f, 5.0f);
+    ImGui::SliderFloat("Camera Far", &m_cameraFar, 5.0f, 500.0f);
     ImGui::Text("Yaw: %.2f", m_yaw);
     ImGui::Text("Pitch: %.2f", m_pitch);
+
+    ImGui::Separator();
+    ImGui::Text("Lighting");
+    ImGui::SliderFloat3("Light Direction", &m_lightDirection.x, -1.0f, 1.0f);
+    ImGui::ColorEdit3("Light Color", &m_lightColor.x);
+    ImGui::SliderFloat("Light Intensity", &m_lightIntensity, 0.0f, 4.0f);
+
+    ImGui::Separator();
+    ImGui::TextWrapped("Scene Config: %s", m_sceneConfigUsed ? m_scenePathString.c_str() : "fallback (not found)");
+    ImGui::TextWrapped(
+        "Material Config: %s",
+        m_materialConfigUsed ? m_materialPathString.c_str() : "fallback (not found)");
 
     if (!m_loadError.empty()) {
         ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", m_loadError.c_str());
@@ -588,6 +756,7 @@ bool MclarenPass::createAndUploadTexture(
 
     const VkDeviceSize textureBytes = static_cast<VkDeviceSize>(textureData.rgba8.size());
 
+    // 先把 CPU 侧像素数据写入 staging buffer，再通过拷贝命令上传到 GPU 纹理。
     RHIBuffer::CreateInfo stagingInfo{};
     stagingInfo.size = textureBytes;
     stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
@@ -617,6 +786,7 @@ bool MclarenPass::createAndUploadTexture(
     CommandList transferCmd(device, transferPool);
     transferCmd.begin();
 
+    // 布局转换：UNDEFINED -> TRANSFER_DST，准备接收拷贝。
     transferCmd.imageBarrier(
         outTexture->image(),
         VK_IMAGE_LAYOUT_UNDEFINED,
@@ -631,6 +801,7 @@ bool MclarenPass::createAndUploadTexture(
         textureData.width,
         textureData.height);
 
+    // 布局转换：TRANSFER_DST -> SHADER_READ_ONLY，供片段着色器采样。
     transferCmd.imageBarrier(
         outTexture->image(),
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,

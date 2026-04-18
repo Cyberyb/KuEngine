@@ -46,6 +46,7 @@ private:
         float ormUvScaleOffset[4];
         float uvTransformParams0[4];
         float uvTransformParams1[4];
+        float lightDirIntensity[4];
     };
 
     struct MaterialBinding {
@@ -71,7 +72,10 @@ private:
         VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     };
 
+    std::filesystem::path resolveScenePath() const;
     std::filesystem::path resolveModelPath() const;
+    void loadSceneAndMaterialConfig();
+    void loadMaterialConfig(const std::filesystem::path& materialPath);
     bool createAndUploadTexture(
         RHIDevice& device,
         const asset::TextureData& textureData,
@@ -102,8 +106,15 @@ private:
     VkSampler m_sampler = VK_NULL_HANDLE;
     VkDevice m_deviceHandle = VK_NULL_HANDLE;
 
+    std::filesystem::path m_modelPathOverride;
+
+    std::string m_scenePathString;
+    std::string m_materialPathString;
     std::string m_modelPathString;
     std::string m_loadError;
+
+    bool m_sceneConfigUsed = false;
+    bool m_materialConfigUsed = false;
 
     uint32_t m_vertexCount = 0;
     uint32_t m_indexCount = 0;
@@ -112,6 +123,17 @@ private:
     float m_distance = 4.0f;
     float m_yaw = 0.0f;
     float m_pitch = 0.0f;
+    glm::vec3 m_cameraPosition{0.0f, 0.0f, 4.0f};
+    glm::vec3 m_cameraTarget{0.0f, 0.0f, 0.0f};
+    glm::vec3 m_cameraUp{0.0f, 1.0f, 0.0f};
+    float m_cameraFovYDegrees = 60.0f;
+    float m_cameraNear = 0.1f;
+    float m_cameraFar = 200.0f;
+
+    glm::vec3 m_lightDirection{0.35f, 1.0f, 0.45f};
+    glm::vec3 m_lightColor{1.0f, 1.0f, 1.0f};
+    float m_lightIntensity = 1.0f;
+
     float m_fitScale = 1.0f;
     glm::vec3 m_modelCenter{0.0f, 0.0f, 0.0f};
     VkFormat m_depthFormat = VK_FORMAT_D32_SFLOAT;

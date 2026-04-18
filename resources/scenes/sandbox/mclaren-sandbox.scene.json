@@ -1,0 +1,31 @@
+{
+  "id": "mclaren-sandbox",
+  "version": "1.0.0",
+  "description": "Minimal v0.3 validation scene for model/material input",
+  "camera": {
+    "position": [0.0, 0.0, 4.0],
+    "target": [0.0, 0.0, 0.0],
+    "up": [0.0, 1.0, 0.0],
+    "fovYDeg": 60.0,
+    "near": 0.1,
+    "far": 200.0
+  },
+  "lighting": {
+    "type": "directional",
+    "direction": [0.35, 1.0, 0.45],
+    "intensity": 1.0,
+    "color": [1.0, 1.0, 1.0]
+  },
+  "nodes": [
+    {
+      "id": "mclaren-car",
+      "model": "models/props/mclaren_765lt.glb",
+      "material": "materials/pbr/mclaren-765lt.material.json",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotationEulerDeg": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      }
+    }
+  ]
+}

@@ -7,6 +7,8 @@
 适用代码入口：
 - `src/KuEngine/Asset/Model.h`
 - `src/KuEngine/Asset/Model.cpp`
+- `src/KuEngine/Asset/AssetConfig.h`
+- `src/KuEngine/Asset/AssetConfig.cpp`
 - `examples/mclaren/MclarenPass.cpp`
 
 ---
@@ -179,6 +181,7 @@
 - 暂未接入 emissive、clearcoat、transmission、specular 等扩展 PBR 工作流。
 - normal map 当前在示例中采用简化重建路径，尚未引入完整 TBN 顶点属性链路。
 - 暂未处理 glTF sparse accessor、skin、morph target、animation。
+- scene 装配当前按最小路径读取首个节点（`nodes[0]`）。
 
 ---
 
@@ -188,3 +191,25 @@
 2. 扩展 emissive/alphaMode/alphaCutoff 与双面材质策略。
 3. 增加纹理 color space 与通道校验（特别是 normal/ORM 的线性空间约束）。
 4. 增加资产导入诊断日志（缺失语义、非法 accessor、纹理格式不支持等）。
+
+---
+
+## 10. v0.3 当期进展（2026-04-19）
+
+### 10.1 新增能力
+
+- 新增资产配置解析模块 `AssetConfig`，用于读取 scene/material JSON 并提供默认值回退。
+- `MclarenPass` 已改为通过 `AssetConfig` 读取：
+  - 相机参数：`position/target/up/fovYDeg/near/far`
+  - 光照参数：`direction/color/intensity`
+  - 节点模型与材质引用（当前使用首个节点）
+- shader 光照参数不再完全硬编码，已通过 push constants 由运行时参数驱动。
+
+### 10.2 回归覆盖
+
+- 新增测试文件：`tests/core/test_asset_config.cpp`
+- 覆盖场景：
+  - 解析成功路径（camera/lighting/nodes）
+  - 缺字段默认值回退
+  - 材质 `baseColorFactor` 解析与缺字段回退
+  - 文件不存在时错误返回

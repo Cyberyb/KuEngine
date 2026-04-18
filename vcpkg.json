@@ -9,6 +9,7 @@
     "spdlog",
     "glm",
     "fmt",
+    "nlohmann-json",
     "tinygltf",
     "gtest",
     {

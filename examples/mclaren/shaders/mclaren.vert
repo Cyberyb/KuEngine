@@ -23,6 +23,7 @@ layout(push_constant) uniform PushConstants {
     vec4 ormUvScaleOffset;
     vec4 uvTransformParams0;
     vec4 uvTransformParams1;
+    vec4 lightDirIntensity;
 } pc;
 
 void main() {

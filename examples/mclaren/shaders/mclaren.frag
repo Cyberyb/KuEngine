@@ -23,6 +23,7 @@ layout(push_constant) uniform PushConstants {
     vec4 ormUvScaleOffset;
     vec4 uvTransformParams0;
     vec4 uvTransformParams1;
+    vec4 lightDirIntensity;
 } pc;
 
 vec2 selectUv(float texCoordSet) {
@@ -86,7 +87,9 @@ void main() {
     mat3 normalMatrix = mat3(pc.normalRow0.xyz, pc.normalRow1.xyz, pc.normalRow2.xyz);
     vec3 n = normalize(normalMatrix * meshNormal);
 
-    vec3 lightDir = normalize(vec3(0.35, 1.0, 0.45));
+    vec3 lightColor = vec3(pc.normalRow0.w, pc.normalRow1.w, pc.normalRow2.w);
+    vec3 lightDir = normalize(pc.lightDirIntensity.xyz);
+    float lightIntensity = max(pc.lightDirIntensity.w, 0.0);
     float ndotl = max(dot(n, lightDir), 0.0);
 
     float ao = 1.0;
@@ -100,17 +103,17 @@ void main() {
     }
 
     float ambient = 0.10 * ao;
-    float diffuse = ndotl;
+    float diffuse = ndotl * lightIntensity;
 
     vec3 viewDir = normalize(vec3(0.0, 0.0, 1.0));
     vec3 halfVec = normalize(lightDir + viewDir);
     float ndoth = max(dot(n, halfVec), 0.0);
     float specPower = mix(256.0, 8.0, roughness);
-    float spec = pow(ndoth, specPower) * (1.0 - roughness * 0.5);
+    float spec = pow(ndoth, specPower) * (1.0 - roughness * 0.5) * lightIntensity;
 
     vec3 f0 = mix(vec3(0.04), base.rgb, metallic);
-    vec3 diffuseColor = base.rgb * (1.0 - metallic) * diffuse;
-    vec3 specColor = f0 * spec;
+    vec3 diffuseColor = base.rgb * (1.0 - metallic) * diffuse * lightColor;
+    vec3 specColor = f0 * spec * lightColor;
 
     vec3 litColor = base.rgb * ambient + diffuseColor + specColor;
     outColor = vec4(litColor, base.a);

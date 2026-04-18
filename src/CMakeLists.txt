@@ -3,6 +3,7 @@ add_library(KuEngine STATIC)
 target_compile_features(KuEngine PUBLIC cxx_std_20)
 
 target_sources(KuEngine PRIVATE
+    KuEngine/Asset/AssetConfig.cpp
     KuEngine/Asset/Model.cpp
     KuEngine/Core/Engine.cpp
     KuEngine/Core/Window.cpp
@@ -35,6 +36,7 @@ target_link_libraries(KuEngine PUBLIC
     spdlog::spdlog
     glm::glm
     fmt::fmt
+    nlohmann_json::nlohmann_json
 )
 
 if(MSVC)
