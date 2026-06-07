@@ -83,6 +83,7 @@ private:
             float baseTexCoord = 0.0f;
             float normalTexCoord = 0.0f;
             float ormTexCoord = 0.0f;
+            float emissiveTexCoord = 0.0f;
 
         bool hasBaseColorTexture = false;
         bool hasNormalTexture = false;
@@ -124,6 +125,7 @@ private:
     std::unique_ptr<RHITexture> m_fallbackWhiteTexture;
     std::unique_ptr<RHITexture> m_fallbackNormalTexture;
     std::unique_ptr<RHITexture> m_fallbackOrmTexture;
+    std::unique_ptr<RHITexture> m_fallbackEmissiveTexture;
     std::unique_ptr<RHITexture> m_environmentTexture;
 
     std::unique_ptr<RHIBuffer> m_vertexBuffer;
