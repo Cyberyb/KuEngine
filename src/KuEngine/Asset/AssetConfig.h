@@ -37,8 +37,37 @@ struct SceneConfig {
 };
 
 struct MaterialConfig {
+    struct TextureBindingConfig {
+        std::string source;
+        std::string colorSpace;
+        std::string channelMapping;
+        int uvSet = 0;
+        bool hasSource = false;
+        bool hasColorSpace = false;
+        bool hasChannelMapping = false;
+        bool hasUvSet = false;
+    };
+
+    std::string id;
+    std::string version;
+    std::string pipeline;
+    std::string alphaMode = "OPAQUE";
+    bool doubleSided = false;
+    float alphaCutoff = 0.5f;
+    bool hasAlphaCutoff = false;
     std::array<float, 4> baseColorFactor{1.0f, 1.0f, 1.0f, 1.0f};
     bool hasBaseColorFactor = false;
+    float metallicFactor = 1.0f;
+    bool hasMetallicFactor = false;
+    float roughnessFactor = 1.0f;
+    bool hasRoughnessFactor = false;
+    float normalScale = 1.0f;
+    bool hasNormalScale = false;
+    float occlusionStrength = 1.0f;
+    bool hasOcclusionStrength = false;
+    TextureBindingConfig baseColorBinding{};
+    TextureBindingConfig normalBinding{};
+    TextureBindingConfig ormBinding{};
 };
 
 std::filesystem::path findResourcesRoot(const std::filesystem::path& path);

@@ -1,14 +1,29 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "lighting.glsl"
 
 layout(location = 0) in vec3 inNormalMesh;
 layout(location = 1) in vec2 inUv0;
 layout(location = 2) in vec2 inUv1;
 layout(location = 3) in vec3 inPositionMesh;
+layout(location = 4) in vec3 inPositionWorld;
+layout(location = 5) in vec4 inTangent;
 layout(location = 0) out vec4 outColor;
 
 layout(set = 0, binding = 0) uniform sampler2D uBaseColorTex;
 layout(set = 0, binding = 1) uniform sampler2D uNormalTex;
 layout(set = 0, binding = 2) uniform sampler2D uOrmTex;
+layout(set = 2, binding = 0) uniform sampler2D uEnvironmentTex;
+
+layout(set = 1, binding = 0) uniform FrameUniforms {
+    mat4 model;
+    vec4 cameraPos;
+    mat4 invViewProj;
+    vec4 lightDirIntensity;
+    vec4 emissiveFactor;
+    vec4 alphaParams;
+} frameData;
 
 layout(push_constant) uniform PushConstants {
     mat4 mvp;
@@ -23,8 +38,10 @@ layout(push_constant) uniform PushConstants {
     vec4 ormUvScaleOffset;
     vec4 uvTransformParams0;
     vec4 uvTransformParams1;
-    vec4 lightDirIntensity;
 } pc;
+
+const uint KU_IBL_DIFFUSE_SAMPLES = 24u;
+const uint KU_IBL_SPECULAR_SAMPLES = 48u;
 
 vec2 selectUv(float texCoordSet) {
     return texCoordSet > 0.5 ? inUv1 : inUv0;
@@ -65,6 +82,95 @@ mat3 cotangentFrame(vec3 n, vec3 p, vec2 uv) {
     return mat3(t * invMax, b * invMax, n);
 }
 
+vec3 linearToSrgb(vec3 linearColor) {
+    vec3 c = max(linearColor, vec3(0.0));
+    vec3 low = 12.92 * c;
+    vec3 high = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
+    return mix(low, high, step(vec3(0.0031308), c));
+}
+
+float kuRadicalInverseVdC(uint bits) {
+    bits = (bits << 16u) | (bits >> 16u);
+    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
+    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
+    bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
+    bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
+    return float(bits) * 2.3283064365386963e-10;
+}
+
+vec2 kuHammersley(uint i, uint n) {
+    return vec2(float(i) / float(n), kuRadicalInverseVdC(i));
+}
+
+mat3 kuTbnFromNormal(vec3 n) {
+    vec3 up = abs(n.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    vec3 t = normalize(cross(up, n));
+    vec3 b = cross(n, t);
+    return mat3(t, b, n);
+}
+
+vec2 directionToEquirectUv(vec3 dir);
+
+vec3 kuImportanceSampleGGX(vec2 xi, vec3 n, float roughness) {
+    float a = max(roughness, 0.04);
+    float phi = 2.0 * KU_PI * xi.x;
+    float cosTheta = sqrt((1.0 - xi.y) / (1.0 + (a * a - 1.0) * xi.y));
+    float sinTheta = sqrt(max(1.0 - cosTheta * cosTheta, 0.0));
+
+    vec3 hTangent = vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+    return normalize(kuTbnFromNormal(n) * hTangent);
+}
+
+vec3 kuSampleEnvironment(vec3 dir) {
+    return texture(uEnvironmentTex, directionToEquirectUv(dir)).rgb;
+}
+
+vec3 kuComputeDiffuseIrradiance(vec3 n) {
+    vec3 irradiance = vec3(0.0);
+    float weight = 0.0;
+
+    for (uint i = 0u; i < KU_IBL_DIFFUSE_SAMPLES; ++i) {
+        vec2 xi = kuHammersley(i, KU_IBL_DIFFUSE_SAMPLES);
+        float phi = 2.0 * KU_PI * xi.x;
+        float cosTheta = sqrt(1.0 - xi.y);
+        float sinTheta = sqrt(xi.y);
+
+        vec3 lTangent = vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+        vec3 l = normalize(kuTbnFromNormal(n) * lTangent);
+        float ndotl = max(dot(n, l), 0.0);
+        irradiance += kuSampleEnvironment(l) * ndotl;
+        weight += ndotl;
+    }
+
+    return irradiance / max(weight, 1e-4);
+}
+
+vec3 kuComputePrefilteredSpecular(vec3 n, vec3 v, float roughness) {
+    vec3 prefiltered = vec3(0.0);
+    float weight = 0.0;
+
+    for (uint i = 0u; i < KU_IBL_SPECULAR_SAMPLES; ++i) {
+        vec2 xi = kuHammersley(i, KU_IBL_SPECULAR_SAMPLES);
+        vec3 h = kuImportanceSampleGGX(xi, n, roughness);
+        vec3 l = normalize(2.0 * dot(v, h) * h - v);
+
+        float ndotl = max(dot(n, l), 0.0);
+        if (ndotl > 0.0) {
+            prefiltered += kuSampleEnvironment(l) * ndotl;
+            weight += ndotl;
+        }
+    }
+
+    return prefiltered / max(weight, 1e-4);
+}
+
+vec2 directionToEquirectUv(vec3 dir) {
+    vec3 d = normalize(dir);
+    float u = atan(d.z, d.x) / (2.0 * KU_PI) + 0.5;
+    float v = 0.5 - asin(clamp(d.y, -1.0, 1.0)) / KU_PI;
+    return vec2(fract(u), clamp(v, 0.0, 1.0));
+}
+
 void main() {
     vec2 uvBase = makeUv(pc.uvTransformParams0.y, pc.baseUvScaleOffset, pc.uvTransformParams0.x);
     vec2 uvNormal = makeUv(pc.uvTransformParams0.w, pc.normalUvScaleOffset, pc.uvTransformParams0.z);
@@ -81,6 +187,12 @@ void main() {
         normalTex.xy *= pc.materialFactors.x;
 
         mat3 tbn = cotangentFrame(meshNormal, inPositionMesh, uvNormal);
+        if (length(inTangent.xyz) > 0.0001) {
+            vec3 t = normalize(inTangent.xyz);
+            vec3 b = normalize(cross(meshNormal, t) * inTangent.w);
+            tbn = mat3(t, b, meshNormal);
+        }
+
         meshNormal = normalize(tbn * normalTex);
     }
 
@@ -88,9 +200,9 @@ void main() {
     vec3 n = normalize(normalMatrix * meshNormal);
 
     vec3 lightColor = vec3(pc.normalRow0.w, pc.normalRow1.w, pc.normalRow2.w);
-    vec3 lightDir = normalize(pc.lightDirIntensity.xyz);
-    float lightIntensity = max(pc.lightDirIntensity.w, 0.0);
-    float ndotl = max(dot(n, lightDir), 0.0);
+    vec3 lightDir = normalize(frameData.lightDirIntensity.xyz);
+    float lightIntensity = max(frameData.lightDirIntensity.w, 0.0);
+    vec3 viewDir = normalize(frameData.cameraPos.xyz - inPositionWorld);
 
     float ao = 1.0;
     float roughness = clamp(pc.materialFactors.z, 0.04, 1.0);
@@ -102,19 +214,49 @@ void main() {
         metallic = clamp(metallic * orm.b, 0.0, 1.0);
     }
 
-    float ambient = 0.10 * ao;
-    float diffuse = ndotl * lightIntensity;
+    vec3 litColor = kuComputeDirectLighting(
+        base.rgb,
+        n,
+        viewDir,
+        lightDir,
+        lightColor,
+        lightIntensity,
+        roughness,
+        metallic
+    );
 
-    vec3 viewDir = normalize(vec3(0.0, 0.0, 1.0));
-    vec3 halfVec = normalize(lightDir + viewDir);
-    float ndoth = max(dot(n, halfVec), 0.0);
-    float specPower = mix(256.0, 8.0, roughness);
-    float spec = pow(ndoth, specPower) * (1.0 - roughness * 0.5) * lightIntensity;
+    vec3 envColor = vec3(0.0);
+    float envStrength = max(pc.uvTransformParams1.w, 0.0);
+    if (envStrength > 0.0001) {
+        vec3 f0 = mix(vec3(0.04), base.rgb, metallic);
+        float ndotv = max(dot(n, viewDir), 0.0);
+        vec3 fresnel = kuFresnelSchlickRoughness(ndotv, f0, roughness);
+        vec3 kd = (vec3(1.0) - fresnel) * (1.0 - metallic);
 
-    vec3 f0 = mix(vec3(0.04), base.rgb, metallic);
-    vec3 diffuseColor = base.rgb * (1.0 - metallic) * diffuse * lightColor;
-    vec3 specColor = f0 * spec * lightColor;
+        vec3 irradiance = kuComputeDiffuseIrradiance(n);
+        vec3 diffuseIbl = irradiance * base.rgb;
 
-    vec3 litColor = base.rgb * ambient + diffuseColor + specColor;
-    outColor = vec4(litColor, base.a);
+        vec3 specularPrefilter = kuComputePrefilteredSpecular(n, viewDir, roughness);
+        vec2 envBrdf = kuEnvBRDFApprox(roughness, ndotv);
+        vec3 specularIbl = specularPrefilter * (fresnel * envBrdf.x + envBrdf.y);
+
+        envColor = (kd * diffuseIbl + specularIbl) * envStrength * ao;
+    }
+
+    vec3 outputColor = litColor + envColor + frameData.emissiveFactor.rgb;
+    if (frameData.alphaParams.x > 0.5 && frameData.alphaParams.x < 1.5) {
+        if (base.a < frameData.alphaParams.y) {
+            discard;
+        }
+    }
+
+    if (pc.uvTransformParams1.z > 0.5) {
+        outputColor = linearToSrgb(outputColor);
+    }
+
+    float outAlpha = base.a;
+    if (frameData.alphaParams.x < 0.5) {
+        outAlpha = 1.0;
+    }
+    outColor = vec4(outputColor, outAlpha);
 }

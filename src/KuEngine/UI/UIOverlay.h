@@ -24,6 +24,7 @@ public:
 
     void newFrame();
     void render(VkCommandBuffer cmd, VkImageView imageView, VkImageLayout imageLayout);
+    void drawStats(float fps, float deltaTime);
     void drawFPSPanel(float fps, float deltaTime);
     void onSwapChainRecreated(uint32_t imageCount);
 

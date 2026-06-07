@@ -46,6 +46,30 @@ bool readFloat4(const Json& value, std::array<float, 4>& outValue)
     return true;
 }
 
+void readTextureBinding(const Json& json, MaterialConfig::TextureBindingConfig& outBinding)
+{
+    if (!json.is_object()) {
+        return;
+    }
+
+    if (json.contains("source") && json["source"].is_string()) {
+        outBinding.source = json["source"].get<std::string>();
+        outBinding.hasSource = true;
+    }
+    if (json.contains("colorSpace") && json["colorSpace"].is_string()) {
+        outBinding.colorSpace = json["colorSpace"].get<std::string>();
+        outBinding.hasColorSpace = true;
+    }
+    if (json.contains("channelMapping") && json["channelMapping"].is_string()) {
+        outBinding.channelMapping = json["channelMapping"].get<std::string>();
+        outBinding.hasChannelMapping = true;
+    }
+    if (json.contains("uvSet") && json["uvSet"].is_number_integer()) {
+        outBinding.uvSet = json["uvSet"].get<int>();
+        outBinding.hasUvSet = true;
+    }
+}
+
 void setError(std::string* errorMessage, const std::string& message)
 {
     if (errorMessage != nullptr) {
@@ -183,8 +207,58 @@ bool loadMaterialConfigFromFile(
         Json materialJson;
         file >> materialJson;
 
+        if (materialJson.contains("id") && materialJson["id"].is_string()) {
+            outConfig.id = materialJson["id"].get<std::string>();
+        }
+        if (materialJson.contains("version") && materialJson["version"].is_string()) {
+            outConfig.version = materialJson["version"].get<std::string>();
+        }
+        if (materialJson.contains("pipeline") && materialJson["pipeline"].is_string()) {
+            outConfig.pipeline = materialJson["pipeline"].get<std::string>();
+        }
+        if (materialJson.contains("alphaMode") && materialJson["alphaMode"].is_string()) {
+            outConfig.alphaMode = materialJson["alphaMode"].get<std::string>();
+        }
+        if (materialJson.contains("doubleSided") && materialJson["doubleSided"].is_boolean()) {
+            outConfig.doubleSided = materialJson["doubleSided"].get<bool>();
+        }
+        if (materialJson.contains("alphaCutoff") && materialJson["alphaCutoff"].is_number()) {
+            outConfig.alphaCutoff = materialJson["alphaCutoff"].get<float>();
+            outConfig.hasAlphaCutoff = true;
+        }
+
         if (materialJson.contains("baseColorFactor") && readFloat4(materialJson["baseColorFactor"], outConfig.baseColorFactor)) {
             outConfig.hasBaseColorFactor = true;
+        }
+
+        if (materialJson.contains("metallicFactor") && materialJson["metallicFactor"].is_number()) {
+            outConfig.metallicFactor = materialJson["metallicFactor"].get<float>();
+            outConfig.hasMetallicFactor = true;
+        }
+        if (materialJson.contains("roughnessFactor") && materialJson["roughnessFactor"].is_number()) {
+            outConfig.roughnessFactor = materialJson["roughnessFactor"].get<float>();
+            outConfig.hasRoughnessFactor = true;
+        }
+        if (materialJson.contains("normalScale") && materialJson["normalScale"].is_number()) {
+            outConfig.normalScale = materialJson["normalScale"].get<float>();
+            outConfig.hasNormalScale = true;
+        }
+        if (materialJson.contains("occlusionStrength") && materialJson["occlusionStrength"].is_number()) {
+            outConfig.occlusionStrength = materialJson["occlusionStrength"].get<float>();
+            outConfig.hasOcclusionStrength = true;
+        }
+
+        if (materialJson.contains("textureBindings") && materialJson["textureBindings"].is_object()) {
+            const Json& bindings = materialJson["textureBindings"];
+            if (bindings.contains("baseColor")) {
+                readTextureBinding(bindings["baseColor"], outConfig.baseColorBinding);
+            }
+            if (bindings.contains("normal")) {
+                readTextureBinding(bindings["normal"], outConfig.normalBinding);
+            }
+            if (bindings.contains("orm")) {
+                readTextureBinding(bindings["orm"], outConfig.ormBinding);
+            }
         }
 
         return true;

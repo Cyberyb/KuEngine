@@ -422,91 +422,104 @@ void RenderPipeline::drawUI()
     ImGui::SetNextWindowSize(ImVec2(460.0f, 0.0f), ImGuiCond_FirstUseEver);
 
     if (ImGui::Begin("RenderGraph Debug")) {
-        ImGui::Text(
-            "Compile: passes=%d resources=%d deps=%d barriers=%d",
-            static_cast<int>(m_compileDebug.passCount),
-            static_cast<int>(m_compileDebug.resourceCount),
-            static_cast<int>(m_compileDebug.dependencyCount),
-            static_cast<int>(m_compileDebug.barrierCount));
+        drawUIInline();
+    }
+    ImGui::End();
+}
 
-        ImGui::Text(
-            "Order: %s",
-            m_compileDebug.orderSummary.empty() ? "none" : m_compileDebug.orderSummary.c_str());
+void RenderPipeline::drawUIInline()
+{
+    ImGui::Text(
+        "Compile: passes=%d resources=%d deps=%d barriers=%d",
+        static_cast<int>(m_compileDebug.passCount),
+        static_cast<int>(m_compileDebug.resourceCount),
+        static_cast<int>(m_compileDebug.dependencyCount),
+        static_cast<int>(m_compileDebug.barrierCount));
 
-        if (ImGui::CollapsingHeader("Dependencies", ImGuiTreeNodeFlags_DefaultOpen)) {
-            const auto& passes = m_renderGraph.passes();
-            for (const PassDependencyEdge& dependency : m_renderGraph.dependencies()) {
-                if (dependency.fromPass >= passes.size() || dependency.toPass >= passes.size()) {
-                    continue;
-                }
+    ImGui::Text(
+        "Order: %s",
+        m_compileDebug.orderSummary.empty() ? "none" : m_compileDebug.orderSummary.c_str());
 
-                ImGui::BulletText(
-                    "%s -> %s (%s)",
-                    passes[dependency.fromPass].name.c_str(),
-                    passes[dependency.toPass].name.c_str(),
-                    dependency.explicitDependency ? "explicit" : "resource");
+    if (ImGui::CollapsingHeader("Dependencies", ImGuiTreeNodeFlags_DefaultOpen)) {
+        const auto& passes = m_renderGraph.passes();
+        for (const PassDependencyEdge& dependency : m_renderGraph.dependencies()) {
+            if (dependency.fromPass >= passes.size() || dependency.toPass >= passes.size()) {
+                continue;
             }
+
+            ImGui::BulletText(
+                "%s -> %s (%s)",
+                passes[dependency.fromPass].name.c_str(),
+                passes[dependency.toPass].name.c_str(),
+                dependency.explicitDependency ? "explicit" : "resource");
         }
+    }
 
-        if (ImGui::CollapsingHeader("Barrier Plan", ImGuiTreeNodeFlags_DefaultOpen)) {
-            const auto& passes = m_renderGraph.passes();
-            const auto& resources = m_renderGraph.resources();
-            for (const BarrierPlanItem& barrier : m_renderGraph.barrierPlan()) {
-                if (barrier.fromPass >= passes.size() || barrier.toPass >= passes.size()) {
-                    continue;
-                }
-
-                const char* resourceName = "<invalid-resource>";
-                if (barrier.resource.id < resources.size()) {
-                    resourceName = resources[barrier.resource.id].name.c_str();
-                }
-
-                ImGui::BulletText(
-                    "%s -> %s | %s (%s)",
-                    passes[barrier.fromPass].name.c_str(),
-                    passes[barrier.toPass].name.c_str(),
-                    resourceName,
-                    toString(barrier.hazard));
+    if (ImGui::CollapsingHeader("Barrier Plan", ImGuiTreeNodeFlags_DefaultOpen)) {
+        const auto& passes = m_renderGraph.passes();
+        const auto& resources = m_renderGraph.resources();
+        for (const BarrierPlanItem& barrier : m_renderGraph.barrierPlan()) {
+            if (barrier.fromPass >= passes.size() || barrier.toPass >= passes.size()) {
+                continue;
             }
+
+            const char* resourceName = "<invalid-resource>";
+            if (barrier.resource.id < resources.size()) {
+                resourceName = resources[barrier.resource.id].name.c_str();
+            }
+
+            ImGui::BulletText(
+                "%s -> %s | %s (%s)",
+                passes[barrier.fromPass].name.c_str(),
+                passes[barrier.toPass].name.c_str(),
+                resourceName,
+                toString(barrier.hazard));
         }
+    }
 
-        if (ImGui::CollapsingHeader("Last Execute", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Text(
-                "Frame=%d planned=%d applied=%d skipped-unbound=%d skipped-no-access=%d skipped-noop=%d skipped-in-rendering=%d",
-                static_cast<int>(m_executeDebug.frameIndex),
-                static_cast<int>(m_executeDebug.plannedBarriers),
-                static_cast<int>(m_executeDebug.appliedBarriers),
-                static_cast<int>(m_executeDebug.skippedUnbound),
-                static_cast<int>(m_executeDebug.skippedNoAccess),
-                static_cast<int>(m_executeDebug.skippedNoop),
-                static_cast<int>(m_executeDebug.skippedInRendering));
+    if (ImGui::CollapsingHeader("Last Execute", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Text(
+            "Frame=%d planned=%d applied=%d skipped-unbound=%d skipped-no-access=%d skipped-noop=%d skipped-in-rendering=%d",
+            static_cast<int>(m_executeDebug.frameIndex),
+            static_cast<int>(m_executeDebug.plannedBarriers),
+            static_cast<int>(m_executeDebug.appliedBarriers),
+            static_cast<int>(m_executeDebug.skippedUnbound),
+            static_cast<int>(m_executeDebug.skippedNoAccess),
+            static_cast<int>(m_executeDebug.skippedNoop),
+            static_cast<int>(m_executeDebug.skippedInRendering));
 
-            for (const BarrierDebugEvent& event : m_barrierDebugEvents) {
-                if (event.applied) {
-                    ImGui::BulletText(
-                        "%s -> %s | %s (%s) | %s -> %s",
-                        event.fromPass.c_str(),
-                        event.toPass.c_str(),
-                        event.resourceName.c_str(),
-                        toString(event.hazard),
-                        toString(event.oldLayout),
-                        toString(event.newLayout));
-                } else {
-                    ImGui::BulletText(
-                        "%s -> %s | %s (%s) | skipped: %s",
-                        event.fromPass.c_str(),
-                        event.toPass.c_str(),
-                        event.resourceName.c_str(),
-                        toString(event.hazard),
-                        event.reason.c_str());
-                }
+        for (const BarrierDebugEvent& event : m_barrierDebugEvents) {
+            if (event.applied) {
+                ImGui::BulletText(
+                    "%s -> %s | %s (%s) | %s -> %s",
+                    event.fromPass.c_str(),
+                    event.toPass.c_str(),
+                    event.resourceName.c_str(),
+                    toString(event.hazard),
+                    toString(event.oldLayout),
+                    toString(event.newLayout));
+            } else {
+                ImGui::BulletText(
+                    "%s -> %s | %s (%s) | skipped: %s",
+                    event.fromPass.c_str(),
+                    event.toPass.c_str(),
+                    event.resourceName.c_str(),
+                    toString(event.hazard),
+                    event.reason.c_str());
             }
         }
     }
-    ImGui::End();
 
     for (auto& pass : m_passes) {
-        if (pass->enabled()) {
+        if (!pass->enabled()) {
+            continue;
+        }
+
+        if (pass->supportsInlineUI()) {
+            if (ImGui::CollapsingHeader(pass->name().data(), ImGuiTreeNodeFlags_DefaultOpen)) {
+                pass->drawUIInline();
+            }
+        } else {
             pass->drawUI();
         }
     }

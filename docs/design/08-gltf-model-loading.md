@@ -202,8 +202,9 @@
 - `MclarenPass` 已改为通过 `AssetConfig` 读取：
   - 相机参数：`position/target/up/fovYDeg/near/far`
   - 光照参数：`direction/color/intensity`
-  - 节点模型与材质引用（当前使用首个节点）
+  - 节点模型与材质引用（多节点合并加载，材质配置取首个）
 - shader 光照参数不再完全硬编码，已通过 push constants 由运行时参数驱动。
+- ModelLoader 在缺失 POSITION/NORMAL/UV 或遇到非三角形 primitive 时输出诊断日志。
 
 ### 10.2 回归覆盖
 

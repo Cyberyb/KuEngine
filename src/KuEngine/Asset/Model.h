@@ -15,6 +15,7 @@ struct MeshVertex {
     glm::vec3 normal{0.0f, 1.0f, 0.0f};
     glm::vec2 uv0{0.0f, 0.0f};
     glm::vec2 uv1{0.0f, 0.0f};
+    glm::vec4 tangent{0.0f, 0.0f, 0.0f, 1.0f};
 };
 
 struct TextureData {
@@ -37,6 +38,7 @@ struct MaterialData {
     };
 
     glm::vec4 baseColorFactor{1.0f, 1.0f, 1.0f, 1.0f};
+    glm::vec3 emissiveFactor{0.0f, 0.0f, 0.0f};
     float metallicFactor = 1.0f;
     float roughnessFactor = 1.0f;
     float normalScale = 1.0f;

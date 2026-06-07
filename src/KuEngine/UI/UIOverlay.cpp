@@ -160,9 +160,18 @@ void UIOverlay::drawFPSPanel(float fps, float deltaTime)
         ImGuiWindowFlags_NoNav;
 
     ImGui::Begin("KuEngine Stats", nullptr, overlayFlags);
+    drawStats(fps, deltaTime);
+    ImGui::End();
+}
+
+void UIOverlay::drawStats(float fps, float deltaTime)
+{
+    if (!m_initialized) {
+        return;
+    }
+
     ImGui::Text("FPS: %.1f", fps);
     ImGui::Text("Frame: %.2f ms", deltaTime * 1000.0f);
-    ImGui::End();
 }
 
 void UIOverlay::onSwapChainRecreated(uint32_t imageCount)

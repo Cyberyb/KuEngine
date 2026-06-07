@@ -36,6 +36,7 @@ public:
     void compile(RHIDevice& device);
     void execute(CommandList& cmd, const FrameData& frame);
     void drawUI();
+    void drawUIInline();
     void onResize(uint32_t width, uint32_t height);
     void setExecuteInsideRendering(bool insideRendering) { m_executeInsideRendering = insideRendering; }
     void bindExternalImage(

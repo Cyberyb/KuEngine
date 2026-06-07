@@ -7,7 +7,13 @@ set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%..\..") do set "ROOT_DIR=%%~fI"
 set "BUILD_DIR=%ROOT_DIR%\build"
 set "CONFIG=Debug"
-if not "%~1"=="" set "CONFIG=%~1"
+set "RUN_MODE=foreground"
+if /I "%~1"=="bg" (
+    set "RUN_MODE=background"
+) else if not "%~1"=="" (
+    set "CONFIG=%~1"
+)
+if /I "%~2"=="bg" set "RUN_MODE=background"
 set "RUN_DIR=%BUILD_DIR%\bin\%CONFIG%"
 set "SHADER_DIR=%RUN_DIR%\shaders"
 set "TOOLCHAIN_FILE=%ROOT_DIR%\vcpkg\scripts\buildsystems\vcpkg.cmake"
@@ -43,8 +49,20 @@ if exist "%SHADER_DIR%\compile_shaders.bat" (
 
 echo [4/4] Run MclarenApp...
 pushd "%RUN_DIR%"
-start "MclarenApp" "MclarenApp.exe"
+if /I "%RUN_MODE%"=="background" (
+    start "MclarenApp" "MclarenApp.exe"
+    set "APP_EXIT=0"
+) else (
+    echo Running in foreground mode. Window close will return exit code.
+    MclarenApp.exe
+    set "APP_EXIT=%ERRORLEVEL%"
+)
 popd
+
+if not "%APP_EXIT%"=="0" (
+    echo MclarenApp exited with code %APP_EXIT%.
+    exit /b %APP_EXIT%
+)
 
 echo Done.
 exit /b 0

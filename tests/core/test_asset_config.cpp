@@ -134,6 +134,66 @@ TEST(AssetConfigTest, MaterialConfigParsesBaseColorFactor)
     EXPECT_FLOAT_EQ(materialConfig.baseColorFactor[3], 1.0f);
 }
 
+TEST(AssetConfigTest, MaterialConfigParsesExtendedFields)
+{
+        TempDir tempDir;
+        const std::filesystem::path materialPath = tempDir.path / "resources/materials/pbr/extended.material.json";
+
+        writeText(
+                materialPath,
+                R"({
+    "id": "test-material",
+    "version": "1.2.3",
+    "pipeline": "pbr-metallic-roughness",
+    "doubleSided": true,
+    "alphaMode": "MASK",
+    "alphaCutoff": 0.42,
+    "baseColorFactor": [0.1, 0.2, 0.3, 0.4],
+    "metallicFactor": 0.8,
+    "roughnessFactor": 0.6,
+    "normalScale": 0.5,
+    "occlusionStrength": 0.7,
+    "textureBindings": {
+        "baseColor": { "source": "gltf:baseColorTexture", "colorSpace": "sRGB", "uvSet": 1 },
+        "normal": { "source": "gltf:normalTexture", "colorSpace": "Linear", "uvSet": 0 },
+        "orm": { "source": "gltf:metallicRoughnessTexture", "channelMapping": "R=occlusion,G=roughness,B=metallic", "colorSpace": "Linear", "uvSet": 0 }
+    }
+})")
+        ;
+
+        ku::asset::MaterialConfig materialConfig{};
+        std::string error;
+        ASSERT_TRUE(ku::asset::loadMaterialConfigFromFile(materialPath, materialConfig, &error)) << error;
+
+        EXPECT_EQ(materialConfig.id, "test-material");
+        EXPECT_EQ(materialConfig.version, "1.2.3");
+        EXPECT_EQ(materialConfig.pipeline, "pbr-metallic-roughness");
+        EXPECT_TRUE(materialConfig.doubleSided);
+        EXPECT_EQ(materialConfig.alphaMode, "MASK");
+        EXPECT_TRUE(materialConfig.hasAlphaCutoff);
+        EXPECT_FLOAT_EQ(materialConfig.alphaCutoff, 0.42f);
+
+        EXPECT_TRUE(materialConfig.hasBaseColorFactor);
+        EXPECT_FLOAT_EQ(materialConfig.baseColorFactor[0], 0.1f);
+        EXPECT_FLOAT_EQ(materialConfig.metallicFactor, 0.8f);
+        EXPECT_FLOAT_EQ(materialConfig.roughnessFactor, 0.6f);
+        EXPECT_FLOAT_EQ(materialConfig.normalScale, 0.5f);
+        EXPECT_FLOAT_EQ(materialConfig.occlusionStrength, 0.7f);
+
+        EXPECT_TRUE(materialConfig.baseColorBinding.hasSource);
+        EXPECT_EQ(materialConfig.baseColorBinding.source, "gltf:baseColorTexture");
+        EXPECT_TRUE(materialConfig.baseColorBinding.hasColorSpace);
+        EXPECT_EQ(materialConfig.baseColorBinding.colorSpace, "sRGB");
+        EXPECT_TRUE(materialConfig.baseColorBinding.hasUvSet);
+        EXPECT_EQ(materialConfig.baseColorBinding.uvSet, 1);
+
+        EXPECT_TRUE(materialConfig.normalBinding.hasSource);
+        EXPECT_EQ(materialConfig.normalBinding.source, "gltf:normalTexture");
+
+        EXPECT_TRUE(materialConfig.ormBinding.hasChannelMapping);
+        EXPECT_EQ(materialConfig.ormBinding.channelMapping, "R=occlusion,G=roughness,B=metallic");
+}
+
 TEST(AssetConfigTest, MaterialConfigKeepsDefaultWhenFieldMissing)
 {
     TempDir tempDir;
@@ -150,6 +210,17 @@ TEST(AssetConfigTest, MaterialConfigKeepsDefaultWhenFieldMissing)
     EXPECT_FLOAT_EQ(materialConfig.baseColorFactor[1], 1.0f);
     EXPECT_FLOAT_EQ(materialConfig.baseColorFactor[2], 1.0f);
     EXPECT_FLOAT_EQ(materialConfig.baseColorFactor[3], 1.0f);
+    EXPECT_FALSE(materialConfig.hasMetallicFactor);
+    EXPECT_FLOAT_EQ(materialConfig.metallicFactor, 1.0f);
+    EXPECT_FALSE(materialConfig.hasRoughnessFactor);
+    EXPECT_FLOAT_EQ(materialConfig.roughnessFactor, 1.0f);
+    EXPECT_FALSE(materialConfig.hasNormalScale);
+    EXPECT_FLOAT_EQ(materialConfig.normalScale, 1.0f);
+    EXPECT_FALSE(materialConfig.hasOcclusionStrength);
+    EXPECT_FLOAT_EQ(materialConfig.occlusionStrength, 1.0f);
+    EXPECT_FALSE(materialConfig.baseColorBinding.hasSource);
+    EXPECT_FALSE(materialConfig.normalBinding.hasSource);
+    EXPECT_FALSE(materialConfig.ormBinding.hasSource);
 }
 
 TEST(AssetConfigTest, MissingConfigFileReturnsFalse)

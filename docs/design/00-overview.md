@@ -135,7 +135,8 @@ KuEngine/
 │   │   ├── 05-ui-layer.md          ← UI 层架构与自定义开发
 │   │   ├── 06-v0.2-execution-plan.md    ← v0.2 执行计划（阶段记录）
 │   │   ├── 07-resource-asset-spec.md    ← v0.3 资产规范（models/textures/materials）
-│   │   └── 08-gltf-model-loading.md     ← glTF/glb 读取与渲染接入说明
+│   │   ├── 08-gltf-model-loading.md     ← glTF/glb 读取与渲染接入说明
+│   │   └── 09-shader-source-debug-mode.md ← Shader 源码调试编译模式（RenderDoc）
 │   ├── logs/
 │   │   └── 2026-04-12-worklog.md   ← 工作日志示例
 │   └── bugs/
@@ -229,20 +230,20 @@ Examples:
 
 ---
 
-## 10. 版本进度评估（2026-04）
+## 10. 版本进度评估（2026-05）
 
 ### 10.1 当前阶段判断
 
-- 结论：当前处于 **v0.2 已完成、v0.3 开发中** 阶段。
-- 依据：RenderGraph Alpha 与三 Pass 验证链路已完成；v0.3 的模型/材质输入、scene/material 配置读取与相机/基础光照参数已打通最小闭环。
+- 结论：当前处于 **v0.2 已完成、v0.3 开发中（已完成主要输入闭环）** 阶段。
+- 依据：RenderGraph Alpha 与三 Pass 验证链路完成；v0.3 已具备 glTF 材质/贴图、scene/material JSON、相机/光照驱动、材质绑定选择、TBN 法线与 alpha/emissive 的可运行闭环。
 
 ### 10.2 产品视角评分（5 分制）
 
 | 维度 | 评分 | 说明 |
 |------|------|------|
 | 可运行性 | 4.5 | 基础示例稳定，主链路完整 |
-| 可扩展性 | 3.5 | 已有 Pass 生命周期，但缺 RenderGraph 资源编排 |
-| 算法验证效率 | 2.5 | 目前主要是手工验证，缺统一实验流程 |
+| 可扩展性 | 3.5 | 已有 Pass 生命周期，但 RenderGraph 资源编排仍在扩展 |
+| 算法验证效率 | 3.0 | 具备最小输入闭环，但缺统一实验流程 |
 | 可观测性 | 2.0 | 仅有基础 FPS，缺 GPU 计时与结构化实验指标 |
 | 工程一致性 | 3.0 | 文档与实现存在少量漂移，需要持续对齐 |
 

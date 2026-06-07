@@ -1,5 +1,7 @@
 #include "Model.h"
 
+#include <KuEngine/Core/Log.h>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -268,6 +270,31 @@ glm::vec2 readVec2(
     return value;
 }
 
+glm::vec4 readVec4(
+    const tinygltf::Model& model,
+    const tinygltf::Accessor& accessor,
+    size_t index)
+{
+    if (accessor.type != TINYGLTF_TYPE_VEC4) {
+        throw std::runtime_error("Accessor is not VEC4");
+    }
+
+    const tinygltf::BufferView& view = model.bufferViews[static_cast<size_t>(accessor.bufferView)];
+    const size_t defaultStride = componentSize(accessor.componentType) * numComponents(accessor.type);
+    const size_t stride = accessor.ByteStride(view) > 0 ? static_cast<size_t>(accessor.ByteStride(view)) : defaultStride;
+    const size_t componentBytes = componentSize(accessor.componentType);
+
+    const unsigned char* dataBegin = accessorDataBegin(model, accessor);
+    const unsigned char* ptr = dataBegin + stride * index;
+
+    glm::vec4 value{};
+    value.x = readComponentAsFloat(ptr + componentBytes * 0, accessor.componentType, accessor.normalized);
+    value.y = readComponentAsFloat(ptr + componentBytes * 1, accessor.componentType, accessor.normalized);
+    value.z = readComponentAsFloat(ptr + componentBytes * 2, accessor.componentType, accessor.normalized);
+    value.w = readComponentAsFloat(ptr + componentBytes * 3, accessor.componentType, accessor.normalized);
+    return value;
+}
+
 std::vector<uint32_t> readIndices(const tinygltf::Model& model, const tinygltf::Accessor& accessor)
 {
     if (accessor.type != TINYGLTF_TYPE_SCALAR) {
@@ -346,11 +373,13 @@ void appendPrimitive(
     MeshData& outMesh)
 {
     if (primitive.mode != -1 && primitive.mode != TINYGLTF_MODE_TRIANGLES) {
+        KU_WARN("ModelLoader: skipping non-triangle primitive mode {}", primitive.mode);
         return;
     }
 
     const auto posIt = primitive.attributes.find("POSITION");
     if (posIt == primitive.attributes.end()) {
+        KU_WARN("ModelLoader: primitive missing POSITION attribute; skipped");
         return;
     }
 
@@ -358,6 +387,7 @@ void appendPrimitive(
     const tinygltf::Accessor* normalAccessor = nullptr;
     const tinygltf::Accessor* uv0Accessor = nullptr;
     const tinygltf::Accessor* uv1Accessor = nullptr;
+    const tinygltf::Accessor* tangentAccessor = nullptr;
 
     auto findTexCoordAccessor = [&](int requestedSet) -> const tinygltf::Accessor* {
         const auto findBySet = [&](int setIndex) -> const tinygltf::Accessor* {
@@ -395,10 +425,17 @@ void appendPrimitive(
     if (normalIt != primitive.attributes.end()) {
         normalAccessor = &requireAccessor(model, normalIt->second);
     }
+    const auto tangentIt = primitive.attributes.find("TANGENT");
+    if (tangentIt != primitive.attributes.end()) {
+        tangentAccessor = &requireAccessor(model, tangentIt->second);
+    }
     uv0Accessor = findTexCoordAccessor(0);
     uv1Accessor = findTexCoordAccessor(1);
     if (uv1Accessor == nullptr) {
         uv1Accessor = uv0Accessor;
+    }
+    if (uv0Accessor == nullptr && uv1Accessor == nullptr) {
+        KU_WARN("ModelLoader: primitive missing TEXCOORD_0/1; defaulting UVs to (0,0)");
     }
 
     const glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(worldMatrix)));
@@ -423,6 +460,16 @@ void appendPrimitive(
             }
         } else {
             vertex.normal = glm::vec3(0.0f, 0.0f, 0.0f);
+        }
+
+        if (tangentAccessor != nullptr && i < tangentAccessor->count) {
+            glm::vec4 localTangent = readVec4(model, *tangentAccessor, i);
+            const glm::vec3 worldTangent = normalMatrix * glm::vec3(localTangent.x, localTangent.y, localTangent.z);
+            if (glm::dot(worldTangent, worldTangent) > 1e-12f) {
+                vertex.tangent = glm::vec4(glm::normalize(worldTangent), localTangent.w);
+            } else {
+                vertex.tangent = glm::vec4(0.0f, 0.0f, 0.0f, localTangent.w);
+            }
         }
 
         if (uv0Accessor != nullptr && i < uv0Accessor->count) {
@@ -469,6 +516,7 @@ void appendPrimitive(
 
     if (normalAccessor == nullptr) {
         buildNormalsForRange(outMesh, indexBegin, indexEnd);
+        KU_WARN("ModelLoader: primitive missing NORMAL; rebuilt normals");
     }
 }
 
@@ -488,6 +536,13 @@ MaterialData extractMaterialData(const tinygltf::Model& model, int materialIndex
             static_cast<float>(factor[1]),
             static_cast<float>(factor[2]),
             static_cast<float>(factor[3]));
+    }
+
+    if (material.emissiveFactor.size() == 3) {
+        out.emissiveFactor = glm::vec3(
+            static_cast<float>(material.emissiveFactor[0]),
+            static_cast<float>(material.emissiveFactor[1]),
+            static_cast<float>(material.emissiveFactor[2]));
     }
 
     out.metallicFactor = static_cast<float>(material.pbrMetallicRoughness.metallicFactor);
@@ -625,7 +680,7 @@ MeshData ModelLoader::loadFromFile(const std::filesystem::path& path)
     }
 
     if (!warnings.empty()) {
-        // Non-fatal; ignored by loader caller.
+        KU_WARN("ModelLoader: {}", warnings);
     }
 
     if (!ok) {

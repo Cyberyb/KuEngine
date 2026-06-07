@@ -31,6 +31,8 @@ public:
     virtual void setup(RenderGraphBuilder& builder) {(void)builder; setup(); }
     virtual void execute(CommandList& cmd, const FrameData& frame) {(void)cmd; (void)frame; }
     virtual void drawUI() {}
+    virtual bool supportsInlineUI() const { return false; }
+    virtual void drawUIInline() { drawUI(); }
     virtual void onResize(uint32_t width, uint32_t height) {(void)width; (void)height; }
 
 protected:

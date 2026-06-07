@@ -4,9 +4,11 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <glm/vec3.hpp>
 
+#include <KuEngine/Asset/AssetConfig.h>
 #include <KuEngine/Asset/Model.h>
 #include <KuEngine/RHI/CommandList.h>
 #include <KuEngine/RHI/RHIBuffer.h>
@@ -29,6 +31,8 @@ public:
     void setup(RenderGraphBuilder& builder) override;
     void execute(CommandList& cmd, const FrameData& frame) override;
     void drawUI() override;
+    bool supportsInlineUI() const override { return true; }
+    void drawUIInline() override;
     void onResize(uint32_t width, uint32_t height) override;
 
     void addRotation(float deltaYaw, float deltaPitch);
@@ -46,11 +50,24 @@ private:
         float ormUvScaleOffset[4];
         float uvTransformParams0[4];
         float uvTransformParams1[4];
+    };
+
+    struct alignas(16) FrameUniforms {
+        float model[16];
+        float cameraPos[4];
+        float invViewProj[16];
         float lightDirIntensity[4];
+        float emissiveFactor[4];
+        float alphaParams[4];
+    };
+
+    struct alignas(16) SkyboxPushConstants {
+        float params[4];
     };
 
     struct MaterialBinding {
         std::array<float, 4> baseColorFactor{1.0f, 1.0f, 1.0f, 1.0f};
+        std::array<float, 3> emissiveFactor{0.0f, 0.0f, 0.0f};
         float metallicFactor = 1.0f;
         float roughnessFactor = 1.0f;
         float normalScale = 1.0f;
@@ -74,6 +91,7 @@ private:
 
     std::filesystem::path resolveScenePath() const;
     std::filesystem::path resolveModelPath() const;
+    std::filesystem::path resolveEnvironmentPath() const;
     void loadSceneAndMaterialConfig();
     void loadMaterialConfig(const std::filesystem::path& materialPath);
     bool createAndUploadTexture(
@@ -86,32 +104,51 @@ private:
         std::array<uint8_t, 4> rgba,
         VkFormat format,
         std::unique_ptr<RHITexture>& outTexture);
+    bool createAndUploadHdrTexture(
+        RHIDevice& device,
+        const std::filesystem::path& hdrPath,
+        std::unique_ptr<RHITexture>& outTexture);
     void destroyDescriptorResources();
 
     std::unique_ptr<RHIShader> m_vertShader;
     std::unique_ptr<RHIShader> m_fragShader;
+    std::unique_ptr<RHIShader> m_skyboxVertShader;
+    std::unique_ptr<RHIShader> m_skyboxFragShader;
     std::unique_ptr<RHIPipeline> m_pipeline;
+    std::unique_ptr<RHIPipeline> m_skyboxPipeline;
     std::vector<MaterialBinding> m_materialBindings;
     std::vector<std::unique_ptr<RHITexture>> m_materialTextures;
     std::vector<asset::SubMeshData> m_subMeshes;
     std::unique_ptr<RHITexture> m_fallbackWhiteTexture;
     std::unique_ptr<RHITexture> m_fallbackNormalTexture;
     std::unique_ptr<RHITexture> m_fallbackOrmTexture;
+    std::unique_ptr<RHITexture> m_environmentTexture;
 
     std::unique_ptr<RHIBuffer> m_vertexBuffer;
     std::unique_ptr<RHIBuffer> m_indexBuffer;
+    std::unique_ptr<RHIBuffer> m_frameUniformBuffer;
 
     VkDescriptorSetLayout m_descriptorSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool m_descriptorPool = VK_NULL_HANDLE;
     VkSampler m_sampler = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_frameDescriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool m_frameDescriptorPool = VK_NULL_HANDLE;
+    VkDescriptorSet m_frameDescriptorSet = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_environmentDescriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool m_environmentDescriptorPool = VK_NULL_HANDLE;
+    VkDescriptorSet m_environmentDescriptorSet = VK_NULL_HANDLE;
     VkDevice m_deviceHandle = VK_NULL_HANDLE;
 
     std::filesystem::path m_modelPathOverride;
+    std::vector<std::filesystem::path> m_sceneModelPaths;
+    std::vector<std::filesystem::path> m_sceneMaterialPaths;
 
     std::string m_scenePathString;
     std::string m_materialPathString;
     std::string m_modelPathString;
+    std::string m_environmentPathString;
     std::string m_loadError;
+    asset::MaterialConfig m_materialConfig{};
 
     bool m_sceneConfigUsed = false;
     bool m_materialConfigUsed = false;
@@ -140,7 +177,12 @@ private:
     bool m_enableTextureSampling = true;
     bool m_enableNormalMap = true;
     bool m_enableOrmMap = true;
+    bool m_enableEnvironmentMap = true;
+    bool m_enableSkybox = true;
     bool m_flipUvY = true;
+    bool m_enableOutputGamma = true;
+    float m_environmentIntensity = 0.7f;
+    float m_environmentExposure = 1.0f;
 
     std::array<float, 4> m_globalBaseColorFactor = {1.0f, 1.0f, 1.0f, 1.0f};
 };

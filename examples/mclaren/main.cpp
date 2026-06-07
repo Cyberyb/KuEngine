@@ -1,4 +1,5 @@
 #include <chrono>
+#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 #include <span>
@@ -16,6 +17,7 @@
 #include <KuEngine/UI/UIOverlay.h>
 
 #include <GLFW/glfw3.h>
+#include <imgui.h>
 
 #include "MclarenPass.h"
 
@@ -132,6 +134,13 @@ int main(int argc, char* argv[])
                 auto lastTime = Clock::now();
                 float totalTime = 0.0f;
 
+                float controlPanelWidth = 460.0f;
+                bool controlPanelCollapsed = false;
+                constexpr float kControlPanelCollapsedWidth = 46.0f;
+                constexpr float kControlPanelMinWidth = 300.0f;
+                constexpr float kControlPanelMaxWidth = 760.0f;
+                constexpr float kControlPanelSplitterWidth = 8.0f;
+
                 while (!window.shouldClose()) {
                     window.processEvents();
 
@@ -146,7 +155,11 @@ int main(int argc, char* argv[])
                     double mouseY = 0.0;
                     glfwGetCursorPos(glfwWindow, &mouseX, &mouseY);
 
-                    if (leftDown) {
+                    const float activePanelWidth =
+                        controlPanelCollapsed ? kControlPanelCollapsedWidth : controlPanelWidth;
+                    const bool mouseOnControlPanel = mouseX <= static_cast<double>(activePanelWidth);
+
+                    if (leftDown && !mouseOnControlPanel) {
                         if (!dragging) {
                             dragging = true;
                             lastMouseX = mouseX;
@@ -165,8 +178,76 @@ int main(int argc, char* argv[])
                     uiOverlay.newFrame();
 
                     const float fps = deltaTime > 0.0f ? (1.0f / deltaTime) : 0.0f;
-                    uiOverlay.drawFPSPanel(fps, deltaTime);
-                    renderPipeline.drawUI();
+
+                    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+                    ImGui::SetNextWindowSize(
+                        ImVec2(
+                            controlPanelCollapsed ? kControlPanelCollapsedWidth : controlPanelWidth,
+                            ImGui::GetIO().DisplaySize.y),
+                        ImGuiCond_Always);
+                    const ImGuiWindowFlags leftPanelFlags =
+                        ImGuiWindowFlags_NoMove |
+                        ImGuiWindowFlags_NoResize |
+                        ImGuiWindowFlags_NoCollapse |
+                        ImGuiWindowFlags_NoSavedSettings;
+
+                    if (ImGui::Begin("KuEngine Control Panel", nullptr, leftPanelFlags)) {
+                        if (ImGui::Button(controlPanelCollapsed ? ">>" : "<<")) {
+                            controlPanelCollapsed = !controlPanelCollapsed;
+                        }
+
+                        if (!controlPanelCollapsed) {
+                            ImGui::SameLine();
+                            ImGui::TextUnformatted("Docked Controls");
+
+                            if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen)) {
+                                uiOverlay.drawStats(fps, deltaTime);
+                            }
+
+                            ImGui::Separator();
+                            renderPipeline.drawUIInline();
+                        } else {
+                            ImGui::TextDisabled("Expand panel");
+                        }
+
+                        if (!controlPanelCollapsed) {
+                            ImGuiIO& io = ImGui::GetIO();
+                            ImVec2 panelPos = ImGui::GetWindowPos();
+                            ImVec2 panelSize = ImGui::GetWindowSize();
+                            ImVec2 splitterPos(
+                                panelPos.x + panelSize.x - (kControlPanelSplitterWidth * 0.5f),
+                                panelPos.y);
+
+                            ImGui::SetCursorScreenPos(splitterPos);
+                            ImGui::InvisibleButton(
+                                "##ControlPanelSplitter",
+                                ImVec2(kControlPanelSplitterWidth, panelSize.y));
+
+                            const bool splitterHovered = ImGui::IsItemHovered();
+                            const bool splitterActive = ImGui::IsItemActive();
+                            if (splitterHovered || splitterActive) {
+                                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+                            }
+                            if (splitterActive) {
+                                controlPanelWidth = std::clamp(
+                                    controlPanelWidth + io.MouseDelta.x,
+                                    kControlPanelMinWidth,
+                                    kControlPanelMaxWidth);
+                            }
+
+                            ImDrawList* drawList = ImGui::GetWindowDrawList();
+                            const ImU32 splitterColor = ImGui::GetColorU32(
+                                splitterActive
+                                    ? ImGuiCol_SeparatorActive
+                                    : (splitterHovered ? ImGuiCol_SeparatorHovered : ImGuiCol_Border));
+                            drawList->AddLine(
+                                ImVec2(panelPos.x + panelSize.x - 1.0f, panelPos.y),
+                                ImVec2(panelPos.x + panelSize.x - 1.0f, panelPos.y + panelSize.y),
+                                splitterColor,
+                                1.5f);
+                        }
+                    }
+                    ImGui::End();
 
                     const uint32_t frameIndex = syncManager.currentFrame();
                     syncManager.waitForFrame(frameIndex);
