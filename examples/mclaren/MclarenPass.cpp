@@ -531,8 +531,8 @@ void MclarenPass::initialize(RHIDevice& device)
     attrTangent.format = VK_FORMAT_R32G32B32A32_SFLOAT;
     attrTangent.offset = static_cast<uint32_t>(offsetof(asset::MeshVertex, tangent));
 
-    // 每个材质固定绑定 3 张采样纹理：BaseColor、Normal、ORM。
-    std::array<VkDescriptorSetLayoutBinding, 3> textureBindings{};
+    // 每个材质固定绑定 4 张采样纹理：BaseColor、Normal、ORM、Emissive。
+    std::array<VkDescriptorSetLayoutBinding, 4> textureBindings{};
     for (uint32_t i = 0; i < textureBindings.size(); ++i) {
         textureBindings[i].binding = i;
         textureBindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -654,7 +654,7 @@ void MclarenPass::initialize(RHIDevice& device)
 
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = materialCount * 3u;
+    poolSize.descriptorCount = materialCount * 4u;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -676,6 +676,12 @@ void MclarenPass::initialize(RHIDevice& device)
     }
     if (!createSolidColorTexture(device, {255, 255, 0, 255}, VK_FORMAT_R8G8B8A8_UNORM, m_fallbackOrmTexture)) {
         m_loadError = "Fallback ORM texture upload failed";
+        KU_ERROR("MclarenPass: {}", m_loadError);
+        return;
+    }
+    // Emissive fallback: black (no emission)
+    if (!createSolidColorTexture(device, {0, 0, 0, 255}, VK_FORMAT_R8G8B8A8_UNORM, m_fallbackEmissiveTexture)) {
+        m_loadError = "Fallback emissive texture upload failed";
         KU_ERROR("MclarenPass: {}", m_loadError);
         return;
     }
@@ -713,11 +719,12 @@ void MclarenPass::initialize(RHIDevice& device)
     VK_CHECK(vkAllocateDescriptorSets(m_deviceHandle, &allocInfo, descriptorSets.data()));
 
     m_materialBindings.reserve(materialCount);
-    m_materialTextures.reserve(materialCount * 3u);
+    m_materialTextures.reserve(materialCount * 4u);
 
     uint32_t texturedBase = 0;
     uint32_t texturedNormal = 0;
     uint32_t texturedOrm = 0;
+    uint32_t texturedEmissive = 0;
 
     for (uint32_t i = 0; i < materialCount; ++i) {
         asset::MaterialData material{};
@@ -728,10 +735,12 @@ void MclarenPass::initialize(RHIDevice& device)
         std::unique_ptr<RHITexture> baseTex;
         std::unique_ptr<RHITexture> normalTex;
         std::unique_ptr<RHITexture> ormTex;
+        std::unique_ptr<RHITexture> emissiveTex;
 
         const asset::TextureData* baseSource = &material.baseColorTexture;
         const asset::TextureData* normalSource = &material.normalTexture;
         const asset::TextureData* ormSource = &material.ormTexture;
+        const asset::TextureData* emissiveSource = &material.emissiveTexture;
 
         if (m_materialConfigUsed) {
             if (m_materialConfig.baseColorBinding.hasSource) {
@@ -781,6 +790,7 @@ void MclarenPass::initialize(RHIDevice& device)
             m_materialConfig.ormBinding,
             VK_FORMAT_R8G8B8A8_UNORM,
             "orm");
+        const VkFormat emissiveFormat = VK_FORMAT_R8G8B8A8_SRGB;
 
         // 尝试上传该材质对应纹理；上传失败或源纹理无效时会退回兜底纹理。
         bool hasBase = baseSource && baseSource->valid()
@@ -789,11 +799,14 @@ void MclarenPass::initialize(RHIDevice& device)
             && createAndUploadTexture(device, *normalSource, normalFormat, normalTex);
         bool hasOrm = ormSource && ormSource->valid()
             && createAndUploadTexture(device, *ormSource, ormFormat, ormTex);
+        bool hasEmissive = emissiveSource && emissiveSource->valid()
+            && createAndUploadTexture(device, *emissiveSource, emissiveFormat, emissiveTex);
 
         // 默认先使用兜底视图，若上传成功再替换为真实纹理视图。
         VkImageView baseView = m_fallbackWhiteTexture->imageView();
         VkImageView normalView = m_fallbackNormalTexture->imageView();
         VkImageView ormView = m_fallbackOrmTexture->imageView();
+        VkImageView emissiveView = m_fallbackEmissiveTexture->imageView();
 
         if (baseTex) {
             ++texturedBase;
@@ -810,14 +823,20 @@ void MclarenPass::initialize(RHIDevice& device)
             ormView = ormTex->imageView();
             m_materialTextures.push_back(std::move(ormTex));
         }
+        if (emissiveTex) {
+            ++texturedEmissive;
+            emissiveView = emissiveTex->imageView();
+            m_materialTextures.push_back(std::move(emissiveTex));
+        }
 
         // 将当前材质的三张纹理写入对应 descriptor set 的 0/1/2 号 binding。
-        std::array<VkDescriptorImageInfo, 3> imageInfos{};
+        std::array<VkDescriptorImageInfo, 4> imageInfos{};
         imageInfos[0] = VkDescriptorImageInfo{m_sampler, baseView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         imageInfos[1] = VkDescriptorImageInfo{m_sampler, normalView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         imageInfos[2] = VkDescriptorImageInfo{m_sampler, ormView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        imageInfos[3] = VkDescriptorImageInfo{m_sampler, emissiveView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 
-        std::array<VkWriteDescriptorSet, 3> writes{};
+        std::array<VkWriteDescriptorSet, 4> writes{};
         for (uint32_t bindingIndex = 0; bindingIndex < writes.size(); ++bindingIndex) {
             writes[bindingIndex].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[bindingIndex].dstSet = descriptorSets[i];
@@ -865,6 +884,9 @@ void MclarenPass::initialize(RHIDevice& device)
             material.ormTransform.offset.y,
         };
 
+        // emissive transform (if present)
+        materialBinding.emissiveUvRotation = material.emissiveTransform.rotation;
+
         materialBinding.baseUvRotation = material.baseColorTransform.rotation;
         materialBinding.normalUvRotation = material.normalTransform.rotation;
         materialBinding.ormUvRotation = material.ormTransform.rotation;
@@ -872,6 +894,7 @@ void MclarenPass::initialize(RHIDevice& device)
         materialBinding.baseTexCoord = clampTexCoordSet(material.baseColorTransform.texCoord);
         materialBinding.normalTexCoord = clampTexCoordSet(material.normalTransform.texCoord);
         materialBinding.ormTexCoord = clampTexCoordSet(material.ormTransform.texCoord);
+        materialBinding.emissiveTexCoord = clampTexCoordSet(material.emissiveTransform.texCoord);
 
         if (m_materialConfigUsed && m_materialConfig.baseColorBinding.hasUvSet) {
             materialBinding.baseTexCoord = clampTexCoordSet(static_cast<uint32_t>(m_materialConfig.baseColorBinding.uvSet));
@@ -886,6 +909,7 @@ void MclarenPass::initialize(RHIDevice& device)
         materialBinding.hasBaseColorTexture = hasBase;
         materialBinding.hasNormalTexture = hasNormal;
         materialBinding.hasOrmTexture = hasOrm;
+        materialBinding.hasEmissiveTexture = hasEmissive;
         materialBinding.descriptorSet = descriptorSets[i];
 
         m_materialBindings.push_back(materialBinding);

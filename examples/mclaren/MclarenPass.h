@@ -76,16 +76,18 @@ private:
         std::array<float, 4> baseUvScaleOffset{1.0f, 1.0f, 0.0f, 0.0f};
         std::array<float, 4> normalUvScaleOffset{1.0f, 1.0f, 0.0f, 0.0f};
         std::array<float, 4> ormUvScaleOffset{1.0f, 1.0f, 0.0f, 0.0f};
-        float baseUvRotation = 0.0f;
-        float normalUvRotation = 0.0f;
-        float ormUvRotation = 0.0f;
-        float baseTexCoord = 0.0f;
-        float normalTexCoord = 0.0f;
-        float ormTexCoord = 0.0f;
+            float baseUvRotation = 0.0f;
+            float normalUvRotation = 0.0f;
+            float ormUvRotation = 0.0f;
+            float emissiveUvRotation = 0.0f;
+            float baseTexCoord = 0.0f;
+            float normalTexCoord = 0.0f;
+            float ormTexCoord = 0.0f;
 
         bool hasBaseColorTexture = false;
         bool hasNormalTexture = false;
         bool hasOrmTexture = false;
+        bool hasEmissiveTexture = false;
         VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     };
 

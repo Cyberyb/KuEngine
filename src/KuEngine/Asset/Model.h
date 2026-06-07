@@ -47,10 +47,12 @@ struct MaterialData {
     TextureData baseColorTexture;
     TextureData normalTexture;
     TextureData ormTexture;
+    TextureData emissiveTexture;
 
     TextureTransform baseColorTransform{};
     TextureTransform normalTransform{};
     TextureTransform ormTransform{};
+    TextureTransform emissiveTransform{};
 };
 
 struct SubMeshData {

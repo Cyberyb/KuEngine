@@ -558,6 +558,7 @@ MaterialData extractMaterialData(const tinygltf::Model& model, int materialIndex
     out.baseColorTransform = readTextureTransform(material.pbrMetallicRoughness.baseColorTexture);
     out.normalTransform = readTextureTransform(material.normalTexture);
     out.ormTransform = readTextureTransform(material.pbrMetallicRoughness.metallicRoughnessTexture);
+    out.emissiveTransform = readTextureTransform(material.emissiveTexture);
 
     out.baseColorTexture = extractTextureFromTextureIndex(
         model,
@@ -566,6 +567,7 @@ MaterialData extractMaterialData(const tinygltf::Model& model, int materialIndex
     out.ormTexture = extractTextureFromTextureIndex(
         model,
         material.pbrMetallicRoughness.metallicRoughnessTexture.index);
+    out.emissiveTexture = extractTextureFromTextureIndex(model, material.emissiveTexture.index);
 
     // If metallicRoughness texture is missing but occlusion texture exists, reuse it as ORM input.
     if (!out.ormTexture.valid() && material.occlusionTexture.index >= 0) {

@@ -14,6 +14,7 @@ layout(location = 0) out vec4 outColor;
 layout(set = 0, binding = 0) uniform sampler2D uBaseColorTex;
 layout(set = 0, binding = 1) uniform sampler2D uNormalTex;
 layout(set = 0, binding = 2) uniform sampler2D uOrmTex;
+layout(set = 0, binding = 3) uniform sampler2D uEmissiveTex;
 layout(set = 2, binding = 0) uniform sampler2D uEnvironmentTex;
 
 layout(set = 1, binding = 0) uniform FrameUniforms {
@@ -243,7 +244,9 @@ void main() {
         envColor = (kd * diffuseIbl + specularIbl) * envStrength * ao;
     }
 
-    vec3 outputColor = litColor + envColor + frameData.emissiveFactor.rgb;
+    vec3 emissiveSample = texture(uEmissiveTex, uvBase).rgb;
+    vec3 emissive = frameData.emissiveFactor.rgb * emissiveSample;
+    vec3 outputColor = litColor + envColor + emissive;
     if (frameData.alphaParams.x > 0.5 && frameData.alphaParams.x < 1.5) {
         if (base.a < frameData.alphaParams.y) {
             discard;
