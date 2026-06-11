@@ -97,6 +97,8 @@ struct RenderPass {
 
 ## 6. MVP 功能范围 (v0.1)
 
+> 历史基线：本节记录 v0.1 当时的范围，不代表当前功能状态。当前实现状态见第 10、12、13 节。
+
 ### 包含
 - GLFW3 窗口初始化
 - Vulkan 1.3 实例创建（带 Validation Layer）
@@ -126,6 +128,7 @@ KuEngine/
 ├── CHANGELOG.md
 ├── .gitignore
 ├── docs/
+│   ├── README.md                    ← 文档入口与维护规则
 │   ├── design/
 │   │   ├── 00-overview.md          ← 本文档
 │   │   ├── 01-rhi-layer.md         ← RHI 层详细设计
@@ -138,8 +141,12 @@ KuEngine/
 │   │   ├── 08-gltf-model-loading.md     ← glTF/glb 读取与渲染接入说明
 │   │   └── 09-shader-source-debug-mode.md ← Shader 源码调试编译模式（RenderDoc）
 │   ├── logs/
-│   │   └── 2026-04-12-worklog.md   ← 工作日志示例
+│   │   ├── README.md               ← 工作日志维护规则
+│   │   ├── rendering-platform-and-samples.md
+│   │   ├── render-graph-and-scheduling.md
+│   │   └── assets-materials-and-pbr.md
 │   └── bugs/
+│       ├── README.md               ← Bug 维护规则
 │       └── template.md             ← Bug 模板
 ├── src/
 │   ├── CMakeLists.txt
@@ -187,12 +194,14 @@ KuEngine/
 
 ### 8.1 每次迭代步骤
 
-1. **更新设计文档** → 在 `docs/design/` 下写或更新对应文档
-2. **实现代码** → 严格按文档接口实现
-3. **编译测试** → 本地编译运行
-4. **记录 Bug** → 在 `docs/bugs/` 下创建 `YYYY-MM-DD-issue-N.md`
-5. **Git 提交** → 提交信息遵循 Conventional Commits 规范
-6. **Push** → 定期推送到远程仓库
+1. **确认文档影响** → 按 `docs/README.md` 判断需要同步的设计、主题日志、Bug 或使用文档
+2. **更新设计文档** → 公共接口或模块职责变化时更新 `docs/design/`
+3. **实现代码** → 按当前设计和模块边界实现
+4. **编译测试** → 本地构建、测试并运行相关示例
+5. **记录架构演进** → 在 `docs/logs/` 对应宏观主题中追加时间线，不按日期新建日志
+6. **闭环 Bug** → 在 `docs/bugs/` 同一问题文档中更新状态、根因、修复与回归结果
+7. **Git 提交** → 提交信息遵循 Conventional Commits 规范
+8. **Push** → 定期推送到远程仓库
 
 ### 8.2 Git 提交规范
 
@@ -301,3 +310,88 @@ Examples:
 - 材质 JSON 到运行时纹理绑定的完整接管（当前仍以 glTF 内材质为主）。
 - 场景多节点实例化与批量材质装配。
 - 扩展 PBR（emissive/clearcoat/transmission 等）与完整 TBN 路径。
+
+---
+
+## 13. 当前代码架构图与实现说明（追加）
+
+> 本节是在保留上述原始设计、路线图和阶段记录的基础上，根据当前仓库代码追加的实现视图。
+
+![KuEngine 当前代码架构](./kuengine-architecture.png)
+
+图中实线表示运行时控制或直接调用关系，虚线表示资产、图像状态等数据流，或尚未完全收敛到统一入口的集成关系。
+
+### 13.1 当前装配入口
+
+当前完整可运行的渲染循环位于 `examples/*/main.cpp`，包括：
+
+1. 创建 `Window`、`RHIInstance`、Surface 和 `RHIDevice`。
+2. 创建 `SwapChain`、`SyncManager`、`CommandList` 和 `UIOverlay`。
+3. 向 `RenderPipeline` 注册具体 `RenderPass`。
+4. 执行 Acquire、命令录制、Dynamic Rendering、Submit 和 Present。
+5. 在 Resize 或交换链失效时重建相关资源。
+
+`Core::Engine` 已经聚合上述主要对象并按依赖顺序管理生命周期，但 `Engine::render()` 仍是占位实现。因此，当前实际系统的装配根是各示例程序，而不是已经完全接管帧循环的 `Engine`。
+
+### 13.2 渲染调度
+
+`RenderPass` 提供 `initialize`、`setup`、`execute`、`drawUI` 和 `onResize` 生命周期。`RenderPipeline` 保存 Pass，调用 `setup(RenderGraphBuilder&)` 收集资源声明，并按 RenderGraph 编译结果执行。
+
+`RenderGraph` 当前已经实现：
+
+- 内部资源创建与外部资源导入。
+- Pass 的 Read/Write 访问声明。
+- 显式依赖与资源依赖。
+- RAW、WAR、WAW 冲突识别。
+- 拓扑排序和循环依赖检测。
+- `BarrierPlanItem` 屏障计划。
+
+它目前是逻辑调度与同步规划器，尚未负责创建 Vulkan Image/Buffer、瞬态资源分配或资源别名。实际屏障执行主要面向通过 `RenderPipeline::bindExternalImage()` 绑定的外部图像。
+
+### 13.3 资产与 PBR 数据流
+
+资产数据从 `resources/` 进入两条解析路径：
+
+- `AssetConfig` 使用 nlohmann_json 读取 scene/material JSON。
+- `ModelLoader` 使用 tinygltf 读取 glTF/GLB 的网格、节点、材质和纹理。
+
+Mclaren 示例是当前资产和 PBR 链路的主要集成点。`MclarenPass` 负责装配场景配置、模型数据、纹理上传、Descriptor、Pipeline、天空盒和深度相关状态；`PBRRenderer` 已开始承接 Pipeline/Descriptor/Buffer 绑定及 indexed draw。
+
+`Material`、`MaterialInstance` 和 `PBRMaterialBinding` 已形成运行时材质类型骨架，但尚未完全替代 `MclarenPass` 内部的资源创建和绑定逻辑。
+
+### 13.4 RHI 与帧运行流程
+
+RHI 保持 Vulkan 语义可见，主要集中处理 RAII、VMA 分配和常用命令：
+
+```text
+RHIInstance
+  -> RHIDevice / Queues / VMA
+  -> SwapChain
+  -> SyncManager / CommandList
+  -> RHIBuffer / RHITexture / RHIShader / RHIPipeline
+```
+
+典型示例帧流程为：
+
+```text
+Window events / Input
+  -> wait fence
+  -> acquire SwapChain image
+  -> begin CommandList
+  -> bind external image state / begin Dynamic Rendering
+  -> RenderPipeline.execute()
+  -> UIOverlay.render()
+  -> transition to PRESENT
+  -> submit
+  -> present
+```
+
+### 13.5 当前架构边界
+
+- 示例主循环和 `Engine` 主循环尚未统一。
+- RenderGraph 管理逻辑资源和部分外部图像屏障，但不拥有实际 GPU 资源。
+- `MclarenPass` 仍承担较多可下沉到公共资产/渲染层的职责。
+- 深度附件等 Frame Resource 仍由示例直接管理。
+- 自动化测试已覆盖 RenderGraph 和资产配置解析，但缺少 GPU、模型加载和图像回归测试。
+
+建议后续优先将帧循环收敛到统一 Runtime，再扩展 RenderGraph 的实际资源管理，并将材质、纹理上传和 Descriptor 装配从示例 Pass 下沉到公共层。

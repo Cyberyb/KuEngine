@@ -21,6 +21,8 @@ target_sources(KuEngine PRIVATE
     KuEngine/RHI/vma.cpp
     KuEngine/Render/RenderGraph.cpp
     KuEngine/Render/RenderPipeline.cpp
+    KuEngine/Render/PBRCommon.cpp
+    KuEngine/Render/PBRRenderer.cpp
     KuEngine/UI/UIOverlay.cpp
 )
 

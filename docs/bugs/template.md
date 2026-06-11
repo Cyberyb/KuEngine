@@ -1,8 +1,10 @@
 # Bug Report Template
 
-**日期**: YYYY-MM-DD  
-**严重程度**: Critical / High / Medium / Low  
+**首次发现**: YYYY-MM-DD
+**最近更新**: YYYY-MM-DD
+**严重程度**: Critical / High / Medium / Low
 **状态**: Open / In Progress / Resolved / Won't Fix
+**影响模块**: Core / RHI / Render / Asset / UI / Example
 
 ## 标题
 
@@ -49,6 +51,14 @@
 ## 修复方案
 
 描述如何修复（包括改动的文件和函数）。
+
+## 回归验证
+
+- [ ] Debug 构建通过
+- [ ] 相关单元测试通过
+- [ ] 对应示例运行通过
+- [ ] Vulkan Validation 无新增错误
+- [ ] 相关设计、工作日志或使用文档已同步
 
 ## 相关链接
 

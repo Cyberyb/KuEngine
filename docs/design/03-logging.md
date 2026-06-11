@@ -108,14 +108,17 @@ constexpr const char* to_string(VkResult result) {
 
 ### Bug 报告模板
 
-在 `docs/bugs/` 下创建 `YYYY-MM-DD-issue-N.md`：
+按照 `docs/bugs/README.md` 使用稳定主题命名，例如
+`swapchain-resize-crash.md`。同一问题从发现到修复始终更新同一文件：
 
 ```markdown
 # Bug Report: [简短描述]
 
-**日期**: YYYY-MM-DD  
-**严重程度**: Critical / High / Medium / Low  
+**首次发现**: YYYY-MM-DD
+**最近更新**: YYYY-MM-DD
+**严重程度**: Critical / High / Medium / Low
 **状态**: Open / In Progress / Resolved
+**影响模块**: RHI / Render / Asset / UI / Example
 
 ## 复现步骤
 
@@ -151,7 +154,18 @@ constexpr const char* to_string(VkResult result) {
 ## 修复方案
 
 [描述如何修复]
+
+## 回归验证
+
+- [ ] Debug 构建通过
+- [ ] 相关测试通过
+- [ ] 对应示例运行通过
+- [ ] 相关文档已同步
 ```
+
+Bug 修复完成时必须记录根因和回归结果。若修复改变公共接口或模块职责，
+还需要同步 `docs/design/`；若具有架构意义，则在 `docs/logs/` 对应主题中
+追加简要记录。
 
 ### 示例
 

@@ -16,6 +16,8 @@
 #include <KuEngine/RHI/RHIPipeline.h>
 #include <KuEngine/RHI/RHIShader.h>
 #include <KuEngine/RHI/RHITexture.h>
+#include <KuEngine/Render/PBRCommon.h>
+#include <KuEngine/Render/PBRRenderer.h>
 #include <KuEngine/Render/RenderPass.h>
 
 namespace ku {
@@ -39,58 +41,10 @@ public:
     void setDepthFormat(VkFormat depthFormat) { m_depthFormat = depthFormat; }
 
 private:
-    struct alignas(16) PushConstants {
-        float mvp[16];
-        float normalRows[12];
-        float baseColorFactor[4];
-        float materialParams[4];
-        float materialFactors[4];
-        float baseUvScaleOffset[4];
-        float normalUvScaleOffset[4];
-        float ormUvScaleOffset[4];
-        float uvTransformParams0[4];
-        float uvTransformParams1[4];
-    };
-
-    struct alignas(16) FrameUniforms {
-        float model[16];
-        float cameraPos[4];
-        float invViewProj[16];
-        float lightDirIntensity[4];
-        float emissiveFactor[4];
-        float alphaParams[4];
-    };
-
-    struct alignas(16) SkyboxPushConstants {
-        float params[4];
-    };
-
-    struct MaterialBinding {
-        std::array<float, 4> baseColorFactor{1.0f, 1.0f, 1.0f, 1.0f};
-        std::array<float, 3> emissiveFactor{0.0f, 0.0f, 0.0f};
-        float metallicFactor = 1.0f;
-        float roughnessFactor = 1.0f;
-        float normalScale = 1.0f;
-        float occlusionStrength = 1.0f;
-
-        std::array<float, 4> baseUvScaleOffset{1.0f, 1.0f, 0.0f, 0.0f};
-        std::array<float, 4> normalUvScaleOffset{1.0f, 1.0f, 0.0f, 0.0f};
-        std::array<float, 4> ormUvScaleOffset{1.0f, 1.0f, 0.0f, 0.0f};
-            float baseUvRotation = 0.0f;
-            float normalUvRotation = 0.0f;
-            float ormUvRotation = 0.0f;
-            float emissiveUvRotation = 0.0f;
-            float baseTexCoord = 0.0f;
-            float normalTexCoord = 0.0f;
-            float ormTexCoord = 0.0f;
-            float emissiveTexCoord = 0.0f;
-
-        bool hasBaseColorTexture = false;
-        bool hasNormalTexture = false;
-        bool hasOrmTexture = false;
-        bool hasEmissiveTexture = false;
-        VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-    };
+    using PushConstants = PBRPushConstants;
+    using FrameUniforms = PBRFrameUniforms;
+    using SkyboxPushConstants = PBRSkyboxPushConstants;
+    using MaterialBinding = PBRMaterialBinding;
 
     std::filesystem::path resolveScenePath() const;
     std::filesystem::path resolveModelPath() const;
@@ -119,6 +73,7 @@ private:
     std::unique_ptr<RHIShader> m_skyboxFragShader;
     std::unique_ptr<RHIPipeline> m_pipeline;
     std::unique_ptr<RHIPipeline> m_skyboxPipeline;
+    std::unique_ptr<PBRRenderer> m_pbrRenderer;
     std::vector<MaterialBinding> m_materialBindings;
     std::vector<std::unique_ptr<RHITexture>> m_materialTextures;
     std::vector<asset::SubMeshData> m_subMeshes;

@@ -2,7 +2,7 @@
 
 A modern real-time rendering framework built on Vulkan 1.3, designed for fast algorithm experimentation and research.
 
-**Status**: v0.1.x MVP baseline complete, entering v0.2 planning
+**Status**: v0.2 RenderGraph Alpha complete; v0.3 asset/material/PBR workflow in progress
 
 ## Features
 
@@ -17,14 +17,16 @@ A modern real-time rendering framework built on Vulkan 1.3, designed for fast al
 
 ## Current Progress
 
-- Completed in v0.1.x
-	- Vulkan instance/device/swapchain/command/sync pipeline is runnable.
-	- Triangle sample renders with Dynamic Rendering and ImGui controls.
-	- UI responsibilities are separated between `UIOverlay` and `RenderPass::drawUI`.
+- Completed
+	- Vulkan instance/device/swapchain/command/sync baseline.
+	- Dynamic Rendering examples with ImGui parameter controls.
+	- RenderGraph Alpha: dependencies, topological ordering, barrier planning and debug UI.
+	- scene/material JSON and glTF/GLB loading baseline.
 - In progress
-	- Documentation synchronization and milestone refinement.
+	- Moving reusable asset, material and PBR responsibilities out of `MclarenPass`.
+	- Consolidating runtime material and renderer abstractions.
 - Planned next
-	- RenderGraph introduction, multi-pass scheduling, and resource dependency compilation.
+	- Unified frame runtime, deeper RenderGraph resource ownership and GPU observability.
 
 ## Build
 
@@ -74,21 +76,25 @@ KuEngine/
 ├── examples/
 │   ├── CMakeLists.txt
 │   └── triangle/          # MVP: visible triangle + runtime UI control
-├── docs/                  # Design documents
-│   ├── design/            # Architecture specs
-│   └── bugs/             # Bug reports
+├── docs/                  # Documentation center
+│   ├── design/            # Current architecture and design contracts
+│   ├── logs/              # Topic-based engineering evolution logs
+│   ├── bugs/              # Bug reports and fix verification
+│   └── usage/             # Examples, regression and release guides
 └── tests/                 # Unit tests
 ```
 
 ## Documentation
 
+- [Documentation Center](docs/README.md)
 - [Overview](docs/design/00-overview.md)
 - [RHI Layer Design](docs/design/01-rhi-layer.md)
 - [RenderPass Interface](docs/design/02-render-pass.md)
 - [Logging & Debugging](docs/design/03-logging.md)
 - [Triangle 示例技术说明](docs/design/04-triangle-example-tech.md)
 - [UI 层架构与自定义开发](docs/design/05-ui-layer.md)
-- [工作日志（2026-04-12）](docs/logs/2026-04-12-worklog.md)
+- [工作主题日志](docs/logs/README.md)
+- [Bug 维护规则](docs/bugs/README.md)
 - [Triangle 示例运行指南](docs/usage/triangle-example.md)
 
 ## Version History

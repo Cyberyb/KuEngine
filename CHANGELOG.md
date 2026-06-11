@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - v0.3 sample asset descriptors (`resources/scenes/sandbox/mclaren-sandbox.scene.json`, `resources/materials/pbr/mclaren-765lt.material.json`, `resources/manifests/asset-registry.json`).
 
 ### Changed
+- Reorganized engineering documentation: work logs are now maintained by broad topic instead of date, with explicit update rules for architecture changes and bug fixes.
 - Documentation sync for current engine status, roadmap, and module responsibilities.
 - Clarified MVP scope as "v0.1.x baseline complete" and aligned progress wording across docs.
 - Synced overview document with v0.2 stage-0 freeze conclusions and release gates.

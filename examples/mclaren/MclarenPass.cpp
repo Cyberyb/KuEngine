@@ -2,6 +2,7 @@
 
 #include <KuEngine/Asset/AssetConfig.h>
 #include <KuEngine/Core/Log.h>
+#include <KuEngine/Render/PBRCommon.h>
 #include <KuEngine/Render/RenderGraph.h>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -10,7 +11,6 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
-#include <cctype>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -23,8 +23,6 @@
 #include <stb_image.h>
 
 namespace ku {
-
-namespace {
 
 constexpr VkFormat kColorFormat = VK_FORMAT_B8G8R8A8_UNORM;
 constexpr const char* kDefaultEnvironmentHdr = "citrus_orchard_road_puresky_4k.hdr";
@@ -41,110 +39,6 @@ void submitImmediate(CommandList& cmd, RHIDevice& device)
 
     VK_CHECK(vkQueueSubmit(device.graphicsQueue(), 1, &submit, VK_NULL_HANDLE));
     VK_CHECK(vkQueueWaitIdle(device.graphicsQueue()));
-}
-
-float clampTexCoordSet(uint32_t texCoord)
-{
-    return texCoord == 0 ? 0.0f : 1.0f;
-}
-
-std::string toLower(std::string_view text)
-{
-    std::string out;
-    out.reserve(text.size());
-    for (unsigned char ch : text) {
-        out.push_back(static_cast<char>(std::tolower(ch)));
-    }
-    return out;
-}
-
-bool isDisabledSource(const std::string& sourceLower)
-{
-    return sourceLower == "none" || sourceLower == "disabled" || sourceLower == "off";
-}
-
-const asset::TextureData* resolveGltfTexture(
-    std::string_view source,
-    const asset::MaterialData& material)
-{
-    const std::string sourceLower = toLower(source);
-    if (isDisabledSource(sourceLower)) {
-        return nullptr;
-    }
-
-    const std::string prefix = "gltf:";
-    if (sourceLower.rfind(prefix, 0) != 0) {
-        return nullptr;
-    }
-
-    std::string_view rest = std::string_view(source).substr(prefix.size());
-    size_t start = 0;
-    while (start < rest.size()) {
-        const size_t sep = rest.find('|', start);
-        const size_t end = (sep == std::string_view::npos) ? rest.size() : sep;
-        std::string token = toLower(rest.substr(start, end - start));
-
-        if (token == "basecolortexture") {
-            return &material.baseColorTexture;
-        }
-        if (token == "normaltexture") {
-            return &material.normalTexture;
-        }
-        if (token == "metallicroughnesstexture" || token == "occlusiontexture" || token == "ormtexture") {
-            return &material.ormTexture;
-        }
-
-        if (sep == std::string_view::npos) {
-            break;
-        }
-        start = sep + 1;
-    }
-
-    return nullptr;
-}
-
-VkFormat formatForBinding(
-    const asset::MaterialConfig::TextureBindingConfig& binding,
-    VkFormat defaultFormat,
-    std::string_view bindingName)
-{
-    if (!binding.hasColorSpace) {
-        return defaultFormat;
-    }
-
-    const std::string colorSpace = toLower(binding.colorSpace);
-    if (colorSpace == "srgb") {
-        if (bindingName == "normal" || bindingName == "orm") {
-            KU_WARN("MclarenPass: {} binding uses sRGB, forcing Linear", std::string(bindingName));
-            return VK_FORMAT_R8G8B8A8_UNORM;
-        }
-        return VK_FORMAT_R8G8B8A8_SRGB;
-    }
-    if (colorSpace == "linear") {
-        if (bindingName == "baseColor") {
-            KU_WARN("MclarenPass: baseColor binding uses Linear, forcing sRGB");
-            return VK_FORMAT_R8G8B8A8_SRGB;
-        }
-        return VK_FORMAT_R8G8B8A8_UNORM;
-    }
-
-    KU_WARN(
-        "MclarenPass: {} binding uses unknown colorSpace '{}', using default format",
-        std::string(bindingName),
-        binding.colorSpace);
-    return defaultFormat;
-}
-
-float alphaModeToFlag(const asset::MaterialConfig& config)
-{
-    const std::string alphaMode = toLower(config.alphaMode);
-    if (alphaMode == "mask") {
-        return 1.0f;
-    }
-    if (alphaMode == "blend") {
-        return 2.0f;
-    }
-    return 0.0f;
 }
 
 void appendMeshData(
@@ -179,8 +73,6 @@ void appendMeshData(
         target.boundsMax = glm::max(target.boundsMax, source.boundsMax);
     }
 }
-
-} // namespace
 
 MclarenPass::MclarenPass() = default;
 MclarenPass::~MclarenPass()
@@ -958,6 +850,15 @@ void MclarenPass::initialize(RHIDevice& device)
 
     m_skyboxPipeline = std::make_unique<RHIPipeline>(device, skyboxDesc);
 
+    // 初始化通用 PBR 渲染器并把当前资源注入，后续会把更多资源创建逻辑迁移到 PBRRenderer 中。
+    m_pbrRenderer = std::make_unique<PBRRenderer>();
+    m_pbrRenderer->setDepthFormat(m_depthFormat);
+    m_pbrRenderer->setPipeline(m_pipeline.get());
+    m_pbrRenderer->setFrameDescriptorSet(m_frameDescriptorSet);
+    m_pbrRenderer->setEnvironmentDescriptorSet(m_environmentDescriptorSet);
+    m_pbrRenderer->setVertexIndexBuffers(m_vertexBuffer.get(), m_indexBuffer.get());
+    m_pbrRenderer->setFrameUniformBuffer(m_frameUniformBuffer.get());
+
     KU_INFO(
         "MclarenPass initialized: vertices={}, indices={}, materials={}, subMeshes={}, textured(base/normal/orm)=({}/{}/{}), model={}, environment={}",
         m_vertexCount,
@@ -1104,117 +1005,83 @@ void MclarenPass::execute(CommandList& cmd, const FrameData&)
         vkCmdDraw(cmd, 3, 1, 0, 0);
     }
 
-    m_pipeline->bind(cmd);
+    // 使用 PBRRenderer 执行批量绘制：构建 draw items + per-draw push & UBO
+    if (m_pbrRenderer) {
+        std::vector<PBRDrawItem> drawItems;
+        drawItems.reserve(m_subMeshes.size());
 
-    if (m_frameDescriptorSet != VK_NULL_HANDLE) {
-        vkCmdBindDescriptorSets(
-            cmd,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_pipeline->layout(),
-            1,
-            1,
-            &m_frameDescriptorSet,
-            0,
-            nullptr);
-    }
+        std::vector<PBRPushConstants> perPush;
+        perPush.reserve(m_subMeshes.size());
 
-    if (m_environmentDescriptorSet != VK_NULL_HANDLE) {
-        vkCmdBindDescriptorSets(
-            cmd,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_pipeline->layout(),
-            2,
-            1,
-            &m_environmentDescriptorSet,
-            0,
-            nullptr);
-    }
+        std::vector<FrameUniforms> perFrames;
+        perFrames.reserve(m_subMeshes.size());
 
-    VkBuffer vertexBuffers[] = {m_vertexBuffer->buffer()};
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
-    vkCmdBindIndexBuffer(cmd, m_indexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT32);
-
-    for (const asset::SubMeshData& subMesh : m_subMeshes) {
-        size_t materialIndex = static_cast<size_t>(subMesh.materialIndex);
-        if (materialIndex >= m_materialBindings.size()) {
-            materialIndex = 0;
-        }
-
-        const MaterialBinding& material = m_materialBindings[materialIndex];
-
-        const std::array<float, 4> combinedFactor = {
-            material.baseColorFactor[0] * m_globalBaseColorFactor[0],
-            material.baseColorFactor[1] * m_globalBaseColorFactor[1],
-            material.baseColorFactor[2] * m_globalBaseColorFactor[2],
-            material.baseColorFactor[3] * m_globalBaseColorFactor[3],
-        };
-
-        std::memcpy(push.baseColorFactor, combinedFactor.data(), sizeof(push.baseColorFactor));
-        push.materialParams[0] = (m_enableTextureSampling && material.hasBaseColorTexture) ? 1.0f : 0.0f;
-        push.materialParams[1] = m_flipUvY ? 1.0f : 0.0f;
-        push.materialParams[2] = (m_enableNormalMap && material.hasNormalTexture) ? 1.0f : 0.0f;
-        push.materialParams[3] = (m_enableOrmMap && material.hasOrmTexture) ? 1.0f : 0.0f;
-
-        push.materialFactors[0] = material.normalScale;
-        push.materialFactors[1] = material.metallicFactor;
-        push.materialFactors[2] = material.roughnessFactor;
-        push.materialFactors[3] = material.occlusionStrength;
-
-        std::memcpy(push.baseUvScaleOffset, material.baseUvScaleOffset.data(), sizeof(push.baseUvScaleOffset));
-        std::memcpy(push.normalUvScaleOffset, material.normalUvScaleOffset.data(), sizeof(push.normalUvScaleOffset));
-        std::memcpy(push.ormUvScaleOffset, material.ormUvScaleOffset.data(), sizeof(push.ormUvScaleOffset));
-
-        push.uvTransformParams0[0] = material.baseUvRotation;
-        push.uvTransformParams0[1] = material.baseTexCoord;
-        push.uvTransformParams0[2] = material.normalUvRotation;
-        push.uvTransformParams0[3] = material.normalTexCoord;
-
-        push.uvTransformParams1[0] = material.ormUvRotation;
-        push.uvTransformParams1[1] = material.ormTexCoord;
-        push.uvTransformParams1[2] = m_enableOutputGamma ? 1.0f : 0.0f;
-        push.uvTransformParams1[3] =
-            m_enableEnvironmentMap ? (std::max(0.0f, m_environmentIntensity) * std::max(0.0f, m_environmentExposure)) : 0.0f;
-
-        frame.emissiveFactor[0] = material.emissiveFactor[0];
-        frame.emissiveFactor[1] = material.emissiveFactor[1];
-        frame.emissiveFactor[2] = material.emissiveFactor[2];
-        frame.emissiveFactor[3] = 0.0f;
-        frame.alphaParams[0] = alphaMode;
-        frame.alphaParams[1] = m_materialConfigUsed ? m_materialConfig.alphaCutoff : 0.5f;
-        frame.alphaParams[2] = 0.0f;
-        frame.alphaParams[3] = 0.0f;
-
-        if (m_frameUniformBuffer) {
-            void* mapped = m_frameUniformBuffer->map();
-            if (mapped != nullptr) {
-                std::memcpy(mapped, &frame, sizeof(frame));
-                m_frameUniformBuffer->flush();
-                m_frameUniformBuffer->unmap();
+        for (const asset::SubMeshData& subMesh : m_subMeshes) {
+            size_t materialIndex = static_cast<size_t>(subMesh.materialIndex);
+            if (materialIndex >= m_materialBindings.size()) {
+                materialIndex = 0;
             }
+
+            const MaterialBinding& material = m_materialBindings[materialIndex];
+
+            PBRDrawItem item{};
+            item.indexStart = subMesh.indexStart;
+            item.indexCount = subMesh.indexCount;
+            item.materialBinding = &material;
+            drawItems.push_back(item);
+
+            PBRPushConstants pushLocal = push; // copy base push
+
+            const std::array<float, 4> combinedFactor = {
+                material.baseColorFactor[0] * m_globalBaseColorFactor[0],
+                material.baseColorFactor[1] * m_globalBaseColorFactor[1],
+                material.baseColorFactor[2] * m_globalBaseColorFactor[2],
+                material.baseColorFactor[3] * m_globalBaseColorFactor[3],
+            };
+            std::memcpy(pushLocal.baseColorFactor, combinedFactor.data(), sizeof(pushLocal.baseColorFactor));
+            pushLocal.materialParams[0] = (m_enableTextureSampling && material.hasBaseColorTexture) ? 1.0f : 0.0f;
+            pushLocal.materialParams[1] = m_flipUvY ? 1.0f : 0.0f;
+            pushLocal.materialParams[2] = (m_enableNormalMap && material.hasNormalTexture) ? 1.0f : 0.0f;
+            pushLocal.materialParams[3] = (m_enableOrmMap && material.hasOrmTexture) ? 1.0f : 0.0f;
+
+            pushLocal.materialFactors[0] = material.normalScale;
+            pushLocal.materialFactors[1] = material.metallicFactor;
+            pushLocal.materialFactors[2] = material.roughnessFactor;
+            pushLocal.materialFactors[3] = material.occlusionStrength;
+
+            std::memcpy(pushLocal.baseUvScaleOffset, material.baseUvScaleOffset.data(), sizeof(pushLocal.baseUvScaleOffset));
+            std::memcpy(pushLocal.normalUvScaleOffset, material.normalUvScaleOffset.data(), sizeof(pushLocal.normalUvScaleOffset));
+            std::memcpy(pushLocal.ormUvScaleOffset, material.ormUvScaleOffset.data(), sizeof(pushLocal.ormUvScaleOffset));
+
+            pushLocal.uvTransformParams0[0] = material.baseUvRotation;
+            pushLocal.uvTransformParams0[1] = material.baseTexCoord;
+            pushLocal.uvTransformParams0[2] = material.normalUvRotation;
+            pushLocal.uvTransformParams0[3] = material.normalTexCoord;
+
+            pushLocal.uvTransformParams1[0] = material.ormUvRotation;
+            pushLocal.uvTransformParams1[1] = material.ormTexCoord;
+            pushLocal.uvTransformParams1[2] = m_enableOutputGamma ? 1.0f : 0.0f;
+            pushLocal.uvTransformParams1[3] =
+                m_enableEnvironmentMap ? (std::max(0.0f, m_environmentIntensity) * std::max(0.0f, m_environmentExposure)) : 0.0f;
+
+            FrameUniforms frameLocal = frame; // copy base frame
+            frameLocal.emissiveFactor[0] = material.emissiveFactor[0];
+            frameLocal.emissiveFactor[1] = material.emissiveFactor[1];
+            frameLocal.emissiveFactor[2] = material.emissiveFactor[2];
+            frameLocal.emissiveFactor[3] = 0.0f;
+            frameLocal.alphaParams[0] = alphaMode;
+            frameLocal.alphaParams[1] = m_materialConfigUsed ? m_materialConfig.alphaCutoff : 0.5f;
+            frameLocal.alphaParams[2] = 0.0f;
+            frameLocal.alphaParams[3] = 0.0f;
+
+            perPush.push_back(pushLocal);
+            perFrames.push_back(frameLocal);
         }
 
-        if (material.descriptorSet != VK_NULL_HANDLE) {
-            vkCmdBindDescriptorSets(
-                cmd,
-                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_pipeline->layout(),
-                0,
-                1,
-                &material.descriptorSet,
-                0,
-                nullptr);
-        }
-
-        vkCmdPushConstants(
-            cmd,
-            m_pipeline->layout(),
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-            0,
-            sizeof(PushConstants),
-            &push);
-
-        vkCmdDrawIndexed(cmd, subMesh.indexCount, 1, subMesh.indexStart, 0, 0);
+        m_pbrRenderer->setDrawItems(std::move(drawItems));
+        m_pbrRenderer->setPerDrawPushConstants(std::move(perPush));
+        m_pbrRenderer->setPerDrawFrameUniforms(std::move(perFrames));
+        m_pbrRenderer->execute(cmd, FrameData{});
     }
 }
 
