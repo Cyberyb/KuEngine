@@ -1,3 +1,4 @@
+// KuEngine RHI 设备模块：选择物理设备并管理逻辑设备、队列及 VMA 内存分配器。
 #pragma once
 
 #include "RHICommon.h"

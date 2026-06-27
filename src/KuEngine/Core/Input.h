@@ -1,3 +1,4 @@
+// KuEngine 输入模块：基于窗口事件维护键盘与鼠标状态，向上层提供逐帧输入查询。
 #pragma once
 
 #include <GLFW/glfw3.h>

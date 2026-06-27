@@ -1,4 +1,5 @@
-﻿#pragma once
+﻿// KuEngine 渲染 Pass 模块：定义单个渲染阶段的声明、执行、界面绘制与尺寸变化扩展接口。
+#pragma once
 
 #include <cstdint>
 #include <string_view>

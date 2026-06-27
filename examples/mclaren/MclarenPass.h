@@ -14,11 +14,14 @@
 #include <KuEngine/RHI/RHIBuffer.h>
 #include <KuEngine/RHI/RHIDevice.h>
 #include <KuEngine/RHI/RHIPipeline.h>
+#include <KuEngine/RHI/ResourceUploader.h>
 #include <KuEngine/RHI/RHIShader.h>
 #include <KuEngine/RHI/RHITexture.h>
+#include <KuEngine/Render/GpuMesh.h>
 #include <KuEngine/Render/PBRCommon.h>
 #include <KuEngine/Render/PBRRenderer.h>
 #include <KuEngine/Render/RenderPass.h>
+#include <KuEngine/Render/TextureFactory.h>
 
 namespace ku {
 
@@ -52,17 +55,14 @@ private:
     void loadSceneAndMaterialConfig();
     void loadMaterialConfig(const std::filesystem::path& materialPath);
     bool createAndUploadTexture(
-        RHIDevice& device,
         const asset::TextureData& textureData,
         VkFormat format,
         std::unique_ptr<RHITexture>& outTexture);
     bool createSolidColorTexture(
-        RHIDevice& device,
         std::array<uint8_t, 4> rgba,
         VkFormat format,
         std::unique_ptr<RHITexture>& outTexture);
     bool createAndUploadHdrTexture(
-        RHIDevice& device,
         const std::filesystem::path& hdrPath,
         std::unique_ptr<RHITexture>& outTexture);
     void destroyDescriptorResources();
@@ -73,18 +73,18 @@ private:
     std::unique_ptr<RHIShader> m_skyboxFragShader;
     std::unique_ptr<RHIPipeline> m_pipeline;
     std::unique_ptr<RHIPipeline> m_skyboxPipeline;
+    std::unique_ptr<ResourceUploader> m_resourceUploader;
+    std::unique_ptr<TextureFactory> m_textureFactory;
+    std::unique_ptr<GpuMesh> m_gpuMesh;
     std::unique_ptr<PBRRenderer> m_pbrRenderer;
     std::vector<MaterialBinding> m_materialBindings;
     std::vector<std::unique_ptr<RHITexture>> m_materialTextures;
-    std::vector<asset::SubMeshData> m_subMeshes;
     std::unique_ptr<RHITexture> m_fallbackWhiteTexture;
     std::unique_ptr<RHITexture> m_fallbackNormalTexture;
     std::unique_ptr<RHITexture> m_fallbackOrmTexture;
     std::unique_ptr<RHITexture> m_fallbackEmissiveTexture;
     std::unique_ptr<RHITexture> m_environmentTexture;
 
-    std::unique_ptr<RHIBuffer> m_vertexBuffer;
-    std::unique_ptr<RHIBuffer> m_indexBuffer;
     std::unique_ptr<RHIBuffer> m_frameUniformBuffer;
 
     VkDescriptorSetLayout m_descriptorSetLayout = VK_NULL_HANDLE;
@@ -111,9 +111,6 @@ private:
 
     bool m_sceneConfigUsed = false;
     bool m_materialConfigUsed = false;
-
-    uint32_t m_vertexCount = 0;
-    uint32_t m_indexCount = 0;
 
     float m_aspect = 16.0f / 9.0f;
     float m_distance = 4.0f;

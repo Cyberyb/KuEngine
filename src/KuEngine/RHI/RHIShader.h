@@ -1,3 +1,4 @@
+// KuEngine RHI 着色器模块：加载 SPIR-V 字节码并管理 Vulkan 着色器模块生命周期。
 #pragma once
 
 #include <vulkan/vulkan.h>

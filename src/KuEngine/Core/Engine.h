@@ -1,3 +1,4 @@
+// KuEngine 引擎核心模块：统一管理窗口、RHI、渲染管线与主循环等运行时生命周期。
 #pragma once
 
 #include <memory>

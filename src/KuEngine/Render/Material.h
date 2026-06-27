@@ -1,3 +1,4 @@
+// KuEngine 材质定义模块：保存材质名称及其资产配置，作为运行时材质实例的共享描述。
 #pragma once
 
 #include <string>

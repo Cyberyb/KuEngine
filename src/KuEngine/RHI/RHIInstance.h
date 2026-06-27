@@ -1,3 +1,4 @@
+// KuEngine RHI 实例模块：管理 Vulkan 实例、调试验证与窗口表面的创建和销毁。
 #pragma once
 
 #include "RHICommon.h"

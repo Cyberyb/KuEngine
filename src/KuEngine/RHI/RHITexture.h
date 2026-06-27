@@ -1,4 +1,5 @@
-﻿#pragma once
+﻿// KuEngine RHI 纹理模块：封装 Vulkan/VMA 图像、图像视图及其布局相关资源。
+#pragma once
 
 #include "RHICommon.h"
 #include <vulkan/vulkan.h>

@@ -1,4 +1,5 @@
-﻿#pragma once
+﻿// KuEngine UI 覆盖层模块：封装 ImGui 的 GLFW/Vulkan 接入、逐帧绘制与交换链适配。
+#pragma once
 
 #include <vulkan/vulkan.h>
 #include <string_view>

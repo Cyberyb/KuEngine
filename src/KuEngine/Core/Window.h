@@ -1,3 +1,4 @@
+// KuEngine 窗口模块：封装 GLFW 窗口生命周期、尺寸变化与原生窗口访问能力。
 #pragma once
 
 #define GLFW_INCLUDE_VULKAN

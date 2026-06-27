@@ -16,13 +16,16 @@ target_sources(KuEngine PRIVATE
     KuEngine/RHI/RHITexture.cpp
     KuEngine/RHI/RHIShader.cpp
     KuEngine/RHI/RHIPipeline.cpp
+    KuEngine/RHI/ResourceUploader.cpp
     KuEngine/RHI/SyncManager.cpp
     KuEngine/RHI/CommandList.cpp
     KuEngine/RHI/vma.cpp
     KuEngine/Render/RenderGraph.cpp
     KuEngine/Render/RenderPipeline.cpp
+    KuEngine/Render/GpuMesh.cpp
     KuEngine/Render/PBRCommon.cpp
     KuEngine/Render/PBRRenderer.cpp
+    KuEngine/Render/TextureFactory.cpp
     KuEngine/UI/UIOverlay.cpp
 )
 

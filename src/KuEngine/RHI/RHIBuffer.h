@@ -1,4 +1,5 @@
-﻿#pragma once
+﻿// KuEngine RHI 缓冲模块：封装 Vulkan/VMA 缓冲的创建、映射、刷新与资源释放。
+#pragma once
 
 #include "RHICommon.h"
 #include <vulkan/vulkan.h>

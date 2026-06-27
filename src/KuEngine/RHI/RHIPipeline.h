@@ -1,3 +1,4 @@
+// KuEngine RHI 图形管线模块：根据着色器与渲染状态创建并持有 Vulkan 管线及布局。
 #pragma once
 
 #include "RHICommon.h"

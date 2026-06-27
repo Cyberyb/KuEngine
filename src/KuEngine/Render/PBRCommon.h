@@ -1,3 +1,4 @@
+// KuEngine PBR 公共模块：集中定义 PBR 着色所需的 GPU 数据结构、材质绑定与辅助接口。
 #pragma once
 
 #include <array>

@@ -1,3 +1,4 @@
+// KuEngine 命令列表模块：封装 Vulkan 命令缓冲的分配、录制与常用渲染命令。
 #pragma once
 
 #include "RHICommon.h"

@@ -1,3 +1,4 @@
+// KuEngine 交换链模块：管理交换链图像与视图，并处理窗口尺寸变化后的重建。
 #pragma once
 
 #include "RHICommon.h"

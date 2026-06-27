@@ -1,3 +1,4 @@
+// KuEngine 渲染图模块：描述渲染资源与 Pass 依赖，并生成执行顺序及资源屏障计划。
 #pragma once
 
 #include <cstdint>

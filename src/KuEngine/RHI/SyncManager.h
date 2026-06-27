@@ -1,3 +1,4 @@
+// KuEngine 帧同步模块：管理每帧信号量与栅栏，协调图像获取、队列提交和呈现。
 #pragma once
 
 #include "RHICommon.h"

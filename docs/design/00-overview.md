@@ -69,6 +69,7 @@ RHI (Rendering Hardware Interface) 层是 Vulkan 的薄封装层，目标是：
 | `RHIPipeline` | Graphics/Compute Pipeline |
 | `RHIShader` | Shader Module 加载 |
 | `CommandList` | Command Buffer 录制 |
+| `ResourceUploader` | Staging Buffer、同步 Buffer/Image 上传和上传期布局转换 |
 
 ---
 
@@ -166,6 +167,7 @@ KuEngine/
 │       │   ├── RHIShader.h / .cpp
 │       │   ├── RHIPipeline.h / .cpp
 │       │   ├── CommandList.h / .cpp
+│       │   ├── ResourceUploader.h / .cpp
 │       │   ├── SyncManager.h / .cpp
 │       │   └── vma.cpp
 │       ├── Render/
@@ -355,9 +357,14 @@ Examples:
 - `AssetConfig` 使用 nlohmann_json 读取 scene/material JSON。
 - `ModelLoader` 使用 tinygltf 读取 glTF/GLB 的网格、节点、材质和纹理。
 
-Mclaren 示例是当前资产和 PBR 链路的主要集成点。`MclarenPass` 负责装配场景配置、模型数据、纹理上传、Descriptor、Pipeline、天空盒和深度相关状态；`PBRRenderer` 已开始承接 Pipeline/Descriptor/Buffer 绑定及 indexed draw。
+Mclaren 示例是当前资产和 PBR 链路的主要集成点。`ResourceUploader` 统一处理
+Staging 与同步上传，`TextureFactory` 负责从已解码像素创建 GPU 纹理，`GpuMesh`
+拥有 Vertex/Index Buffer 和 SubMesh 元数据；`PBRRenderer` 承接
+Pipeline/Descriptor/Buffer 绑定及 indexed draw。
 
-`Material`、`MaterialInstance` 和 `PBRMaterialBinding` 已形成运行时材质类型骨架，但尚未完全替代 `MclarenPass` 内部的资源创建和绑定逻辑。
+`MclarenPass` 仍负责场景选择、材质覆盖、Descriptor、Pipeline、天空盒和环境资源装配。
+`Material`、`MaterialInstance` 和 `PBRMaterialBinding` 已形成运行时材质类型骨架，
+但尚未完全替代示例内部的材质绑定容器。
 
 ### 13.4 RHI 与帧运行流程
 
@@ -368,8 +375,12 @@ RHIInstance
   -> RHIDevice / Queues / VMA
   -> SwapChain
   -> SyncManager / CommandList
+  -> ResourceUploader
   -> RHIBuffer / RHITexture / RHIShader / RHIPipeline
 ```
+
+初始化期的 Buffer 和 2D Texture 上传由 `ResourceUploader` 统一管理 Staging Buffer、
+瞬时 CommandPool、拷贝命令、图像上传布局转换和 Queue 同步等待。
 
 典型示例帧流程为：
 
@@ -390,7 +401,7 @@ Window events / Input
 
 - 示例主循环和 `Engine` 主循环尚未统一。
 - RenderGraph 管理逻辑资源和部分外部图像屏障，但不拥有实际 GPU 资源。
-- `MclarenPass` 仍承担较多可下沉到公共资产/渲染层的职责。
+- `MclarenPass` 仍承担材质 Descriptor、环境资源、Pipeline 和天空盒装配职责。
 - 深度附件等 Frame Resource 仍由示例直接管理。
 - 自动化测试已覆盖 RenderGraph 和资产配置解析，但缺少 GPU、模型加载和图像回归测试。
 

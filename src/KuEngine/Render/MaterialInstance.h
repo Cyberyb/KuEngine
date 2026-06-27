@@ -1,3 +1,4 @@
+// KuEngine 材质实例模块：关联材质定义与运行时绑定，为渲染阶段提供可提交的材质状态。
 #pragma once
 
 #include <string>

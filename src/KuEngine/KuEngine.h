@@ -1,3 +1,4 @@
+// KuEngine 公共入口模块：聚合引擎对外开放的核心、资产、渲染与 RHI 接口。
 #pragma once
 
 #include "Asset/Model.h"
@@ -6,14 +7,17 @@
 #include "Core/Log.h"
 #include "Core/Window.h"
 #include "Render/RenderGraph.h"
+#include "Render/GpuMesh.h"
 #include "Render/RenderPass.h"
 #include "Render/RenderPipeline.h"
+#include "Render/TextureFactory.h"
 #include "RHI/CommandList.h"
 #include "RHI/RHIBuffer.h"
 #include "RHI/RHICommon.h"
 #include "RHI/RHIDevice.h"
 #include "RHI/RHIInstance.h"
 #include "RHI/RHIPipeline.h"
+#include "RHI/ResourceUploader.h"
 #include "RHI/RHIShader.h"
 #include "RHI/RHITexture.h"
 #include "RHI/SwapChain.h"

@@ -27,20 +27,6 @@ namespace ku {
 constexpr VkFormat kColorFormat = VK_FORMAT_B8G8R8A8_UNORM;
 constexpr const char* kDefaultEnvironmentHdr = "citrus_orchard_road_puresky_4k.hdr";
 
-void submitImmediate(CommandList& cmd, RHIDevice& device)
-{
-    cmd.end();
-
-    VkCommandBuffer buffer = cmd.cmd();
-    VkSubmitInfo submit{};
-    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit.commandBufferCount = 1;
-    submit.pCommandBuffers = &buffer;
-
-    VK_CHECK(vkQueueSubmit(device.graphicsQueue(), 1, &submit, VK_NULL_HANDLE));
-    VK_CHECK(vkQueueWaitIdle(device.graphicsQueue()));
-}
-
 void appendMeshData(
     const asset::MeshData& source,
     asset::MeshData& target)
@@ -259,7 +245,7 @@ void MclarenPass::initialize(RHIDevice& device)
     m_skyboxPipeline.reset();
     m_materialTextures.clear();
     m_materialBindings.clear();
-    m_subMeshes.clear();
+    m_gpuMesh.reset();
     m_fallbackWhiteTexture.reset();
     m_fallbackNormalTexture.reset();
     m_fallbackOrmTexture.reset();
@@ -273,6 +259,8 @@ void MclarenPass::initialize(RHIDevice& device)
     m_materialConfig = asset::MaterialConfig{};
     m_sceneModelPaths.clear();
     m_sceneMaterialPaths.clear();
+    m_resourceUploader = std::make_unique<ResourceUploader>(device);
+    m_textureFactory = std::make_unique<TextureFactory>(device, *m_resourceUploader);
 
     m_distance = 4.0f;
     m_cameraPosition = glm::vec3(0.0f, 0.0f, 4.0f);
@@ -339,54 +327,19 @@ void MclarenPass::initialize(RHIDevice& device)
         return;
     }
 
-    m_vertexCount = static_cast<uint32_t>(mesh.vertices.size());
-    m_indexCount = static_cast<uint32_t>(mesh.indices.size());
-    m_subMeshes = mesh.subMeshes;
-    if (m_subMeshes.empty()) {
-        m_subMeshes.push_back(asset::SubMeshData{0, m_indexCount, 0});
-    }
-
     m_globalBaseColorFactor = {1.0f, 1.0f, 1.0f, 1.0f};
 
     m_modelCenter = 0.5f * (mesh.boundsMin + mesh.boundsMax);
     const float radius = 0.5f * glm::length(mesh.boundsMax - mesh.boundsMin);
     m_fitScale = radius > 1e-4f ? (1.5f / radius) : 1.0f;
 
-    const VkDeviceSize vertexBytes = static_cast<VkDeviceSize>(mesh.vertices.size() * sizeof(asset::MeshVertex));
-    const VkDeviceSize indexBytes = static_cast<VkDeviceSize>(mesh.indices.size() * sizeof(uint32_t));
-
-    RHIBuffer::CreateInfo vbInfo{};
-    vbInfo.size = vertexBytes;
-    vbInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    vbInfo.memoryUsage = VMA_MEMORY_USAGE_AUTO;
-    vbInfo.allocationFlags =
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-    RHIBuffer::CreateInfo ibInfo{};
-    ibInfo.size = indexBytes;
-    ibInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-    ibInfo.memoryUsage = VMA_MEMORY_USAGE_AUTO;
-    ibInfo.allocationFlags =
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-    m_vertexBuffer = std::make_unique<RHIBuffer>(device, vbInfo);
-    m_indexBuffer = std::make_unique<RHIBuffer>(device, ibInfo);
-
-    void* vbMapped = m_vertexBuffer->map();
-    void* ibMapped = m_indexBuffer->map();
-    if (vbMapped == nullptr || ibMapped == nullptr) {
-        m_loadError = "Failed to map vertex/index buffer memory";
+    try {
+        m_gpuMesh = std::make_unique<GpuMesh>(device, *m_resourceUploader, mesh);
+    } catch (const std::exception& e) {
+        m_loadError = std::string("Failed to create GPU mesh: ") + e.what();
         KU_ERROR("MclarenPass: {}", m_loadError);
         return;
     }
-
-    std::memcpy(vbMapped, mesh.vertices.data(), static_cast<size_t>(vertexBytes));
-    std::memcpy(ibMapped, mesh.indices.data(), static_cast<size_t>(indexBytes));
-
-    m_vertexBuffer->flush();
-    m_indexBuffer->flush();
-    m_vertexBuffer->unmap();
-    m_indexBuffer->unmap();
 
     VkVertexInputBindingDescription binding{};
     binding.binding = 0;
@@ -556,23 +509,23 @@ void MclarenPass::initialize(RHIDevice& device)
     VK_CHECK(vkCreateDescriptorPool(m_deviceHandle, &poolInfo, nullptr, &m_descriptorPool));
 
     // 为缺失贴图的材质准备 1x1 兜底纹理，避免采样空资源导致渲染异常。
-    if (!createSolidColorTexture(device, {255, 255, 255, 255}, VK_FORMAT_R8G8B8A8_SRGB, m_fallbackWhiteTexture)) {
+    if (!createSolidColorTexture({255, 255, 255, 255}, VK_FORMAT_R8G8B8A8_SRGB, m_fallbackWhiteTexture)) {
         m_loadError = "Fallback baseColor texture upload failed";
         KU_ERROR("MclarenPass: {}", m_loadError);
         return;
     }
-    if (!createSolidColorTexture(device, {128, 128, 255, 255}, VK_FORMAT_R8G8B8A8_UNORM, m_fallbackNormalTexture)) {
+    if (!createSolidColorTexture({128, 128, 255, 255}, VK_FORMAT_R8G8B8A8_UNORM, m_fallbackNormalTexture)) {
         m_loadError = "Fallback normal texture upload failed";
         KU_ERROR("MclarenPass: {}", m_loadError);
         return;
     }
-    if (!createSolidColorTexture(device, {255, 255, 0, 255}, VK_FORMAT_R8G8B8A8_UNORM, m_fallbackOrmTexture)) {
+    if (!createSolidColorTexture({255, 255, 0, 255}, VK_FORMAT_R8G8B8A8_UNORM, m_fallbackOrmTexture)) {
         m_loadError = "Fallback ORM texture upload failed";
         KU_ERROR("MclarenPass: {}", m_loadError);
         return;
     }
     // Emissive fallback: black (no emission)
-    if (!createSolidColorTexture(device, {0, 0, 0, 255}, VK_FORMAT_R8G8B8A8_UNORM, m_fallbackEmissiveTexture)) {
+    if (!createSolidColorTexture({0, 0, 0, 255}, VK_FORMAT_R8G8B8A8_UNORM, m_fallbackEmissiveTexture)) {
         m_loadError = "Fallback emissive texture upload failed";
         KU_ERROR("MclarenPass: {}", m_loadError);
         return;
@@ -580,7 +533,7 @@ void MclarenPass::initialize(RHIDevice& device)
 
     const std::filesystem::path environmentPath = resolveEnvironmentPath();
     m_environmentPathString = environmentPath.string();
-    if (!createAndUploadHdrTexture(device, environmentPath, m_environmentTexture)) {
+    if (!createAndUploadHdrTexture(environmentPath, m_environmentTexture)) {
         KU_WARN("MclarenPass: environment HDR load failed, fallback to white texture: {}", m_environmentPathString);
     }
 
@@ -686,13 +639,13 @@ void MclarenPass::initialize(RHIDevice& device)
 
         // 尝试上传该材质对应纹理；上传失败或源纹理无效时会退回兜底纹理。
         bool hasBase = baseSource && baseSource->valid()
-            && createAndUploadTexture(device, *baseSource, baseFormat, baseTex);
+            && createAndUploadTexture(*baseSource, baseFormat, baseTex);
         bool hasNormal = normalSource && normalSource->valid()
-            && createAndUploadTexture(device, *normalSource, normalFormat, normalTex);
+            && createAndUploadTexture(*normalSource, normalFormat, normalTex);
         bool hasOrm = ormSource && ormSource->valid()
-            && createAndUploadTexture(device, *ormSource, ormFormat, ormTex);
+            && createAndUploadTexture(*ormSource, ormFormat, ormTex);
         bool hasEmissive = emissiveSource && emissiveSource->valid()
-            && createAndUploadTexture(device, *emissiveSource, emissiveFormat, emissiveTex);
+            && createAndUploadTexture(*emissiveSource, emissiveFormat, emissiveTex);
 
         // 默认先使用兜底视图，若上传成功再替换为真实纹理视图。
         VkImageView baseView = m_fallbackWhiteTexture->imageView();
@@ -856,15 +809,17 @@ void MclarenPass::initialize(RHIDevice& device)
     m_pbrRenderer->setPipeline(m_pipeline.get());
     m_pbrRenderer->setFrameDescriptorSet(m_frameDescriptorSet);
     m_pbrRenderer->setEnvironmentDescriptorSet(m_environmentDescriptorSet);
-    m_pbrRenderer->setVertexIndexBuffers(m_vertexBuffer.get(), m_indexBuffer.get());
+    m_pbrRenderer->setVertexIndexBuffers(
+        &m_gpuMesh->vertexBuffer(),
+        &m_gpuMesh->indexBuffer());
     m_pbrRenderer->setFrameUniformBuffer(m_frameUniformBuffer.get());
 
     KU_INFO(
         "MclarenPass initialized: vertices={}, indices={}, materials={}, subMeshes={}, textured(base/normal/orm)=({}/{}/{}), model={}, environment={}",
-        m_vertexCount,
-        m_indexCount,
+        m_gpuMesh->vertexCount(),
+        m_gpuMesh->indexCount(),
         m_materialBindings.size(),
-        m_subMeshes.size(),
+        m_gpuMesh->subMeshes().size(),
         texturedBase,
         texturedNormal,
         texturedOrm,
@@ -874,7 +829,7 @@ void MclarenPass::initialize(RHIDevice& device)
 
 void MclarenPass::execute(CommandList& cmd, const FrameData&)
 {
-    if (!m_pipeline || !m_vertexBuffer || !m_indexBuffer || m_indexCount == 0 || m_materialBindings.empty()) {
+    if (!m_pipeline || !m_gpuMesh || m_gpuMesh->indexCount() == 0 || m_materialBindings.empty()) {
         return;
     }
 
@@ -1008,15 +963,15 @@ void MclarenPass::execute(CommandList& cmd, const FrameData&)
     // 使用 PBRRenderer 执行批量绘制：构建 draw items + per-draw push & UBO
     if (m_pbrRenderer) {
         std::vector<PBRDrawItem> drawItems;
-        drawItems.reserve(m_subMeshes.size());
+        drawItems.reserve(m_gpuMesh->subMeshes().size());
 
         std::vector<PBRPushConstants> perPush;
-        perPush.reserve(m_subMeshes.size());
+        perPush.reserve(m_gpuMesh->subMeshes().size());
 
         std::vector<FrameUniforms> perFrames;
-        perFrames.reserve(m_subMeshes.size());
+        perFrames.reserve(m_gpuMesh->subMeshes().size());
 
-        for (const asset::SubMeshData& subMesh : m_subMeshes) {
+        for (const asset::SubMeshData& subMesh : m_gpuMesh->subMeshes()) {
             size_t materialIndex = static_cast<size_t>(subMesh.materialIndex);
             if (materialIndex >= m_materialBindings.size()) {
                 materialIndex = 0;
@@ -1101,9 +1056,11 @@ void MclarenPass::drawUIInline()
     }
 
     ImGui::Text("Model: %s", m_modelPathString.c_str());
-    ImGui::Text("Vertices: %u", m_vertexCount);
-    ImGui::Text("Indices: %u", m_indexCount);
-    ImGui::Text("SubMeshes: %u", static_cast<uint32_t>(m_subMeshes.size()));
+    ImGui::Text("Vertices: %u", m_gpuMesh ? m_gpuMesh->vertexCount() : 0u);
+    ImGui::Text("Indices: %u", m_gpuMesh ? m_gpuMesh->indexCount() : 0u);
+    ImGui::Text(
+        "SubMeshes: %u",
+        m_gpuMesh ? static_cast<uint32_t>(m_gpuMesh->subMeshes().size()) : 0u);
 
     uint32_t texturedBase = 0;
     uint32_t texturedNormal = 0;
@@ -1187,7 +1144,6 @@ void MclarenPass::addRotation(float deltaYaw, float deltaPitch)
 }
 
 bool MclarenPass::createAndUploadTexture(
-    RHIDevice& device,
     const asset::TextureData& textureData,
     VkFormat format,
     std::unique_ptr<RHITexture>& outTexture)
@@ -1196,82 +1152,42 @@ bool MclarenPass::createAndUploadTexture(
         return false;
     }
 
-    const VkDeviceSize textureBytes = static_cast<VkDeviceSize>(textureData.rgba8.size());
-
-    // 先把 CPU 侧像素数据写入 staging buffer，再通过拷贝命令上传到 GPU 纹理。
-    RHIBuffer::CreateInfo stagingInfo{};
-    stagingInfo.size = textureBytes;
-    stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    stagingInfo.memoryUsage = VMA_MEMORY_USAGE_AUTO;
-    stagingInfo.allocationFlags =
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-    RHIBuffer staging(device, stagingInfo);
-    void* mapped = staging.map();
-    if (mapped == nullptr) {
+    if (!m_textureFactory) {
         return false;
     }
 
-    std::memcpy(mapped, textureData.rgba8.data(), static_cast<size_t>(textureBytes));
-    staging.flush();
-    staging.unmap();
+    try {
+        outTexture = m_textureFactory->createFromRgba8(textureData, format);
+    } catch (const std::exception& e) {
+        KU_WARN("MclarenPass: texture upload failed: {}", e.what());
+        outTexture.reset();
+        return false;
+    }
 
-    RHITexture::CreateInfo texInfo{};
-    texInfo.width = textureData.width;
-    texInfo.height = textureData.height;
-    texInfo.format = format;
-    texInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    texInfo.aspect = VK_IMAGE_ASPECT_COLOR_BIT;
-    outTexture = std::make_unique<RHITexture>(device, texInfo);
-
-    VkCommandPool transferPool = device.createCommandPool();
-    CommandList transferCmd(device, transferPool);
-    transferCmd.begin();
-
-    // 布局转换：UNDEFINED -> TRANSFER_DST，准备接收拷贝。
-    transferCmd.imageBarrier(
-        outTexture->image(),
-        VK_IMAGE_LAYOUT_UNDEFINED,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_IMAGE_ASPECT_COLOR_BIT);
-
-    transferCmd.copyBufferToImage(
-        staging.buffer(),
-        outTexture->image(),
-        textureData.width,
-        textureData.height);
-
-    // 布局转换：TRANSFER_DST -> SHADER_READ_ONLY，供片段着色器采样。
-    transferCmd.imageBarrier(
-        outTexture->image(),
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        VK_IMAGE_ASPECT_COLOR_BIT);
-
-    submitImmediate(transferCmd, device);
-    vkDestroyCommandPool(device.device(), transferPool, nullptr);
     return true;
 }
 
 bool MclarenPass::createSolidColorTexture(
-    RHIDevice& device,
     std::array<uint8_t, 4> rgba,
     VkFormat format,
     std::unique_ptr<RHITexture>& outTexture)
 {
-    asset::TextureData tex;
-    tex.width = 1;
-    tex.height = 1;
-    tex.rgba8 = {rgba[0], rgba[1], rgba[2], rgba[3]};
-    return createAndUploadTexture(device, tex, format, outTexture);
+    if (!m_textureFactory) {
+        return false;
+    }
+
+    try {
+        outTexture = m_textureFactory->createSolidColor(rgba, format);
+    } catch (const std::exception& e) {
+        KU_WARN("MclarenPass: fallback texture creation failed: {}", e.what());
+        outTexture.reset();
+        return false;
+    }
+
+    return true;
 }
 
 bool MclarenPass::createAndUploadHdrTexture(
-    RHIDevice& device,
     const std::filesystem::path& hdrPath,
     std::unique_ptr<RHITexture>& outTexture)
 {
@@ -1288,61 +1204,26 @@ bool MclarenPass::createAndUploadHdrTexture(
     const VkDeviceSize textureBytes =
         static_cast<VkDeviceSize>(static_cast<uint64_t>(width) * static_cast<uint64_t>(height) * 4ull * sizeof(float));
 
-    RHIBuffer::CreateInfo stagingInfo{};
-    stagingInfo.size = textureBytes;
-    stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    stagingInfo.memoryUsage = VMA_MEMORY_USAGE_AUTO;
-    stagingInfo.allocationFlags =
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-    RHIBuffer staging(device, stagingInfo);
-    void* mapped = staging.map();
-    if (mapped == nullptr) {
+    if (!m_textureFactory) {
         stbi_image_free(hdrPixels);
         return false;
     }
 
-    std::memcpy(mapped, hdrPixels, static_cast<size_t>(textureBytes));
+    try {
+        outTexture = m_textureFactory->createTexture2D(
+            hdrPixels,
+            textureBytes,
+            static_cast<uint32_t>(width),
+            static_cast<uint32_t>(height),
+            VK_FORMAT_R32G32B32A32_SFLOAT);
+    } catch (const std::exception& e) {
+        KU_WARN("MclarenPass: HDR texture upload failed: {}", e.what());
+        stbi_image_free(hdrPixels);
+        outTexture.reset();
+        return false;
+    }
+
     stbi_image_free(hdrPixels);
-    staging.flush();
-    staging.unmap();
-
-    RHITexture::CreateInfo texInfo{};
-    texInfo.width = static_cast<uint32_t>(width);
-    texInfo.height = static_cast<uint32_t>(height);
-    texInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT;
-    texInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    texInfo.aspect = VK_IMAGE_ASPECT_COLOR_BIT;
-    outTexture = std::make_unique<RHITexture>(device, texInfo);
-
-    VkCommandPool transferPool = device.createCommandPool();
-    CommandList transferCmd(device, transferPool);
-    transferCmd.begin();
-
-    transferCmd.imageBarrier(
-        outTexture->image(),
-        VK_IMAGE_LAYOUT_UNDEFINED,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_IMAGE_ASPECT_COLOR_BIT);
-
-    transferCmd.copyBufferToImage(
-        staging.buffer(),
-        outTexture->image(),
-        static_cast<uint32_t>(width),
-        static_cast<uint32_t>(height));
-
-    transferCmd.imageBarrier(
-        outTexture->image(),
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        VK_IMAGE_ASPECT_COLOR_BIT);
-
-    submitImmediate(transferCmd, device);
-    vkDestroyCommandPool(device.device(), transferPool, nullptr);
     return true;
 }
 
@@ -1352,11 +1233,14 @@ void MclarenPass::destroyDescriptorResources()
     m_frameUniformBuffer.reset();
     m_materialBindings.clear();
     m_materialTextures.clear();
-    m_subMeshes.clear();
+    m_gpuMesh.reset();
     m_fallbackWhiteTexture.reset();
     m_fallbackNormalTexture.reset();
     m_fallbackOrmTexture.reset();
+    m_fallbackEmissiveTexture.reset();
     m_environmentTexture.reset();
+    m_textureFactory.reset();
+    m_resourceUploader.reset();
 
     if (m_deviceHandle == VK_NULL_HANDLE) {
         return;

@@ -1,3 +1,4 @@
+// KuEngine PBR 渲染模块：组织 PBR 绘制项，并负责管线、描述符与网格绘制命令的提交。
 #pragma once
 
 #include <vector>

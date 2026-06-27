@@ -1,3 +1,4 @@
+// KuEngine 渲染管线模块：管理 RenderPass 集合，编译渲染图并驱动逐帧渲染流程。
 #pragma once
 
 #include <string_view>

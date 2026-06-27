@@ -1,3 +1,4 @@
+// KuEngine 资产配置模块：定义场景、灯光、节点与材质配置，并负责从配置文件加载这些数据。
 #pragma once
 
 #include <array>

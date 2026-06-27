@@ -1,3 +1,4 @@
+// KuEngine 模型资产模块：定义 CPU 侧网格、材质和纹理数据，并提供模型文件加载入口。
 #pragma once
 
 #include <filesystem>

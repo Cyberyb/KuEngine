@@ -1,3 +1,4 @@
+// KuEngine 日志模块：封装日志系统的初始化、关闭与分级输出接口。
 #pragma once
 
 #include <spdlog/spdlog.h>
