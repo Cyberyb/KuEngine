@@ -833,6 +833,34 @@ void MclarenPass::execute(CommandList& cmd, const FrameData&)
         return;
     }
 
+    const float offX = std::clamp(m_offX, 0.0f, 1.0f);
+    const float visibleWidth = std::clamp(m_visibleWidth, 0.0f, 1.0f - offX);
+    if (visibleWidth <= 0.0f) {
+        return;
+    }
+
+    const float viewportX = static_cast<float>(m_viewportWidth) * offX;
+    const float viewportWidth = static_cast<float>(m_viewportWidth) * visibleWidth;
+    const uint32_t renderX = static_cast<uint32_t>(std::floor(viewportX));
+    const uint32_t renderRight = std::min(
+        m_viewportWidth,
+        static_cast<uint32_t>(std::ceil(viewportX + viewportWidth)));
+    const uint32_t renderWidth = std::max(1u, renderRight - renderX);
+
+    VkViewport viewport{};
+    viewport.x = viewportX;
+    viewport.y = 0.0f;
+    viewport.width = viewportWidth;
+    viewport.height = static_cast<float>(m_viewportHeight);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {static_cast<int32_t>(renderX), 0};
+    scissor.extent = {renderWidth, m_viewportHeight};
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
     const float alphaMode = m_materialConfigUsed ? alphaModeToFlag(m_materialConfig) : 0.0f;
 
     glm::mat4 model = glm::mat4(1.0f);
@@ -866,6 +894,8 @@ void MclarenPass::execute(CommandList& cmd, const FrameData&)
     const float safeFar = std::max(safeNear + 0.1f, m_cameraFar);
     const float safeFov = std::clamp(m_cameraFovYDegrees, 1.0f, 179.0f);
     glm::mat4 proj = glm::perspective(glm::radians(safeFov), std::max(m_aspect, 0.01f), safeNear, safeFar);
+    proj[0][0] /= visibleWidth;
+    proj[2][0] = (2.0f * offX + visibleWidth - 1.0f) / visibleWidth;
     proj[1][1] *= -1.0f;
 
     const glm::mat4 viewProj = proj * view;
@@ -1093,6 +1123,10 @@ void MclarenPass::drawUIInline()
     ImGui::Text("Camera");
     ImGui::Text("Camera Distance (Mouse Wheel): %.2f", m_distance);
     ImGui::TextDisabled("Use mouse wheel over viewport to zoom");
+    ImGui::SliderFloat("Viewport Offset X", &m_offX, 0.0f, 1.0f);
+    ImGui::SliderFloat("Visible Width", &m_visibleWidth, 0.0f, 1.0f);
+    m_offX = std::clamp(m_offX, 0.0f, 1.0f);
+    m_visibleWidth = std::clamp(m_visibleWidth, 0.0f, 1.0f - m_offX);
     ImGui::SliderFloat("Camera FOV Y", &m_cameraFovYDegrees, 20.0f, 120.0f);
     ImGui::SliderFloat("Camera Near", &m_cameraNear, 0.01f, 5.0f);
     ImGui::SliderFloat("Camera Far", &m_cameraFar, 5.0f, 500.0f);
@@ -1130,10 +1164,12 @@ void MclarenPass::drawUIInline()
 
 void MclarenPass::onResize(uint32_t width, uint32_t height)
 {
-    if (height == 0) {
+    if (width == 0 || height == 0) {
         return;
     }
 
+    m_viewportWidth = width;
+    m_viewportHeight = height;
     m_aspect = static_cast<float>(width) / static_cast<float>(height);
 }
 

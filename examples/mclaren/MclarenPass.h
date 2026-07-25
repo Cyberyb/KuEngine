@@ -113,6 +113,10 @@ private:
     bool m_materialConfigUsed = false;
 
     float m_aspect = 16.0f / 9.0f;
+    float m_offX = 0.0f;
+    float m_visibleWidth = 1.0f;
+    uint32_t m_viewportWidth = 1280;
+    uint32_t m_viewportHeight = 720;
     float m_distance = 4.0f;
     float m_yaw = 0.0f;
     float m_pitch = 0.0f;
