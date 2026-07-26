@@ -30,6 +30,7 @@ public:
     virtual void initialize(RHIDevice& device) {(void)device; }
     virtual void setup() {}
     virtual void setup(RenderGraphBuilder& builder) {(void)builder; setup(); }
+    virtual void update(const FrameData& frame) {(void)frame; }
     virtual void execute(CommandList& cmd, const FrameData& frame) {(void)cmd; (void)frame; }
     virtual void drawUI() {}
     virtual bool supportsInlineUI() const { return false; }

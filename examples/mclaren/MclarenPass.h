@@ -34,6 +34,7 @@ public:
 
     void initialize(RHIDevice& device) override;
     void setup(RenderGraphBuilder& builder) override;
+    void update(const FrameData& frame) override;
     void execute(CommandList& cmd, const FrameData& frame) override;
     void drawUI() override;
     bool supportsInlineUI() const override { return true; }
@@ -86,6 +87,7 @@ private:
     std::unique_ptr<RHITexture> m_environmentTexture;
 
     std::unique_ptr<RHIBuffer> m_frameUniformBuffer;
+    uint32_t m_frameUniformStride = 0;
 
     VkDescriptorSetLayout m_descriptorSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool m_descriptorPool = VK_NULL_HANDLE;
@@ -120,6 +122,7 @@ private:
     float m_distance = 4.0f;
     float m_yaw = 0.0f;
     float m_pitch = 0.0f;
+    bool m_dragging = false;
     glm::vec3 m_cameraPosition{0.0f, 0.0f, 4.0f};
     glm::vec3 m_cameraTarget{0.0f, 0.0f, 0.0f};
     glm::vec3 m_cameraUp{0.0f, 1.0f, 0.0f};

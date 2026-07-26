@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <limits>
+#include <stdexcept>
 
 #include <KuEngine/Asset/AssetConfig.h>
 #include <KuEngine/Core/Log.h>
@@ -14,6 +16,26 @@ constexpr VkFormat kDefaultSrgbFormat = VK_FORMAT_R8G8B8A8_SRGB;
 constexpr VkFormat kDefaultLinearFormat = VK_FORMAT_R8G8B8A8_UNORM;
 
 } // namespace
+
+VkDeviceSize alignedUniformBufferStride(
+    VkDeviceSize elementSize,
+    VkDeviceSize minimumAlignment)
+{
+    if (minimumAlignment <= 1) {
+        return elementSize;
+    }
+
+    const VkDeviceSize remainder = elementSize % minimumAlignment;
+    if (remainder == 0) {
+        return elementSize;
+    }
+
+    const VkDeviceSize padding = minimumAlignment - remainder;
+    if (elementSize > std::numeric_limits<VkDeviceSize>::max() - padding) {
+        throw std::overflow_error("Uniform buffer stride alignment overflow");
+    }
+    return elementSize + padding;
+}
 
 std::string toLower(std::string_view text)
 {

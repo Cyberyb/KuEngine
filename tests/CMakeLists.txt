@@ -4,6 +4,7 @@ add_executable(test_core
     core/test_engine.cpp
     core/test_render_graph.cpp
     core/test_asset_config.cpp
+    core/test_pbr.cpp
 )
 
 target_include_directories(test_core PRIVATE

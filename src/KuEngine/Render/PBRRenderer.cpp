@@ -3,6 +3,11 @@
 #include <KuEngine/Core/Log.h>
 #include <KuEngine/RHI/RHIPipeline.h>
 #include <KuEngine/RHI/RHIBuffer.h>
+
+#include <cstddef>
+#include <cstring>
+#include <limits>
+
 #include <vulkan/vulkan.h>
 
 namespace ku {
@@ -30,19 +35,49 @@ void PBRRenderer::execute(CommandList& cmd, const FrameData& /*frame*/)
         return;
     }
 
-    m_pipeline->bind(cmd);
-
-    if (m_frameDescriptorSet != VK_NULL_HANDLE) {
-        vkCmdBindDescriptorSets(
-            cmd,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_pipeline->layout(),
-            1,
-            1,
-            &m_frameDescriptorSet,
-            0,
-            nullptr);
+    const bool havePerDrawFrames = !m_perDrawFrameUniforms.empty();
+    if (havePerDrawFrames && m_perDrawFrameUniforms.size() != m_drawItems.size()) {
+        KU_WARN("PBRRenderer: per-draw frame uniform count mismatch");
+        return;
     }
+
+    if (havePerDrawFrames) {
+        if (!m_frameUniformBuffer || m_frameDescriptorSet == VK_NULL_HANDLE
+            || m_frameUniformStride < sizeof(PBRFrameUniforms)) {
+            KU_WARN("PBRRenderer: dynamic frame uniform buffer is not configured");
+            return;
+        }
+
+        const uint64_t lastOffset =
+            static_cast<uint64_t>(m_firstDrawUniformOffset)
+            + static_cast<uint64_t>(m_drawItems.size() - 1) * m_frameUniformStride;
+        const uint64_t requiredSize = lastOffset + sizeof(PBRFrameUniforms);
+        if (lastOffset > std::numeric_limits<uint32_t>::max()
+            || requiredSize > m_frameUniformBuffer->size()) {
+            KU_WARN("PBRRenderer: dynamic frame uniform buffer is too small");
+            return;
+        }
+
+        auto* mapped = static_cast<std::byte*>(m_frameUniformBuffer->map());
+        if (!mapped) {
+            KU_WARN("PBRRenderer: failed to map dynamic frame uniform buffer");
+            return;
+        }
+
+        for (size_t i = 0; i < m_perDrawFrameUniforms.size(); ++i) {
+            const size_t offset =
+                static_cast<size_t>(m_firstDrawUniformOffset)
+                + i * static_cast<size_t>(m_frameUniformStride);
+            std::memcpy(
+                mapped + offset,
+                &m_perDrawFrameUniforms[i],
+                sizeof(PBRFrameUniforms));
+        }
+        m_frameUniformBuffer->flush();
+        m_frameUniformBuffer->unmap();
+    }
+
+    m_pipeline->bind(cmd);
 
     if (m_environmentDescriptorSet != VK_NULL_HANDLE) {
         vkCmdBindDescriptorSets(
@@ -68,17 +103,22 @@ void PBRRenderer::execute(CommandList& cmd, const FrameData& /*frame*/)
         }
 
         const PBRMaterialBinding* mat = item.materialBinding;
-        // 如果提供了每次绘制的 FrameUniforms，则在绘制前更新 UBO
-        if (m_frameUniformBuffer && !m_perDrawFrameUniforms.empty()) {
-            if (i < m_perDrawFrameUniforms.size()) {
-                void* mapped = m_frameUniformBuffer->map();
-                if (mapped != nullptr) {
-                    std::memcpy(mapped, &m_perDrawFrameUniforms[i], sizeof(PBRFrameUniforms));
-                    m_frameUniformBuffer->flush();
-                    m_frameUniformBuffer->unmap();
-                }
-            }
+        if (m_frameDescriptorSet != VK_NULL_HANDLE) {
+            const uint32_t dynamicOffset = havePerDrawFrames
+                ? m_firstDrawUniformOffset
+                    + static_cast<uint32_t>(i) * m_frameUniformStride
+                : 0;
+            vkCmdBindDescriptorSets(
+                cmd,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_pipeline->layout(),
+                1,
+                1,
+                &m_frameDescriptorSet,
+                1,
+                &dynamicOffset);
         }
+
         if (mat && mat->descriptorSet != VK_NULL_HANDLE) {
             vkCmdBindDescriptorSets(
                 cmd,

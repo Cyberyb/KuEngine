@@ -70,6 +70,8 @@ void Window::framebufferResizeCallback(GLFWwindow* window, int width, int height
 {
     auto* win = static_cast<Window*>(glfwGetWindowUserPointer(window));
     if (win) {
+        win->m_width = width;
+        win->m_height = height;
         win->m_resized = true;
         if (width == 0 || height == 0) win->m_minimized = true;
         else win->m_minimized = false;

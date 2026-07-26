@@ -35,6 +35,7 @@ public:
     }
 
     void compile(RHIDevice& device);
+    void update(const FrameData& frame);
     void execute(CommandList& cmd, const FrameData& frame);
     void drawUI();
     void drawUIInline();

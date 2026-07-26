@@ -21,6 +21,7 @@ public:
 
     void initialize(RHIDevice& device) override;
     void setup(RenderGraphBuilder& builder) override;
+    void update(const FrameData& frame) override;
     void execute(CommandList& cmd, const FrameData& frame) override;
     void drawUI() override;
     void onResize(uint32_t width, uint32_t height) override;
@@ -46,6 +47,7 @@ private:
     float m_pitch = 0.0f;
     float m_distance = 3.5f;
     float m_aspect = 16.0f / 9.0f;
+    bool m_dragging = false;
 };
 
 } // namespace ku

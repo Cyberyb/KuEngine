@@ -69,6 +69,10 @@ struct PBRMaterialBinding {
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
 };
 
+[[nodiscard]] VkDeviceSize alignedUniformBufferStride(
+    VkDeviceSize elementSize,
+    VkDeviceSize minimumAlignment);
+
 std::string toLower(std::string_view text);
 bool isDisabledSource(const std::string& sourceLower);
 float clampTexCoordSet(uint32_t texCoord);

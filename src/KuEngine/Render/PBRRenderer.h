@@ -1,6 +1,7 @@
 // KuEngine PBR 渲染模块：组织 PBR 绘制项，并负责管线、描述符与网格绘制命令的提交。
 #pragma once
 
+#include <cstdint>
 #include <vector>
 #include <utility>
 
@@ -41,7 +42,15 @@ public:
 
     void setPushConstants(const PBRPushConstants& push) { m_push = push; }
     void setPerDrawPushConstants(std::vector<PBRPushConstants> pushes) { m_perDrawPush = std::move(pushes); }
-    void setFrameUniformBuffer(RHIBuffer* buf) { m_frameUniformBuffer = buf; }
+    void setFrameUniformBuffer(
+        RHIBuffer* buffer,
+        uint32_t stride,
+        uint32_t firstDrawOffset)
+    {
+        m_frameUniformBuffer = buffer;
+        m_frameUniformStride = stride;
+        m_firstDrawUniformOffset = firstDrawOffset;
+    }
     void setPerDrawFrameUniforms(std::vector<PBRFrameUniforms> frames) { m_perDrawFrameUniforms = std::move(frames); }
 
     void execute(CommandList& cmd, const FrameData& frame);
@@ -57,6 +66,8 @@ private:
     PBRPushConstants m_push{};
     std::vector<PBRPushConstants> m_perDrawPush;
     RHIBuffer* m_frameUniformBuffer = nullptr;
+    uint32_t m_frameUniformStride = 0;
+    uint32_t m_firstDrawUniformOffset = 0;
     std::vector<PBRFrameUniforms> m_perDrawFrameUniforms;
 };
 

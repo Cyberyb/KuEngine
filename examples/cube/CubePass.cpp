@@ -1,5 +1,6 @@
 #include "CubePass.h"
 
+#include <KuEngine/Core/Input.h>
 #include <KuEngine/Core/Log.h>
 #include <KuEngine/Render/RenderGraph.h>
 
@@ -61,6 +62,27 @@ void CubePass::initialize(RHIDevice& device)
     m_solidPipeline = std::make_unique<RHIPipeline>(device, solidDesc);
     m_wirePipeline = std::make_unique<RHIPipeline>(device, wireDesc);
     KU_INFO("CubePass: initialized");
+}
+
+void CubePass::update(const FrameData&)
+{
+    const bool leftDown = Input::isMouseButtonDown(Input::MOUSE_BUTTON_LEFT);
+    if (!leftDown) {
+        m_dragging = false;
+        return;
+    }
+
+    const bool mouseCapturedByUI = ImGui::GetIO().WantCaptureMouse;
+    if (Input::isMouseButtonPressed(Input::MOUSE_BUTTON_LEFT)) {
+        m_dragging = !mouseCapturedByUI;
+        return;
+    }
+
+    if (m_dragging && !mouseCapturedByUI) {
+        addRotation(
+            Input::mouseDeltaX() * 0.01f,
+            Input::mouseDeltaY() * 0.01f);
+    }
 }
 
 void CubePass::execute(CommandList& cmd, const FrameData&)

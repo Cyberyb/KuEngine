@@ -1,6 +1,7 @@
 #include "MclarenPass.h"
 
 #include <KuEngine/Asset/AssetConfig.h>
+#include <KuEngine/Core/Input.h>
 #include <KuEngine/Core/Log.h>
 #include <KuEngine/Render/PBRCommon.h>
 #include <KuEngine/Render/RenderGraph.h>
@@ -17,7 +18,9 @@
 #include <cstddef>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <vector>
 
 #include <stb_image.h>
@@ -415,7 +418,7 @@ void MclarenPass::initialize(RHIDevice& device)
 
     VkDescriptorSetLayoutBinding frameBinding{};
     frameBinding.binding = 0;
-    frameBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    frameBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     frameBinding.descriptorCount = 1;
     frameBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
@@ -426,7 +429,7 @@ void MclarenPass::initialize(RHIDevice& device)
     VK_CHECK(vkCreateDescriptorSetLayout(m_deviceHandle, &frameSetLayoutInfo, nullptr, &m_frameDescriptorSetLayout));
 
     VkDescriptorPoolSize framePoolSize{};
-    framePoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    framePoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     framePoolSize.descriptorCount = 1;
 
     VkDescriptorPoolCreateInfo framePoolInfo{};
@@ -443,8 +446,24 @@ void MclarenPass::initialize(RHIDevice& device)
     frameAllocInfo.pSetLayouts = &m_frameDescriptorSetLayout;
     VK_CHECK(vkAllocateDescriptorSets(m_deviceHandle, &frameAllocInfo, &m_frameDescriptorSet));
 
+    const VkDeviceSize frameUniformStride = alignedUniformBufferStride(
+        sizeof(FrameUniforms),
+        properties.limits.minUniformBufferOffsetAlignment);
+    if (frameUniformStride > std::numeric_limits<uint32_t>::max()) {
+        throw std::runtime_error("PBR frame uniform stride exceeds Vulkan dynamic offset range");
+    }
+    m_frameUniformStride = static_cast<uint32_t>(frameUniformStride);
+
+    const size_t drawSlotCount = std::max<size_t>(1, m_gpuMesh->subMeshes().size());
+    if (drawSlotCount > std::numeric_limits<uint32_t>::max() / m_frameUniformStride) {
+        throw std::runtime_error("PBR frame uniform buffer exceeds Vulkan dynamic offset range");
+    }
+
+    // Slot 0 is reserved for the skybox. Each PBR draw uses one aligned slot after it.
     RHIBuffer::CreateInfo frameUboInfo{};
-    frameUboInfo.size = sizeof(FrameUniforms);
+    frameUboInfo.size =
+        static_cast<VkDeviceSize>(m_frameUniformStride)
+        * static_cast<VkDeviceSize>(drawSlotCount + 1);
     frameUboInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
     frameUboInfo.memoryUsage = VMA_MEMORY_USAGE_AUTO;
     frameUboInfo.allocationFlags =
@@ -460,7 +479,7 @@ void MclarenPass::initialize(RHIDevice& device)
     frameWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     frameWrite.dstSet = m_frameDescriptorSet;
     frameWrite.dstBinding = 0;
-    frameWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    frameWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     frameWrite.descriptorCount = 1;
     frameWrite.pBufferInfo = &frameBufferInfo;
     vkUpdateDescriptorSets(m_deviceHandle, 1, &frameWrite, 0, nullptr);
@@ -782,6 +801,11 @@ void MclarenPass::initialize(RHIDevice& device)
     desc.depthFormat = m_depthFormat;
     desc.blendEnable = alphaMode >= 1.5f;
 
+    if (sizeof(PushConstants) > properties.limits.maxPushConstantsSize) {
+        throw std::runtime_error(
+            "PBR push constants exceed the selected device maxPushConstantsSize");
+    }
+
     m_pipeline = std::make_unique<RHIPipeline>(device, desc);
 
     GraphicsPipelineDesc skyboxDesc{};
@@ -812,7 +836,10 @@ void MclarenPass::initialize(RHIDevice& device)
     m_pbrRenderer->setVertexIndexBuffers(
         &m_gpuMesh->vertexBuffer(),
         &m_gpuMesh->indexBuffer());
-    m_pbrRenderer->setFrameUniformBuffer(m_frameUniformBuffer.get());
+    m_pbrRenderer->setFrameUniformBuffer(
+        m_frameUniformBuffer.get(),
+        m_frameUniformStride,
+        m_frameUniformStride);
 
     KU_INFO(
         "MclarenPass initialized: vertices={}, indices={}, materials={}, subMeshes={}, textured(base/normal/orm)=({}/{}/{}), model={}, environment={}",
@@ -825,6 +852,36 @@ void MclarenPass::initialize(RHIDevice& device)
         texturedOrm,
         m_modelPathString,
         m_environmentPathString);
+}
+
+void MclarenPass::update(const FrameData&)
+{
+    ImGuiIO& io = ImGui::GetIO();
+
+    if (!io.WantCaptureMouse && io.MouseWheel != 0.0f) {
+        const float zoomStep = std::max(0.1f, m_distance * 0.1f);
+        m_distance = std::clamp(
+            m_distance - io.MouseWheel * zoomStep,
+            2.0f,
+            12.0f);
+    }
+
+    const bool leftDown = Input::isMouseButtonDown(Input::MOUSE_BUTTON_LEFT);
+    if (!leftDown) {
+        m_dragging = false;
+        return;
+    }
+
+    if (Input::isMouseButtonPressed(Input::MOUSE_BUTTON_LEFT)) {
+        m_dragging = !io.WantCaptureMouse;
+        return;
+    }
+
+    if (m_dragging && !io.WantCaptureMouse) {
+        addRotation(
+            Input::mouseDeltaX() * 0.01f,
+            Input::mouseDeltaY() * 0.01f);
+    }
 }
 
 void MclarenPass::execute(CommandList& cmd, const FrameData&)
@@ -953,6 +1010,7 @@ void MclarenPass::execute(CommandList& cmd, const FrameData&)
         && m_environmentDescriptorSet != VK_NULL_HANDLE) {
         m_skyboxPipeline->bind(cmd);
 
+        constexpr uint32_t skyboxFrameOffset = 0;
         vkCmdBindDescriptorSets(
             cmd,
             VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -960,8 +1018,8 @@ void MclarenPass::execute(CommandList& cmd, const FrameData&)
             0,
             1,
             &m_frameDescriptorSet,
-            0,
-            nullptr);
+            1,
+            &skyboxFrameOffset);
 
         vkCmdBindDescriptorSets(
             cmd,
@@ -1079,12 +1137,6 @@ void MclarenPass::drawUI()
 
 void MclarenPass::drawUIInline()
 {
-    ImGuiIO& io = ImGui::GetIO();
-    if (!io.WantCaptureMouse && io.MouseWheel != 0.0f) {
-        const float zoomStep = std::max(0.1f, m_distance * 0.1f);
-        m_distance = std::clamp(m_distance - io.MouseWheel * zoomStep, 2.0f, 12.0f);
-    }
-
     ImGui::Text("Model: %s", m_modelPathString.c_str());
     ImGui::Text("Vertices: %u", m_gpuMesh ? m_gpuMesh->vertexCount() : 0u);
     ImGui::Text("Indices: %u", m_gpuMesh ? m_gpuMesh->indexCount() : 0u);
@@ -1265,8 +1317,10 @@ bool MclarenPass::createAndUploadHdrTexture(
 
 void MclarenPass::destroyDescriptorResources()
 {
+    m_pbrRenderer.reset();
     m_skyboxPipeline.reset();
     m_frameUniformBuffer.reset();
+    m_frameUniformStride = 0;
     m_materialBindings.clear();
     m_materialTextures.clear();
     m_gpuMesh.reset();

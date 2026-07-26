@@ -36,11 +36,12 @@ SyncManager::~SyncManager()
 void SyncManager::waitForFrame(uint32_t frame)
 {
     vkWaitForFences(m_device->device(), 1, &m_frames[frame].inFlight, VK_TRUE, UINT64_MAX);
-    vkResetFences(m_device->device(), 1, &m_frames[frame].inFlight);
 }
 
 void SyncManager::submit(uint32_t frame, VkQueue queue, std::span<VkCommandBuffer> cmds)
 {
+    vkResetFences(m_device->device(), 1, &m_frames[frame].inFlight);
+
     VkSemaphore waits[] = {m_frames[frame].imageAvailable};
     VkPipelineStageFlags stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     VkSemaphore signals[] = {m_frames[frame].renderFinished};

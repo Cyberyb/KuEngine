@@ -393,6 +393,30 @@ void RenderPipeline::execute(CommandList& cmd, const FrameData& frame)
     }
 }
 
+void RenderPipeline::update(const FrameData& frame)
+{
+    if (!m_compiledExecutionOrder.empty()) {
+        const auto& graphPasses = m_renderGraph.passes();
+        for (const size_t passIndex : m_compiledExecutionOrder) {
+            if (passIndex >= graphPasses.size()) {
+                continue;
+            }
+
+            RenderPass* pass = graphPasses[passIndex].pass;
+            if (pass != nullptr && pass->enabled()) {
+                pass->update(frame);
+            }
+        }
+        return;
+    }
+
+    for (auto& pass : m_passes) {
+        if (pass->enabled()) {
+            pass->update(frame);
+        }
+    }
+}
+
 void RenderPipeline::bindExternalImage(
     std::string_view resourceName,
     VkImage image,
