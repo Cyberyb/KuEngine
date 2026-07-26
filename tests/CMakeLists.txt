@@ -22,3 +22,25 @@ set_target_properties(test_core PROPERTIES
 )
 
 add_test(NAME core_tests COMMAND test_core)
+
+add_executable(test_mclaren_camera
+    core/test_orbit_camera.cpp
+    ${CMAKE_SOURCE_DIR}/examples/mclaren/OrbitCameraController.cpp
+)
+
+target_include_directories(test_mclaren_camera PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/examples/mclaren
+)
+
+target_link_libraries(test_mclaren_camera PRIVATE
+    KuEngine
+    GTest::gtest
+    GTest::gtest_main
+)
+
+set_target_properties(test_mclaren_camera PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)
+
+add_test(NAME mclaren_camera_tests COMMAND test_mclaren_camera)

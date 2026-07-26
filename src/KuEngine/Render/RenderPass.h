@@ -6,9 +6,10 @@
 #include <memory>
 #include <array>
 
+#include "RenderContext.h"
+
 namespace ku {
 
-class RHIDevice;
 class CommandList;
 class RenderGraphBuilder;
 
@@ -27,7 +28,7 @@ public:
     [[nodiscard]] bool enabled() const { return m_enabled; }
     void setEnabled(bool e) { m_enabled = e; }
 
-    virtual void initialize(RHIDevice& device) {(void)device; }
+    virtual void initialize(const RenderContext& context) {(void)context; }
     virtual void setup() {}
     virtual void setup(RenderGraphBuilder& builder) {(void)builder; setup(); }
     virtual void update(const FrameData& frame) {(void)frame; }

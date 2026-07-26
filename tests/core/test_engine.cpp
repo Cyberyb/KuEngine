@@ -33,7 +33,36 @@ TEST(KuEngineTest, RuntimeConfigUsesSingleFrameBaseline)
     EXPECT_TRUE(config.showStats);
     EXPECT_FALSE(config.enableDepth);
     EXPECT_EQ(config.depthFormat, VK_FORMAT_UNDEFINED);
+    EXPECT_EQ(config.depthLoadOp, VK_ATTACHMENT_LOAD_OP_CLEAR);
+    EXPECT_EQ(config.depthStoreOp, VK_ATTACHMENT_STORE_OP_DONT_CARE);
+    EXPECT_EQ(config.depthCompareOp, VK_COMPARE_OP_LESS);
     EXPECT_FLOAT_EQ(config.clearDepthStencil.depth, 1.0f);
+}
+
+TEST(KuEngineTest, RuntimeRejectsDepthLoadWithoutPersistence)
+{
+    ku::EngineConfig config{};
+    config.enableDepth = true;
+    config.depthLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    config.depthStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+
+    EXPECT_THROW(
+        {
+            ku::Engine engine(config);
+        },
+        std::invalid_argument);
+}
+
+TEST(KuEngineTest, RuntimeRejectsUnsupportedMultiFrameConfiguration)
+{
+    ku::EngineConfig config{};
+    config.framesInFlight = 2;
+
+    EXPECT_THROW(
+        {
+            ku::Engine engine(config);
+        },
+        std::invalid_argument);
 }
 
 TEST(KuEngineTest, RenderPipelineUpdatesOnlyEnabledPasses)

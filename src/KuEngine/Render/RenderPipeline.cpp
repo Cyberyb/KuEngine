@@ -7,8 +7,11 @@
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <sstream>
 #include <cstdint>
+#include <stdexcept>
+#include <unordered_set>
 
 namespace ku {
 
@@ -49,6 +52,8 @@ const char* toString(VkImageLayout layout)
             return "GENERAL";
         case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
             return "COLOR_ATTACHMENT_OPTIMAL";
+        case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+            return "DEPTH_ATTACHMENT_OPTIMAL";
         case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
             return "SHADER_READ_ONLY_OPTIMAL";
         case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
@@ -104,6 +109,10 @@ VkPipelineStageFlags stageForLayout(VkImageLayout layout)
     switch (layout) {
         case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
             return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+            return VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
+                | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
         case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
             return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
         case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
@@ -118,10 +127,37 @@ VkPipelineStageFlags stageForLayout(VkImageLayout layout)
     }
 }
 
-VkImageLayout targetLayoutForAccess(PassAccessMode mode)
+const PassAttachment* findAttachment(
+    const PassNode& node,
+    uint32_t resourceId)
 {
+    const auto found = std::find_if(
+        node.attachments.begin(),
+        node.attachments.end(),
+        [resourceId](const PassAttachment& attachment) {
+            return attachment.resource.id == resourceId;
+        });
+    return found == node.attachments.end() ? nullptr : &*found;
+}
+
+VkImageLayout targetLayoutForAccess(
+    const PassNode& node,
+    uint32_t resourceId,
+    VkImageAspectFlags aspect)
+{
+    if (const PassAttachment* attachment =
+            findAttachment(node, resourceId)) {
+        return attachment->type == AttachmentType::Depth
+            ? VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL
+            : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    }
+
+    const PassAccessMode mode = getPassAccessMode(node, resourceId);
     switch (mode) {
         case PassAccessMode::Write:
+            if ((aspect & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) != 0) {
+                return VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+            }
             return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         case PassAccessMode::Read:
             return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -133,10 +169,26 @@ VkImageLayout targetLayoutForAccess(PassAccessMode mode)
     }
 }
 
-VkPipelineStageFlags targetStageForAccess(PassAccessMode mode)
+VkPipelineStageFlags targetStageForAccess(
+    const PassNode& node,
+    uint32_t resourceId,
+    VkImageAspectFlags aspect)
 {
+    if (const PassAttachment* attachment =
+            findAttachment(node, resourceId)) {
+        return attachment->type == AttachmentType::Depth
+            ? VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
+                | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
+            : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    }
+
+    const PassAccessMode mode = getPassAccessMode(node, resourceId);
     switch (mode) {
         case PassAccessMode::Write:
+            if ((aspect & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) != 0) {
+                return VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
+                    | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+            }
             return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         case PassAccessMode::Read:
             return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
@@ -148,6 +200,40 @@ VkPipelineStageFlags targetStageForAccess(PassAccessMode mode)
     }
 }
 
+VkAttachmentLoadOp resolveLoadOp(
+    AttachmentLoadPolicy policy,
+    VkAttachmentLoadOp runtimeDefault)
+{
+    switch (policy) {
+        case AttachmentLoadPolicy::RuntimeDefault:
+            return runtimeDefault;
+        case AttachmentLoadPolicy::Load:
+            return VK_ATTACHMENT_LOAD_OP_LOAD;
+        case AttachmentLoadPolicy::Clear:
+            return VK_ATTACHMENT_LOAD_OP_CLEAR;
+        case AttachmentLoadPolicy::DontCare:
+            return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        default:
+            return runtimeDefault;
+    }
+}
+
+VkAttachmentStoreOp resolveStoreOp(
+    AttachmentStorePolicy policy,
+    VkAttachmentStoreOp runtimeDefault)
+{
+    switch (policy) {
+        case AttachmentStorePolicy::RuntimeDefault:
+            return runtimeDefault;
+        case AttachmentStorePolicy::Store:
+            return VK_ATTACHMENT_STORE_OP_STORE;
+        case AttachmentStorePolicy::DontCare:
+            return VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        default:
+            return runtimeDefault;
+    }
+}
+
 } // namespace
 
 RenderPipeline::~RenderPipeline()
@@ -155,14 +241,15 @@ RenderPipeline::~RenderPipeline()
     KU_INFO("RenderPipeline destroyed ({} passes)", m_passes.size());
 }
 
-void RenderPipeline::compile(RHIDevice& device)
+void RenderPipeline::compile(const RenderContext& context)
 {
+    m_compiled = false;
     m_renderGraph.reset();
     m_compiledExecutionOrder.clear();
-    m_resourceNameToId.clear();
+    m_externalImageBindings.clear();
 
     for (auto& pass : m_passes) {
-        pass->initialize(device);
+        pass->initialize(context);
 
         const size_t graphIndex = m_renderGraph.registerPass(*pass);
         auto builder = m_renderGraph.buildPass(graphIndex);
@@ -173,11 +260,6 @@ void RenderPipeline::compile(RHIDevice& device)
 
     const auto& graphPasses = m_renderGraph.passes();
     const auto& resources = m_renderGraph.resources();
-
-    m_resourceNameToId.reserve(resources.size());
-    for (size_t i = 0; i < resources.size(); ++i) {
-        m_resourceNameToId[resources[i].name] = static_cast<uint32_t>(i);
-    }
 
     const auto& executionOrder = m_renderGraph.executionOrder();
     for (const size_t passIndex : executionOrder) {
@@ -255,7 +337,7 @@ void RenderPipeline::compile(RHIDevice& device)
     }
 
     KU_INFO(
-        "RenderGraph stage-2 compile finished (passes={}, resources={}, dependencies={}, barriers={}, order={})",
+        "RenderGraph executable compile finished (passes={}, resources={}, dependencies={}, barriers={}, order={})",
         m_renderGraph.passes().size(),
         m_renderGraph.resources().size(),
         m_renderGraph.dependencies().size(),
@@ -267,17 +349,23 @@ void RenderPipeline::compile(RHIDevice& device)
     m_compileDebug.dependencyCount = m_renderGraph.dependencies().size();
     m_compileDebug.barrierCount = m_renderGraph.barrierPlan().size();
     m_compileDebug.orderSummary = orderSummary.str();
+    m_compiled = true;
 }
 
 void RenderPipeline::execute(CommandList& cmd, const FrameData& frame)
 {
+    if (!m_compiled) {
+        throw std::runtime_error(
+            "RenderPipeline must be compiled before graph execution");
+    }
+
     m_executeDebug.frameIndex = frame.frameIndex;
     m_executeDebug.plannedBarriers = 0;
     m_executeDebug.appliedBarriers = 0;
+    m_executeDebug.resourceTransitions = 0;
+    m_executeDebug.renderingScopes = 0;
     m_executeDebug.skippedUnbound = 0;
     m_executeDebug.skippedNoAccess = 0;
-    m_executeDebug.skippedNoop = 0;
-    m_executeDebug.skippedInRendering = 0;
     m_barrierDebugEvents.clear();
 
     if (!m_compiledExecutionOrder.empty()) {
@@ -290,6 +378,9 @@ void RenderPipeline::execute(CommandList& cmd, const FrameData& frame)
             }
 
             const auto& node = graphPasses[passIndex];
+            if (node.pass == nullptr || !node.pass->enabled()) {
+                continue;
+            }
 
             for (const BarrierPlanItem& barrier : m_renderGraph.barrierPlan()) {
                 if (barrier.toPass != passIndex) {
@@ -314,13 +405,24 @@ void RenderPipeline::execute(CommandList& cmd, const FrameData& frame)
                     debugEvent.resourceName = resources[barrier.resource.id].name;
                 } else {
                     debugEvent.resourceName = "<invalid-resource>";
+                    ++m_executeDebug.skippedNoAccess;
+                    debugEvent.reason = "barrier references an invalid resource";
+                    m_barrierDebugEvents.push_back(std::move(debugEvent));
+                    continue;
                 }
 
-                auto bindingIt = m_externalImageBindings.find(barrier.resource.id);
+                const std::string& resourceName =
+                    resources[barrier.resource.id].name;
+                auto bindingIt = m_externalImageBindings.find(resourceName);
                 if (bindingIt == m_externalImageBindings.end()) {
                     ++m_executeDebug.skippedUnbound;
                     debugEvent.reason = "no external image bound";
                     m_barrierDebugEvents.push_back(std::move(debugEvent));
+                    if (resources[barrier.resource.id].external) {
+                        throw std::runtime_error(
+                            "RenderGraph external image is not bound: "
+                            + resourceName);
+                    }
                     continue;
                 }
 
@@ -329,6 +431,11 @@ void RenderPipeline::execute(CommandList& cmd, const FrameData& frame)
                     ++m_executeDebug.skippedUnbound;
                     debugEvent.reason = "external binding has null image";
                     m_barrierDebugEvents.push_back(std::move(debugEvent));
+                    if (resources[barrier.resource.id].external) {
+                        throw std::runtime_error(
+                            "RenderGraph external image binding is null: "
+                            + resourceName);
+                    }
                     continue;
                 }
 
@@ -340,28 +447,18 @@ void RenderPipeline::execute(CommandList& cmd, const FrameData& frame)
                     continue;
                 }
 
-                const VkImageLayout targetLayout = targetLayoutForAccess(mode);
+                const VkImageLayout targetLayout = targetLayoutForAccess(
+                    node,
+                    barrier.resource.id,
+                    binding.aspect);
                 const VkPipelineStageFlags srcStage = stageForLayout(binding.currentLayout);
-                const VkPipelineStageFlags dstStage = targetStageForAccess(mode);
+                const VkPipelineStageFlags dstStage = targetStageForAccess(
+                    node,
+                    barrier.resource.id,
+                    binding.aspect);
 
                 debugEvent.oldLayout = binding.currentLayout;
                 debugEvent.newLayout = targetLayout;
-
-                // Avoid issuing no-op image barriers. In dynamic rendering regions
-                // these can trigger VUID-08719 (only memory barriers are allowed).
-                if (binding.currentLayout == targetLayout) {
-                    ++m_executeDebug.skippedNoop;
-                    debugEvent.reason = "layout already matched (no-op barrier skipped)";
-                    m_barrierDebugEvents.push_back(std::move(debugEvent));
-                    continue;
-                }
-
-                if (m_executeInsideRendering) {
-                    ++m_executeDebug.skippedInRendering;
-                    debugEvent.reason = "layout transition skipped inside rendering scope";
-                    m_barrierDebugEvents.push_back(std::move(debugEvent));
-                    continue;
-                }
 
                 cmd.imageBarrier(
                     binding.image,
@@ -374,22 +471,194 @@ void RenderPipeline::execute(CommandList& cmd, const FrameData& frame)
                 binding.currentLayout = targetLayout;
                 ++m_executeDebug.appliedBarriers;
                 debugEvent.applied = true;
-                debugEvent.reason = "applied";
+                debugEvent.reason = "applied outside rendering scope";
                 m_barrierDebugEvents.push_back(std::move(debugEvent));
             }
 
-            if (node.pass != nullptr && node.pass->enabled()) {
-                node.pass->execute(cmd, frame);
-            }
+            executePassNode(cmd, frame, node, resources);
         }
         return;
     }
 
-    // Fallback path: allows execution even if compile() was not called.
-    for (auto& pass : m_passes) {
-        if (pass->enabled()) {
-            pass->execute(cmd, frame);
+    if (!m_passes.empty()) {
+        throw std::runtime_error(
+            "Compiled RenderGraph has no executable order for registered passes");
+    }
+}
+
+void RenderPipeline::executePassNode(
+    CommandList& cmd,
+    const FrameData& frame,
+    const PassNode& node,
+    const std::vector<ResourceDesc>& resources)
+{
+    for (const PassResourceAccess& access : node.accesses) {
+        if (access.resource.id >= resources.size()) {
+            throw std::runtime_error(
+                "RenderGraph pass access references an invalid resource");
         }
+
+        const ResourceDesc& resource = resources[access.resource.id];
+        auto bindingIt = m_externalImageBindings.find(resource.name);
+        if (bindingIt == m_externalImageBindings.end()
+            || bindingIt->second.image == VK_NULL_HANDLE) {
+            if (resource.external) {
+                throw std::runtime_error(
+                    "RenderGraph external image is not bound: " + resource.name);
+            }
+            ++m_executeDebug.skippedUnbound;
+            continue;
+        }
+
+        ExternalImageBinding& binding = bindingIt->second;
+        const VkImageLayout targetLayout = targetLayoutForAccess(
+            node,
+            access.resource.id,
+            binding.aspect);
+        if (binding.currentLayout == targetLayout) {
+            continue;
+        }
+
+        cmd.imageBarrier(
+            binding.image,
+            binding.currentLayout,
+            targetLayout,
+            stageForLayout(binding.currentLayout),
+            targetStageForAccess(
+                node,
+                access.resource.id,
+                binding.aspect),
+            binding.aspect);
+        binding.currentLayout = targetLayout;
+        ++m_executeDebug.resourceTransitions;
+    }
+
+    if (node.attachments.empty()) {
+        node.pass->execute(cmd, frame);
+        return;
+    }
+
+    std::vector<VkRenderingAttachmentInfo> colorAttachments;
+    colorAttachments.reserve(node.attachments.size());
+    VkRenderingAttachmentInfo depthAttachment{};
+    bool hasDepthAttachment = false;
+    VkExtent2D renderExtent{0, 0};
+
+    struct StoredAttachment {
+        ExternalImageBinding* binding = nullptr;
+        VkAttachmentStoreOp storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    };
+    std::vector<StoredAttachment> storedAttachments;
+    storedAttachments.reserve(node.attachments.size());
+
+    for (const PassAttachment& attachment : node.attachments) {
+        if (attachment.resource.id >= resources.size()) {
+            throw std::runtime_error(
+                "RenderGraph attachment references an invalid resource");
+        }
+
+        const ResourceDesc& resource = resources[attachment.resource.id];
+        auto bindingIt = m_externalImageBindings.find(resource.name);
+        if (bindingIt == m_externalImageBindings.end()) {
+            throw std::runtime_error(
+                "RenderGraph attachment image is not bound: " + resource.name);
+        }
+
+        ExternalImageBinding& binding = bindingIt->second;
+        if (binding.image == VK_NULL_HANDLE
+            || binding.imageView == VK_NULL_HANDLE
+            || binding.extent.width == 0
+            || binding.extent.height == 0) {
+            throw std::runtime_error(
+                "RenderGraph attachment binding is incomplete: " + resource.name);
+        }
+
+        const bool depthAspect =
+            (binding.aspect
+                & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT))
+            != 0;
+        if ((attachment.type == AttachmentType::Depth) != depthAspect) {
+            throw std::runtime_error(
+                "RenderGraph attachment type does not match image aspect: "
+                + resource.name);
+        }
+
+        if (renderExtent.width == 0) {
+            renderExtent = binding.extent;
+        } else if (renderExtent.width != binding.extent.width
+            || renderExtent.height != binding.extent.height) {
+            throw std::runtime_error(
+                "RenderGraph pass attachments must have matching extents");
+        }
+
+        const VkAttachmentLoadOp loadOp = resolveLoadOp(
+            attachment.loadPolicy,
+            binding.defaultLoadOp);
+        if (loadOp == VK_ATTACHMENT_LOAD_OP_LOAD
+            && !binding.contentsValid) {
+            throw std::runtime_error(
+                "RenderGraph attachment LOAD requested before valid contents exist: "
+                + resource.name);
+        }
+        const VkAttachmentStoreOp storeOp = resolveStoreOp(
+            attachment.storePolicy,
+            binding.defaultStoreOp);
+
+        VkRenderingAttachmentInfo renderingAttachment{};
+        renderingAttachment.sType =
+            VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        renderingAttachment.imageView = binding.imageView;
+        renderingAttachment.imageLayout = binding.currentLayout;
+        renderingAttachment.loadOp = loadOp;
+        renderingAttachment.storeOp = storeOp;
+        renderingAttachment.clearValue = binding.clearValue;
+
+        if (attachment.type == AttachmentType::Depth) {
+            depthAttachment = renderingAttachment;
+            hasDepthAttachment = true;
+        } else {
+            colorAttachments.push_back(renderingAttachment);
+        }
+        storedAttachments.push_back(StoredAttachment{&binding, storeOp});
+    }
+
+    VkRenderingInfo renderingInfo{};
+    renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    renderingInfo.renderArea.offset = {0, 0};
+    renderingInfo.renderArea.extent = renderExtent;
+    renderingInfo.layerCount = 1;
+    renderingInfo.colorAttachmentCount =
+        static_cast<uint32_t>(colorAttachments.size());
+    renderingInfo.pColorAttachments =
+        colorAttachments.empty() ? nullptr : colorAttachments.data();
+    renderingInfo.pDepthAttachment =
+        hasDepthAttachment ? &depthAttachment : nullptr;
+
+    vkCmdBeginRendering(cmd, &renderingInfo);
+    ++m_executeDebug.renderingScopes;
+
+    VkViewport viewport{};
+    viewport.width = static_cast<float>(renderExtent.width);
+    viewport.height = static_cast<float>(renderExtent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.extent = renderExtent;
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+    try {
+        node.pass->execute(cmd, frame);
+    } catch (...) {
+        vkCmdEndRendering(cmd);
+        throw;
+    }
+    vkCmdEndRendering(cmd);
+
+    for (const StoredAttachment& stored : storedAttachments) {
+        stored.binding->contentsValid =
+            stored.storeOp == VK_ATTACHMENT_STORE_OP_STORE;
     }
 }
 
@@ -418,21 +687,170 @@ void RenderPipeline::update(const FrameData& frame)
 }
 
 void RenderPipeline::bindExternalImage(
-    std::string_view resourceName,
-    VkImage image,
-    VkImageLayout currentLayout,
-    VkImageAspectFlags aspect)
+    const ExternalImageBindingInfo& info)
 {
-    const auto resourceIt = m_resourceNameToId.find(std::string(resourceName));
-    if (resourceIt == m_resourceNameToId.end()) {
+    if (info.resourceName.empty()) {
+        throw std::invalid_argument(
+            "External image binding requires a resource name");
+    }
+    if (info.image == VK_NULL_HANDLE
+        || info.imageView == VK_NULL_HANDLE
+        || info.extent.width == 0
+        || info.extent.height == 0) {
+        throw std::invalid_argument(
+            "External image binding requires an image, view, and non-zero extent");
+    }
+
+    m_externalImageBindings[std::string(info.resourceName)] =
+        ExternalImageBinding{
+        info.image,
+        info.imageView,
+        info.extent,
+        info.currentLayout,
+        info.aspect,
+        info.clearValue,
+        info.defaultLoadOp,
+        info.defaultStoreOp,
+        info.finalLayout,
+        info.contentsValid,
+    };
+}
+
+void RenderPipeline::executeOverlay(
+    CommandList& cmd,
+    const std::function<void(VkCommandBuffer)>& draw)
+{
+    if (!draw) {
         return;
     }
 
-    m_externalImageBindings[resourceIt->second] = ExternalImageBinding{
-        image,
-        currentLayout,
-        aspect,
-    };
+    const auto colorIt =
+        m_externalImageBindings.find(std::string(runtime_resource::swapChainColor));
+    if (colorIt == m_externalImageBindings.end()) {
+        throw std::runtime_error(
+            "Runtime overlay requires the SwapChainColor external image");
+    }
+
+    ExternalImageBinding& color = colorIt->second;
+    if (color.currentLayout != VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
+        cmd.imageBarrier(
+            color.image,
+            color.currentLayout,
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            stageForLayout(color.currentLayout),
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            color.aspect);
+        color.currentLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        ++m_executeDebug.resourceTransitions;
+    }
+
+    VkRenderingAttachmentInfo colorAttachment{};
+    colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    colorAttachment.imageView = color.imageView;
+    colorAttachment.imageLayout = color.currentLayout;
+    colorAttachment.loadOp =
+        color.contentsValid ? VK_ATTACHMENT_LOAD_OP_LOAD : color.defaultLoadOp;
+    if (colorAttachment.loadOp == VK_ATTACHMENT_LOAD_OP_LOAD
+        && !color.contentsValid) {
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    }
+    colorAttachment.storeOp = color.defaultStoreOp;
+    colorAttachment.clearValue = color.clearValue;
+
+    VkRenderingAttachmentInfo depthAttachment{};
+    ExternalImageBinding* depth = nullptr;
+    const auto depthIt =
+        m_externalImageBindings.find(std::string(runtime_resource::sceneDepth));
+    if (depthIt != m_externalImageBindings.end()) {
+        depth = &depthIt->second;
+        if (depth->extent.width != color.extent.width
+            || depth->extent.height != color.extent.height) {
+            throw std::runtime_error(
+                "Runtime overlay color and depth extents do not match");
+        }
+        if (depth->currentLayout != VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL) {
+            cmd.imageBarrier(
+                depth->image,
+                depth->currentLayout,
+                VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                stageForLayout(depth->currentLayout),
+                VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
+                    | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                depth->aspect);
+            depth->currentLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+            ++m_executeDebug.resourceTransitions;
+        }
+
+        depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depthAttachment.imageView = depth->imageView;
+        depthAttachment.imageLayout = depth->currentLayout;
+        depthAttachment.loadOp = depth->contentsValid
+            ? VK_ATTACHMENT_LOAD_OP_LOAD
+            : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        depthAttachment.storeOp = depth->contentsValid
+            ? depth->defaultStoreOp
+            : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.clearValue = depth->clearValue;
+    }
+
+    VkRenderingInfo renderingInfo{};
+    renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    renderingInfo.renderArea.offset = {0, 0};
+    renderingInfo.renderArea.extent = color.extent;
+    renderingInfo.layerCount = 1;
+    renderingInfo.colorAttachmentCount = 1;
+    renderingInfo.pColorAttachments = &colorAttachment;
+    renderingInfo.pDepthAttachment = depth ? &depthAttachment : nullptr;
+
+    vkCmdBeginRendering(cmd, &renderingInfo);
+    ++m_executeDebug.renderingScopes;
+    try {
+        draw(cmd.cmd());
+    } catch (...) {
+        vkCmdEndRendering(cmd);
+        throw;
+    }
+    vkCmdEndRendering(cmd);
+
+    color.contentsValid =
+        colorAttachment.storeOp == VK_ATTACHMENT_STORE_OP_STORE;
+    if (depth != nullptr) {
+        depth->contentsValid =
+            depth->contentsValid
+            && depthAttachment.storeOp == VK_ATTACHMENT_STORE_OP_STORE;
+    }
+}
+
+void RenderPipeline::finalizeExternalImages(CommandList& cmd)
+{
+    for (auto& [resourceName, binding] : m_externalImageBindings) {
+        (void)resourceName;
+        if (binding.image == VK_NULL_HANDLE
+            || binding.finalLayout == VK_IMAGE_LAYOUT_UNDEFINED
+            || binding.finalLayout == VK_IMAGE_LAYOUT_GENERAL
+            || binding.currentLayout == binding.finalLayout) {
+            continue;
+        }
+
+        cmd.imageBarrier(
+            binding.image,
+            binding.currentLayout,
+            binding.finalLayout,
+            stageForLayout(binding.currentLayout),
+            stageForLayout(binding.finalLayout),
+            binding.aspect);
+        binding.currentLayout = binding.finalLayout;
+        ++m_executeDebug.resourceTransitions;
+    }
+}
+
+bool RenderPipeline::externalContentsValid(
+    std::string_view resourceName) const
+{
+    const auto found =
+        m_externalImageBindings.find(std::string(resourceName));
+    return found != m_externalImageBindings.end()
+        && found->second.contentsValid;
 }
 
 void RenderPipeline::clearExternalResources()
@@ -503,14 +921,14 @@ void RenderPipeline::drawUIInline()
 
     if (ImGui::CollapsingHeader("Last Execute", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Text(
-            "Frame=%d planned=%d applied=%d skipped-unbound=%d skipped-no-access=%d skipped-noop=%d skipped-in-rendering=%d",
+            "Frame=%d planned=%d applied=%d transitions=%d scopes=%d skipped-unbound=%d skipped-no-access=%d",
             static_cast<int>(m_executeDebug.frameIndex),
             static_cast<int>(m_executeDebug.plannedBarriers),
             static_cast<int>(m_executeDebug.appliedBarriers),
+            static_cast<int>(m_executeDebug.resourceTransitions),
+            static_cast<int>(m_executeDebug.renderingScopes),
             static_cast<int>(m_executeDebug.skippedUnbound),
-            static_cast<int>(m_executeDebug.skippedNoAccess),
-            static_cast<int>(m_executeDebug.skippedNoop),
-            static_cast<int>(m_executeDebug.skippedInRendering));
+            static_cast<int>(m_executeDebug.skippedNoAccess));
 
         for (const BarrierDebugEvent& event : m_barrierDebugEvents) {
             if (event.applied) {

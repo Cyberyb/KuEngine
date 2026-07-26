@@ -24,6 +24,7 @@ struct GraphicsPipelineDesc {
     VkPrimitiveTopology            topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     VkCullModeFlags               cullMode = VK_CULL_MODE_BACK_BIT;
     VkFrontFace                   frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    VkCompareOp                    depthCompareOp = VK_COMPARE_OP_LESS;
     bool                          depthTest = true;
     bool                          depthWrite = true;
     bool                          blendEnable = false;

@@ -20,13 +20,15 @@ CubePass::~CubePass() = default;
 
 void CubePass::setup(RenderGraphBuilder& builder)
 {
-    const ResourceHandle swapChainColor = builder.importExternal("SwapChainColor");
-    builder.write(swapChainColor);
+    const ResourceHandle swapChainColor =
+        builder.importExternal(runtime_resource::swapChainColor);
+    builder.colorAttachment(swapChainColor);
 }
 
-void CubePass::initialize(RHIDevice& device)
+void CubePass::initialize(const RenderContext& context)
 {
     KU_INFO("CubePass: initializing...");
+    RHIDevice& device = context.device;
 
     std::filesystem::path shaderDir = std::filesystem::current_path() / "shaders";
     auto vertPath = shaderDir / "cube.vert.spv";
@@ -43,7 +45,7 @@ void CubePass::initialize(RHIDevice& device)
     GraphicsPipelineDesc solidDesc{};
     solidDesc.shaders.push_back(*m_vertShader);
     solidDesc.shaders.push_back(*m_fragShader);
-    solidDesc.colorFormats = {VK_FORMAT_B8G8R8A8_UNORM};
+    solidDesc.colorFormats = {context.colorFormat};
     solidDesc.pushConstantRanges = {
         VkPushConstantRange{
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,

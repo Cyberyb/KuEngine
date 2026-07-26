@@ -22,8 +22,7 @@ int main(int argc, char* argv[])
         config.clearDepthStencil = {1.0f, 0};
 
         ku::Engine engine(std::move(config));
-        auto& mclarenPass = engine.addPass<ku::MclarenPass>();
-        mclarenPass.setDepthFormat(engine.depthFormat());
+        engine.addPass<ku::MclarenPass>();
 
         engine.compile();
         engine.run();

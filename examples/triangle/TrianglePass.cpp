@@ -13,13 +13,15 @@ TrianglePass::~TrianglePass() = default;
 
 void TrianglePass::setup(RenderGraphBuilder& builder)
 {
-    const ResourceHandle swapChainColor = builder.importExternal("SwapChainColor");
-    builder.write(swapChainColor);
+    const ResourceHandle swapChainColor =
+        builder.importExternal(runtime_resource::swapChainColor);
+    builder.colorAttachment(swapChainColor);
 }
 
-void TrianglePass::initialize(RHIDevice& device)
+void TrianglePass::initialize(const RenderContext& context)
 {
     KU_INFO("TrianglePass: initializing...");
+    RHIDevice& device = context.device;
 
     std::filesystem::path shaderDir = std::filesystem::current_path() / "shaders";
     auto vertPath = shaderDir / "triangle.vert.spv";
@@ -40,7 +42,7 @@ void TrianglePass::initialize(RHIDevice& device)
     GraphicsPipelineDesc desc{};
     desc.shaders.push_back(*m_vertShader);
     desc.shaders.push_back(*m_fragShader);
-    desc.colorFormats = {VK_FORMAT_B8G8R8A8_UNORM};
+    desc.colorFormats = {context.colorFormat};
     desc.pushConstantRanges = {
         VkPushConstantRange{VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float) * 4}
     };

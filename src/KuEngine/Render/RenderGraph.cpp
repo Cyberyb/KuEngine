@@ -119,6 +119,40 @@ void RenderGraphBuilder::write(ResourceHandle resource)
     m_graph->addAccess(m_passIndex, resource, ResourceAccessType::Write);
 }
 
+void RenderGraphBuilder::colorAttachment(
+    ResourceHandle resource,
+    AttachmentLoadPolicy loadPolicy,
+    AttachmentStorePolicy storePolicy)
+{
+    if (m_graph == nullptr) {
+        throw std::runtime_error("RenderGraphBuilder is not bound to a graph");
+    }
+
+    m_graph->addAttachment(
+        m_passIndex,
+        resource,
+        AttachmentType::Color,
+        loadPolicy,
+        storePolicy);
+}
+
+void RenderGraphBuilder::depthAttachment(
+    ResourceHandle resource,
+    AttachmentLoadPolicy loadPolicy,
+    AttachmentStorePolicy storePolicy)
+{
+    if (m_graph == nullptr) {
+        throw std::runtime_error("RenderGraphBuilder is not bound to a graph");
+    }
+
+    m_graph->addAttachment(
+        m_passIndex,
+        resource,
+        AttachmentType::Depth,
+        loadPolicy,
+        storePolicy);
+}
+
 void RenderGraphBuilder::dependsOn(std::string_view passName)
 {
     if (m_graph == nullptr) {
@@ -139,7 +173,13 @@ void RenderGraph::reset()
 
 size_t RenderGraph::registerPass(RenderPass& pass)
 {
-    m_passes.push_back(PassNode{std::string(pass.name()), &pass, {}});
+    m_passes.push_back(PassNode{
+        std::string(pass.name()),
+        &pass,
+        {},
+        {},
+        {},
+    });
     return m_passes.size() - 1;
 }
 
@@ -342,6 +382,55 @@ void RenderGraph::addAccess(size_t passIndex, ResourceHandle resource, ResourceA
     }
 
     accesses.push_back(PassResourceAccess{resource, access});
+}
+
+void RenderGraph::addAttachment(
+    size_t passIndex,
+    ResourceHandle resource,
+    AttachmentType type,
+    AttachmentLoadPolicy loadPolicy,
+    AttachmentStorePolicy storePolicy)
+{
+    if (passIndex >= m_passes.size()) {
+        throw std::out_of_range("RenderGraph::addAttachment passIndex out of range");
+    }
+    if (!resource.isValid() || resource.id >= m_resources.size()) {
+        throw std::invalid_argument(
+            "RenderGraph::addAttachment resource handle is invalid");
+    }
+
+    auto& attachments = m_passes[passIndex].attachments;
+    const auto duplicate = std::find_if(
+        attachments.begin(),
+        attachments.end(),
+        [&](const PassAttachment& current) {
+            return current.resource.id == resource.id;
+        });
+    if (duplicate != attachments.end()) {
+        throw std::runtime_error(
+            "RenderGraph pass declares the same resource as an attachment more than once");
+    }
+
+    if (type == AttachmentType::Depth) {
+        const bool alreadyHasDepth = std::any_of(
+            attachments.begin(),
+            attachments.end(),
+            [](const PassAttachment& current) {
+                return current.type == AttachmentType::Depth;
+            });
+        if (alreadyHasDepth) {
+            throw std::runtime_error(
+                "RenderGraph pass supports at most one depth attachment");
+        }
+    }
+
+    attachments.push_back(PassAttachment{
+        resource,
+        type,
+        loadPolicy,
+        storePolicy,
+    });
+    addAccess(passIndex, resource, ResourceAccessType::Write);
 }
 
 void RenderGraph::addExplicitDependency(size_t passIndex, std::string_view passName)

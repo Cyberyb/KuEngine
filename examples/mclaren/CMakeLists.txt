@@ -1,6 +1,9 @@
 add_executable(MclarenApp
     main.cpp
     MclarenPass.cpp
+    MclarenRenderResources.cpp
+    MclarenSceneAsset.cpp
+    OrbitCameraController.cpp
 )
 
 target_include_directories(MclarenApp PRIVATE

@@ -26,9 +26,10 @@ AlphaShapePass::AlphaShapePass(
 
 AlphaShapePass::~AlphaShapePass() = default;
 
-void AlphaShapePass::initialize(RHIDevice& device)
+void AlphaShapePass::initialize(const RenderContext& context)
 {
     KU_INFO("{}: initializing...", m_name);
+    RHIDevice& device = context.device;
 
     const std::filesystem::path shaderDir = std::filesystem::current_path() / "shaders";
     const auto vertPath = shaderDir / "alpha.vert.spv";
@@ -45,7 +46,7 @@ void AlphaShapePass::initialize(RHIDevice& device)
     GraphicsPipelineDesc desc{};
     desc.shaders.push_back(*m_vertShader);
     desc.shaders.push_back(*m_fragShader);
-    desc.colorFormats = {VK_FORMAT_B8G8R8A8_UNORM};
+    desc.colorFormats = {context.colorFormat};
     desc.pushConstantRanges = {
         VkPushConstantRange{
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -64,8 +65,14 @@ void AlphaShapePass::initialize(RHIDevice& device)
 
 void AlphaShapePass::setup(RenderGraphBuilder& builder)
 {
-    const ResourceHandle swapChainColor = builder.importExternal("SwapChainColor");
-    builder.write(swapChainColor);
+    const ResourceHandle swapChainColor =
+        builder.importExternal(runtime_resource::swapChainColor);
+    builder.colorAttachment(
+        swapChainColor,
+        m_dependency.empty()
+            ? AttachmentLoadPolicy::RuntimeDefault
+            : AttachmentLoadPolicy::Load,
+        AttachmentStorePolicy::Store);
 
     if (!m_dependency.empty()) {
         builder.dependsOn(m_dependency);

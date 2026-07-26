@@ -39,6 +39,9 @@ struct EngineConfig {
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
     VkClearColorValue clearColor{{0.08f, 0.09f, 0.12f, 1.0f}};
     VkClearDepthStencilValue clearDepthStencil{1.0f, 0};
+    VkAttachmentLoadOp depthLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    VkAttachmentStoreOp depthStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    VkCompareOp depthCompareOp = VK_COMPARE_OP_LESS;
 };
 
 class Engine {
@@ -102,11 +105,13 @@ private:
     VkSurfaceKHR  m_surface = VK_NULL_HANDLE;
     VkCommandPool m_commandPool = VK_NULL_HANDLE;
     VkFormat      m_depthFormat = VK_FORMAT_UNDEFINED;
+    VkImageLayout m_depthImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     bool     m_running = false;
     bool     m_minimized = false;
     bool     m_resizeRequested = false;
     bool     m_pipelineCompiled = false;
+    bool     m_depthInitialized = false;
     float    m_deltaTime = 0.0f;
     float    m_totalTime = 0.0f;
     Clock::time_point m_lastTime;

@@ -19,7 +19,7 @@ public:
 
     [[nodiscard]] std::string_view name() const override { return "Triangle"; }
     
-    void initialize(RHIDevice& device) override;
+    void initialize(const RenderContext& context) override;
     void setup(RenderGraphBuilder& builder) override;
     void execute(CommandList& cmd, const FrameData& frame) override;
     void drawUI() override;

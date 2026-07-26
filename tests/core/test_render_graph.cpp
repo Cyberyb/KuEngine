@@ -227,3 +227,63 @@ TEST(RenderGraphTest, MarksImportedResourceAsExternal)
     EXPECT_EQ(graph.dependencies()[0].fromPass, writerIndex);
     EXPECT_EQ(graph.dependencies()[0].toPass, readerIndex);
 }
+
+TEST(RenderGraphTest, AttachmentDeclarationAddsWriteAccess)
+{
+    ku::RenderGraph graph;
+
+    TestPass pass("ColorPass", [](ku::RenderGraphBuilder& builder) {
+        const ku::ResourceHandle color =
+            builder.importExternal("SwapChainColor");
+        builder.colorAttachment(
+            color,
+            ku::AttachmentLoadPolicy::Clear,
+            ku::AttachmentStorePolicy::Store);
+    });
+
+    const size_t passIndex = graph.registerPass(pass);
+    auto setup = graph.buildPass(passIndex);
+    pass.setup(setup);
+    graph.compile();
+
+    ASSERT_EQ(graph.passes().size(), 1u);
+    ASSERT_EQ(graph.passes()[0].attachments.size(), 1u);
+    ASSERT_EQ(graph.passes()[0].accesses.size(), 1u);
+
+    const ku::PassAttachment& attachment =
+        graph.passes()[0].attachments[0];
+    EXPECT_EQ(attachment.type, ku::AttachmentType::Color);
+    EXPECT_EQ(attachment.loadPolicy, ku::AttachmentLoadPolicy::Clear);
+    EXPECT_EQ(attachment.storePolicy, ku::AttachmentStorePolicy::Store);
+    EXPECT_EQ(
+        graph.passes()[0].accesses[0].access,
+        ku::ResourceAccessType::Write);
+}
+
+TEST(RenderGraphTest, RejectsDuplicateAttachmentResource)
+{
+    ku::RenderGraph graph;
+    TestPass pass("InvalidAttachments");
+    const size_t passIndex = graph.registerPass(pass);
+    auto builder = graph.buildPass(passIndex);
+    const ku::ResourceHandle depth =
+        builder.importExternal("SceneDepth");
+
+    builder.depthAttachment(depth);
+    EXPECT_THROW(builder.depthAttachment(depth), std::runtime_error);
+}
+
+TEST(RenderGraphTest, RejectsMultipleDepthAttachmentsPerPass)
+{
+    ku::RenderGraph graph;
+    TestPass pass("InvalidDepthAttachments");
+    const size_t passIndex = graph.registerPass(pass);
+    auto builder = graph.buildPass(passIndex);
+    const ku::ResourceHandle depthA =
+        builder.importExternal("SceneDepthA");
+    const ku::ResourceHandle depthB =
+        builder.importExternal("SceneDepthB");
+
+    builder.depthAttachment(depthA);
+    EXPECT_THROW(builder.depthAttachment(depthB), std::runtime_error);
+}

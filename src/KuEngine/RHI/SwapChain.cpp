@@ -8,7 +8,12 @@ namespace ku {
 SwapChain::SwapChain(const RHIDevice& device, GLFWwindow* window, VkSurfaceKHR surface)
     : m_device(&device)
 {
-    create(window, surface);
+    try {
+        create(window, surface);
+    } catch (...) {
+        destroy();
+        throw;
+    }
 }
 
 SwapChain::~SwapChain()
@@ -20,24 +25,54 @@ void SwapChain::create(GLFWwindow* window, VkSurfaceKHR surface)
 {
     const RHIDevice& device = *m_device;
 
-    VkSurfaceCapabilitiesKHR caps;
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device.physicalDevice(), surface, &caps);
+    VkSurfaceCapabilitiesKHR caps{};
+    VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+        device.physicalDevice(), surface, &caps));
+    if ((caps.supportedUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) == 0) {
+        throw std::runtime_error(
+            "The selected surface does not support SwapChain color attachments");
+    }
 
     std::vector<VkSurfaceFormatKHR> formats;
     uint32_t formatCount = 0;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(device.physicalDevice(), surface, &formatCount, nullptr);
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(
+        device.physicalDevice(), surface, &formatCount, nullptr));
+    if (formatCount == 0) {
+        throw std::runtime_error("The selected surface exposes no SwapChain formats");
+    }
     formats.resize(formatCount);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(device.physicalDevice(), surface, &formatCount, formats.data());
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(
+        device.physicalDevice(), surface, &formatCount, formats.data()));
 
     std::vector<VkPresentModeKHR> modes;
     uint32_t modeCount = 0;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(device.physicalDevice(), surface, &modeCount, nullptr);
+    VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(
+        device.physicalDevice(), surface, &modeCount, nullptr));
+    if (modeCount == 0) {
+        throw std::runtime_error("The selected surface exposes no presentation modes");
+    }
     modes.resize(modeCount);
-    vkGetPhysicalDeviceSurfacePresentModesKHR(device.physicalDevice(), surface, &modeCount, modes.data());
+    VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(
+        device.physicalDevice(), surface, &modeCount, modes.data()));
 
     VkSurfaceFormatKHR surfaceFormat = chooseSurfaceFormat(formats);
     VkPresentModeKHR presentMode = choosePresentMode(modes);
     VkExtent2D extent = chooseExtent(caps, window);
+
+    VkCompositeAlphaFlagBitsKHR compositeAlpha =
+        VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    constexpr VkCompositeAlphaFlagBitsKHR compositeAlphaCandidates[] = {
+        VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR,
+        VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR,
+        VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
+    };
+    for (const VkCompositeAlphaFlagBitsKHR candidate : compositeAlphaCandidates) {
+        if ((caps.supportedCompositeAlpha & candidate) != 0) {
+            compositeAlpha = candidate;
+            break;
+        }
+    }
 
     uint32_t imageCount = caps.minImageCount + 1;
     if (caps.maxImageCount > 0) imageCount = std::min(imageCount, caps.maxImageCount);
@@ -52,7 +87,7 @@ void SwapChain::create(GLFWwindow* window, VkSurfaceKHR surface)
     info.imageArrayLayers = 1;
     info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     info.preTransform = caps.currentTransform;
-    info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    info.compositeAlpha = compositeAlpha;
     info.presentMode = presentMode;
     info.clipped = VK_TRUE;
     info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -66,9 +101,11 @@ void SwapChain::create(GLFWwindow* window, VkSurfaceKHR surface)
 
     VK_CHECK(vkCreateSwapchainKHR(device.device(), &info, nullptr, &m_swapChain));
 
-    vkGetSwapchainImagesKHR(device.device(), m_swapChain, &imageCount, nullptr);
+    VK_CHECK(vkGetSwapchainImagesKHR(
+        device.device(), m_swapChain, &imageCount, nullptr));
     m_images.resize(imageCount);
-    vkGetSwapchainImagesKHR(device.device(), m_swapChain, &imageCount, m_images.data());
+    VK_CHECK(vkGetSwapchainImagesKHR(
+        device.device(), m_swapChain, &imageCount, m_images.data()));
 
     m_imageFormat = surfaceFormat.format;
     m_extent = extent;
@@ -131,6 +168,13 @@ void SwapChain::recreate(GLFWwindow* window, VkSurfaceKHR surface)
 
 VkSurfaceFormatKHR SwapChain::chooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& available)
 {
+    if (available.size() == 1 && available[0].format == VK_FORMAT_UNDEFINED) {
+        return VkSurfaceFormatKHR{
+            VK_FORMAT_B8G8R8A8_UNORM,
+            VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+        };
+    }
+
     for (const auto& fmt : available) {
         if (fmt.format == VK_FORMAT_B8G8R8A8_UNORM &&
             fmt.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)

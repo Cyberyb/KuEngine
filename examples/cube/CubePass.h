@@ -19,7 +19,7 @@ public:
 
     [[nodiscard]] std::string_view name() const override { return "Cube"; }
 
-    void initialize(RHIDevice& device) override;
+    void initialize(const RenderContext& context) override;
     void setup(RenderGraphBuilder& builder) override;
     void update(const FrameData& frame) override;
     void execute(CommandList& cmd, const FrameData& frame) override;

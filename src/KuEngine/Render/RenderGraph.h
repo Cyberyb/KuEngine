@@ -21,6 +21,24 @@ enum class ResourceHazardType {
     WriteAfterWrite,
 };
 
+enum class AttachmentType {
+    Color,
+    Depth,
+};
+
+enum class AttachmentLoadPolicy {
+    RuntimeDefault,
+    Load,
+    Clear,
+    DontCare,
+};
+
+enum class AttachmentStorePolicy {
+    RuntimeDefault,
+    Store,
+    DontCare,
+};
+
 struct ResourceHandle {
     static constexpr uint32_t kInvalidId = UINT32_MAX;
 
@@ -39,10 +57,18 @@ struct PassResourceAccess {
     ResourceAccessType access = ResourceAccessType::Read;
 };
 
+struct PassAttachment {
+    ResourceHandle resource;
+    AttachmentType type = AttachmentType::Color;
+    AttachmentLoadPolicy loadPolicy = AttachmentLoadPolicy::RuntimeDefault;
+    AttachmentStorePolicy storePolicy = AttachmentStorePolicy::RuntimeDefault;
+};
+
 struct PassNode {
     std::string name;
     RenderPass* pass = nullptr;
     std::vector<PassResourceAccess> accesses;
+    std::vector<PassAttachment> attachments;
     std::vector<std::string> explicitDependencies;
 };
 
@@ -70,6 +96,14 @@ public:
 
     void read(ResourceHandle resource);
     void write(ResourceHandle resource);
+    void colorAttachment(
+        ResourceHandle resource,
+        AttachmentLoadPolicy loadPolicy = AttachmentLoadPolicy::RuntimeDefault,
+        AttachmentStorePolicy storePolicy = AttachmentStorePolicy::RuntimeDefault);
+    void depthAttachment(
+        ResourceHandle resource,
+        AttachmentLoadPolicy loadPolicy = AttachmentLoadPolicy::RuntimeDefault,
+        AttachmentStorePolicy storePolicy = AttachmentStorePolicy::RuntimeDefault);
     void dependsOn(std::string_view passName);
 
 private:
@@ -101,6 +135,12 @@ private:
 
     ResourceHandle createOrGetResource(std::string_view name, bool external);
     void addAccess(size_t passIndex, ResourceHandle resource, ResourceAccessType access);
+    void addAttachment(
+        size_t passIndex,
+        ResourceHandle resource,
+        AttachmentType type,
+        AttachmentLoadPolicy loadPolicy,
+        AttachmentStorePolicy storePolicy);
     void addExplicitDependency(size_t passIndex, std::string_view passName);
 
     std::vector<PassNode> m_passes;

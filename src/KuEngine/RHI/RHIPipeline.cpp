@@ -3,6 +3,7 @@
 #include "RHIShader.h"
 #include "../Core/Log.h"
 
+#include <algorithm>
 #include <array>
 
 namespace ku {
@@ -63,15 +64,30 @@ RHIPipeline::RHIPipeline(const RHIDevice& device, const GraphicsPipelineDesc& de
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthStencil.depthTestEnable = desc.depthTest ? VK_TRUE : VK_FALSE;
     depthStencil.depthWriteEnable = desc.depthWrite ? VK_TRUE : VK_FALSE;
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthCompareOp = desc.depthCompareOp;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 
-    std::vector<VkFormat> colorFormats = desc.colorFormats;
-    if (colorFormats.empty()) {
-        colorFormats.push_back(VK_FORMAT_B8G8R8A8_UNORM);
+    if (desc.colorFormats.empty() && desc.depthFormat == VK_FORMAT_UNDEFINED) {
+        throw std::invalid_argument(
+            "GraphicsPipelineDesc requires at least one color or depth attachment format");
+    }
+    if (std::any_of(
+            desc.colorFormats.begin(),
+            desc.colorFormats.end(),
+            [](VkFormat format) {
+                return format == VK_FORMAT_UNDEFINED;
+            })) {
+        throw std::invalid_argument(
+            "GraphicsPipelineDesc color attachment format cannot be VK_FORMAT_UNDEFINED");
+    }
+    if ((desc.depthTest || desc.depthWrite)
+        && desc.depthFormat == VK_FORMAT_UNDEFINED) {
+        throw std::invalid_argument(
+            "GraphicsPipelineDesc depth test/write requires a depth attachment format");
     }
 
+    const std::vector<VkFormat>& colorFormats = desc.colorFormats;
     std::vector<VkPipelineColorBlendAttachmentState> blendAttachments(colorFormats.size());
     for (auto& attachment : blendAttachments) {
         attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |

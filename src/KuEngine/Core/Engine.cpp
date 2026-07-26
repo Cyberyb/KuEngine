@@ -27,7 +27,14 @@ Engine::Engine(EngineConfig config)
     }
     if (m_config.framesInFlight != 1) {
         throw std::invalid_argument(
-            "The first public Runtime implementation currently supports exactly one frame in flight");
+            "Public Runtime currently supports exactly one frame in flight because command buffers, "
+            "depth attachments, and Pass-owned dynamic resources are not yet replicated per frame");
+    }
+    if (m_config.enableDepth
+        && m_config.depthLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD
+        && m_config.depthStoreOp != VK_ATTACHMENT_STORE_OP_STORE) {
+        throw std::invalid_argument(
+            "Runtime depth LOAD requires depthStoreOp STORE to preserve contents between frames");
     }
 
     ku::log::init();
@@ -55,7 +62,6 @@ Engine::Engine(EngineConfig config)
             static_cast<uint32_t>(m_swapChain->imageCount()),
             m_depthFormat);
         m_renderPipeline = std::make_unique<RenderPipeline>();
-        m_renderPipeline->setExecuteInsideRendering(true);
         m_swapChainImageLayouts.assign(
             m_swapChain->imageCount(),
             VK_IMAGE_LAYOUT_UNDEFINED);
@@ -123,7 +129,18 @@ void Engine::compile()
         throw std::runtime_error("Engine Runtime is not initialized");
     }
 
-    m_renderPipeline->compile(*m_device);
+    const RenderContext context{
+        *m_device,
+        m_swapChain->imageFormat(),
+        m_depthFormat,
+        m_swapChain->extent(),
+        m_config.framesInFlight,
+        m_config.depthCompareOp,
+        m_device->properties(),
+        m_device->features(),
+        m_device->features13(),
+    };
+    m_renderPipeline->compile(context);
     m_renderPipeline->onResize(m_swapChain->width(), m_swapChain->height());
     m_pipelineCompiled = true;
 }
@@ -208,77 +225,60 @@ void Engine::render()
 
     m_commandList->begin();
 
-    m_commandList->imageBarrier(
+    VkClearValue colorClear{};
+    colorClear.color = m_config.clearColor;
+    m_renderPipeline->bindExternalImage({
+        runtime_resource::swapChainColor,
         m_swapChain->images()[imageIndex],
+        m_swapChain->imageViews()[imageIndex],
+        m_swapChain->extent(),
         m_swapChainImageLayouts[imageIndex],
-        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
-    m_swapChainImageLayouts[imageIndex] = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        VK_IMAGE_ASPECT_COLOR_BIT,
+        colorClear,
+        VK_ATTACHMENT_LOAD_OP_CLEAR,
+        VK_ATTACHMENT_STORE_OP_STORE,
+        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        false,
+    });
 
-    m_renderPipeline->bindExternalImage(
-        "SwapChainColor",
-        m_swapChain->images()[imageIndex],
-        m_swapChainImageLayouts[imageIndex]);
-
-    VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<float>(m_swapChain->width());
-    viewport.height = static_cast<float>(m_swapChain->height());
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(*m_commandList, 0, 1, &viewport);
-
-    VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    scissor.extent = m_swapChain->extent();
-    vkCmdSetScissor(*m_commandList, 0, 1, &scissor);
-
-    VkRenderingAttachmentInfo colorAttachment{};
-    colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    colorAttachment.imageView = m_swapChain->imageViews()[imageIndex];
-    colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.clearValue.color = m_config.clearColor;
-
-    VkRenderingAttachmentInfo depthAttachment{};
     if (m_depthTexture) {
-        depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        depthAttachment.imageView = m_depthTexture->imageView();
-        depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depthAttachment.clearValue.depthStencil = m_config.clearDepthStencil;
+        VkClearValue depthClear{};
+        depthClear.depthStencil = m_config.clearDepthStencil;
+        const VkAttachmentLoadOp effectiveDepthLoad =
+            !m_depthInitialized
+                && m_config.depthLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD
+            ? VK_ATTACHMENT_LOAD_OP_CLEAR
+            : m_config.depthLoadOp;
+        m_renderPipeline->bindExternalImage({
+            runtime_resource::sceneDepth,
+            m_depthTexture->image(),
+            m_depthTexture->imageView(),
+            m_swapChain->extent(),
+            m_depthImageLayout,
+            VK_IMAGE_ASPECT_DEPTH_BIT,
+            depthClear,
+            effectiveDepthLoad,
+            m_config.depthStoreOp,
+            VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+            m_depthInitialized,
+        });
     }
 
-    VkRenderingInfo renderingInfo{};
-    renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    renderingInfo.renderArea.offset = {0, 0};
-    renderingInfo.renderArea.extent = m_swapChain->extent();
-    renderingInfo.layerCount = 1;
-    renderingInfo.colorAttachmentCount = 1;
-    renderingInfo.pColorAttachments = &colorAttachment;
-    renderingInfo.pDepthAttachment = m_depthTexture ? &depthAttachment : nullptr;
-
-    vkCmdBeginRendering(*m_commandList, &renderingInfo);
-
     m_renderPipeline->execute(*m_commandList, frameData);
-    m_ui->render(
-        m_commandList->cmd(),
-        m_swapChain->imageViews()[imageIndex],
-        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    m_renderPipeline->executeOverlay(
+        *m_commandList,
+        [this, imageIndex](VkCommandBuffer cmd) {
+            m_ui->render(
+                cmd,
+                m_swapChain->imageViews()[imageIndex],
+                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        });
+    m_renderPipeline->finalizeExternalImages(*m_commandList);
 
-    vkCmdEndRendering(*m_commandList);
-
-    m_commandList->imageBarrier(
-        m_swapChain->images()[imageIndex],
-        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
     m_swapChainImageLayouts[imageIndex] = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    if (m_depthTexture) {
+        m_depthImageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    }
 
     m_commandList->end();
 
@@ -287,6 +287,10 @@ void Engine::render()
         frameIndex,
         m_device->graphicsQueue(),
         std::span<VkCommandBuffer>(&buffer, 1));
+    if (m_depthTexture) {
+        m_depthInitialized = m_renderPipeline->externalContentsValid(
+            runtime_resource::sceneDepth);
+    }
 
     const bool presented = m_syncManager->present(
         frameIndex,
@@ -345,6 +349,8 @@ void Engine::createDepthAttachment()
 {
     if (!m_config.enableDepth || m_depthFormat == VK_FORMAT_UNDEFINED) {
         m_depthTexture.reset();
+        m_depthInitialized = false;
+        m_depthImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         return;
     }
     if (!m_device || !m_swapChain || !m_commandList) {
@@ -360,25 +366,8 @@ void Engine::createDepthAttachment()
     depthInfo.aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
 
     m_depthTexture = std::make_unique<RHITexture>(*m_device, depthInfo);
-
-    m_commandList->begin();
-    m_commandList->imageBarrier(
-        m_depthTexture->image(),
-        VK_IMAGE_LAYOUT_UNDEFINED,
-        VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
-            | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-        VK_IMAGE_ASPECT_DEPTH_BIT);
-    m_commandList->end();
-
-    const VkCommandBuffer buffer = m_commandList->cmd();
-    VkSubmitInfo submit{};
-    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit.commandBufferCount = 1;
-    submit.pCommandBuffers = &buffer;
-    VK_CHECK(vkQueueSubmit(m_device->graphicsQueue(), 1, &submit, VK_NULL_HANDLE));
-    VK_CHECK(vkQueueWaitIdle(m_device->graphicsQueue()));
+    m_depthInitialized = false;
+    m_depthImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     KU_INFO(
         "Engine Runtime created depth attachment: {}x{} format={}",

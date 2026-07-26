@@ -22,6 +22,10 @@ public:
     [[nodiscard]] uint32_t presentQueueFamily() const { return m_presentQueueFamily; }
     [[nodiscard]] const VkPhysicalDeviceProperties& properties() const { return m_properties; }
     [[nodiscard]] const VkPhysicalDeviceFeatures& features() const { return m_features; }
+    [[nodiscard]] const VkPhysicalDeviceVulkan13Features& features13() const
+    {
+        return m_features13;
+    }
     [[nodiscard]] bool hasSeparateQueueFamilies() const { 
         return m_graphicsQueueFamily != m_presentQueueFamily; 
     }
@@ -46,6 +50,7 @@ private:
 
     VkPhysicalDeviceProperties       m_properties{};
     VkPhysicalDeviceFeatures        m_features{};
+    VkPhysicalDeviceVulkan13Features m_features13{};
     VkPhysicalDeviceMemoryProperties m_memoryProperties{};
 };
 
