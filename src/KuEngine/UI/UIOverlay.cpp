@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cinttypes>
 #include <stdexcept>
 
 namespace ku {
@@ -144,7 +145,7 @@ void UIOverlay::render(VkCommandBuffer cmd, VkImageView imageView, VkImageLayout
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 }
 
-void UIOverlay::drawFPSPanel(float fps, float deltaTime)
+void UIOverlay::drawFPSPanel(const UIFrameStatistics& stats)
 {
     if (!m_initialized) {
         return;
@@ -160,18 +161,31 @@ void UIOverlay::drawFPSPanel(float fps, float deltaTime)
         ImGuiWindowFlags_NoNav;
 
     ImGui::Begin("KuEngine Stats", nullptr, overlayFlags);
-    drawStats(fps, deltaTime);
+    drawStats(stats);
     ImGui::End();
 }
 
-void UIOverlay::drawStats(float fps, float deltaTime)
+void UIOverlay::drawStats(const UIFrameStatistics& stats)
 {
     if (!m_initialized) {
         return;
     }
 
-    ImGui::Text("FPS: %.1f", fps);
-    ImGui::Text("Frame: %.2f ms", deltaTime * 1000.0f);
+    ImGui::Text("FPS: %.1f", stats.fps);
+    ImGui::Text("Frame: %.2f ms", stats.frameTimeMilliseconds);
+    if (stats.cpuTimeValid) {
+        ImGui::Text("CPU: %.2f ms", stats.cpuTimeMilliseconds);
+    } else {
+        ImGui::TextDisabled("CPU: N/A");
+    }
+    if (stats.gpuTimeValid) {
+        ImGui::Text("GPU: %.2f ms", stats.gpuTimeMilliseconds);
+    } else {
+        ImGui::TextDisabled("GPU: N/A");
+    }
+    ImGui::Text("Draw Calls: %" PRIu64, stats.drawCalls);
+    ImGui::Text("Vertices: %" PRIu64, stats.submittedVertices);
+    ImGui::TextDisabled("CPU/GPU: last completed frame");
 }
 
 void UIOverlay::onSwapChainRecreated(uint32_t imageCount)

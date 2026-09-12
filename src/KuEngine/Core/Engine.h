@@ -114,6 +114,8 @@ private:
     bool     m_depthInitialized = false;
     float    m_deltaTime = 0.0f;
     float    m_totalTime = 0.0f;
+    float    m_cpuRenderTimeMs = 0.0f;
+    bool     m_cpuRenderTimeValid = false;
     Clock::time_point m_lastTime;
     std::vector<VkImageLayout> m_swapChainImageLayouts;
 };

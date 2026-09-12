@@ -1,6 +1,6 @@
 # Alpha3Pass 示例运行指南
 
-本文档说明如何编译并运行 `Alpha3PassApp`（v0.2 阶段4三 Pass Alpha 示例）。
+本文档说明如何编译并运行当前公共 Runtime 下的 `Alpha3PassApp`。
 
 ## 1. 前置条件
 
@@ -68,4 +68,6 @@ ctest --preset debug
 
 ## 6. 进一步回归检查
 
-如需执行 v0.2 最小回归流程，请参考：`docs/usage/v0.2-regression-checks.md`。
+当前 Graph 为每个节点开启独立 Rendering Scope，后两节点 LOAD 已有颜色。全部启用时，业务统计应为 3 Draw Calls、9 Vertices。
+
+回归操作见 [当前回归检查](regression-checks.md)。

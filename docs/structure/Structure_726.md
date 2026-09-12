@@ -1,5 +1,7 @@
 # KuEngine 当前代码架构分析
 
+> 历史快照（2026-07-26），正文保留当时结论，包含后续已过时的描述。当前实现见 [current-architecture.md](current-architecture.md)，模块细节见 [design](../design/README.md)。
+
 > 分析基线：提交 `c0399e1`（2026-07-26）
 > 完成日期：2026-07-26
 > 分析范围：`src/`、`examples/`、`resources/`、`tests/` 与 CMake 配置

@@ -146,7 +146,7 @@ void PBRRenderer::execute(CommandList& cmd, const FrameData& /*frame*/)
             sizeof(PBRPushConstants),
             pushPtr);
 
-        vkCmdDrawIndexed(cmd, item.indexCount, 1, item.indexStart, 0, 0);
+        cmd.drawIndexed(item.indexCount, 1, item.indexStart);
     }
 }
 

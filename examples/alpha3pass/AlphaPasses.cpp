@@ -99,7 +99,7 @@ void AlphaShapePass::execute(CommandList& cmd, const FrameData&)
         sizeof(PushConstants),
         &pc);
 
-    vkCmdDraw(cmd, 3, 1, 0, 0);
+    cmd.draw(3);
 }
 
 void AlphaShapePass::drawUI()

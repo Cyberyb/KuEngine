@@ -1,246 +1,27 @@
-# 日志与调试规范
+# 日志与诊断设计
 
-## 1. 日志系统
+核对日期：2026-09-12。
 
-使用 spdlog 作为日志库。
+源码：[Log.h](../../src/KuEngine/Core/Log.h)、[Log.cpp](../../src/KuEngine/Core/Log.cpp)、[RHICommon.h](../../src/KuEngine/RHI/RHICommon.h)、[RHIInstance.cpp](../../src/KuEngine/RHI/RHIInstance.cpp)。
 
-### 日志级别定义
+## 应用日志
 
-| 级别 | 使用场景 | 宏定义 |
-|------|---------|--------|
-| `trace` | 详细调试信息（Vulkan API 调用参数等） | `KU_TRACE` |
-| `debug` | 开发调试信息 | `KU_DEBUG` |
-| `info` | 一般信息（启动信息、状态变化） | `KU_INFO` |
-| `warn` | 警告（性能问题、非致命错误） | `KU_WARN` |
-| `error` | 错误（Vulkan 错误、异常） | `KU_ERROR` |
-| `critical` | 严重错误（程序无法继续） | `KU_CRITICAL` |
+ku::log::init() 查找或创建名为 KuEngine 的 stdout_color_mt logger，将其设为 spdlog 默认 logger。格式为时间、logger 名称、级别和消息。
 
-### 宏定义
+KU_TRACE / KU_DEBUG / KU_INFO / KU_WARN / KU_ERROR / KU_CRITICAL 转发到 spdlog 的对应接口。当前没有文件 Sink、异步日志、ImGui 日志控制台或日志导出模块。
 
-```cpp
-// src/KuEngine/Core/Log.h
-#pragma once
+Log.cpp 按 KU_DEBUG_BUILD 选择 debug/info 级别。该宏定义在 RHICommon.h，而 Log.cpp 没有直接包含它；当前 CMake 也未统一定义该宏，因此不能仅凭 Debug 配置保证这里会开启 debug 日志。此处记录现有实现边界。
 
-#include <spdlog/spdlog.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
+## Vulkan 错误
 
-namespace ku {
-namespace log {
+VK_CHECK 对非 VK_SUCCESS 返回值抛出 runtime_error，包含 VkResult 名称、文件行号和原始表达式。可恢复状态必须由调用点先分支处理，例如交换链的 OUT_OF_DATE/SUBOPTIMAL，以及 Query 读取的 NOT_READY。
 
-void init();
+不是所有 Vulkan 调用都经过 VK_CHECK；例如 SyncManager 的部分 Fence 调用直接使用返回值未检查。UIOverlay 的 Backend 检查回调则通过 KU_ERROR 记录非成功结果。
 
-} // namespace log
-} // namespace ku
+## Validation 与诊断来源
 
-#define KU_TRACE(...) ::spdlog::trace(__VA_ARGS__)
-#define KU_DEBUG(...) ::spdlog::debug(__VA_ARGS__)
-#define KU_INFO(...)  ::spdlog::info(__VA_ARGS__)
-#define KU_WARN(...)  ::spdlog::warn(__VA_ARGS__)
-#define KU_ERROR(...) ::spdlog::error(__VA_ARGS__)
-#define KU_CRITICAL(...) ::spdlog::critical(__VA_ARGS__)
-```
+RHIInstance 在 KU_DEBUG_BUILD 下请求 VK_LAYER_KHRONOS_validation。当前不枚举可用 Layer，也没有创建 VkDebugUtilsMessengerEXT 将验证消息统一接入 logger。启用 Layer 和拥有完整错误收集设施是两个不同的实现状态。
 
-### 使用示例
+RenderPipeline 的声明、编译和执行校验会报告 Pass/资源问题，Graph Debug UI 展示编译计划与最近执行摘要。示例 main 捕获 std::exception 并输出 Fatal error。
 
-```cpp
-KU_INFO("Initializing KuEngine v{}", KU_VERSION);
-KU_DEBUG("Physical device: {}", deviceName);
-KU_WARN("Validation layer enabled, performance may be reduced");
-KU_ERROR("Failed to create swap chain: {}", to_string(result));
-```
-
----
-
-## 2. Vulkan 错误检查
-
-### VK_CHECK 宏
-
-```cpp
-// src/KuEngine/RHI/RHICommon.h
-#pragma once
-
-#include <vulkan/vulkan.h>
-#include <stdexcept>
-#include <string>
-
-constexpr const char* to_string(VkResult result) {
-    switch (result) {
-        case VK_SUCCESS: return "VK_SUCCESS";
-        case VK_NOT_READY: return "VK_NOT_READY";
-        case VK_TIMEOUT: return "VK_TIMEOUT";
-        case VK_EVENT_SET: return "VK_EVENT_SET";
-        case VK_EVENT_RESET: return "VK_EVENT_RESET";
-        case VK_INCOMPLETE: return "VK_INCOMPLETE";
-        case VK_ERROR_OUT_OF_HOST_MEMORY: return "VK_ERROR_OUT_OF_HOST_MEMORY";
-        case VK_ERROR_OUT_OF_DEVICE_MEMORY: return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
-        case VK_ERROR_INITIALIZATION_FAILED: return "VK_ERROR_INITIALIZATION_FAILED";
-        case VK_ERROR_DEVICE_LOST: return "VK_ERROR_DEVICE_LOST";
-        case VK_ERROR_MEMORY_MAP_FAILED: return "VK_ERROR_MEMORY_MAP_FAILED";
-        case VK_ERROR_LAYER_NOT_PRESENT: return "VK_ERROR_LAYER_NOT_PRESENT";
-        case VK_ERROR_EXTENSION_NOT_PRESENT: return "VK_ERROR_EXTENSION_NOT_PRESENT";
-        case VK_ERROR_FEATURE_NOT_PRESENT: return "VK_ERROR_FEATURE_NOT_PRESENT";
-        case VK_ERROR_INCOMPATIBLE_DRIVER: return "VK_ERROR_INCOMPATIBLE_DRIVER";
-        case VK_ERROR_TOO_MANY_OBJECTS: return "VK_ERROR_TOO_MANY_OBJECTS";
-        case VK_ERROR_FORMAT_NOT_SUPPORTED: return "VK_ERROR_FORMAT_NOT_SUPPORTED";
-        case VK_ERROR_OUT_OF_DATE_KHR: return "VK_ERROR_OUT_OF_DATE_KHR";
-        case VK_ERROR_SURFACE_LOST_KHR: return "VK_ERROR_SURFACE_LOST_KHR";
-        case VK_SUBOPTIMAL_KHR: return "VK_SUBOPTIMAL_KHR";
-        default: return "UNKNOWN_VK_RESULT";
-    }
-}
-
-#define VK_CHECK(expr)                                                           \
-    do {                                                                         \
-        VkResult _result = (expr);                                               \
-        if (_result != VK_SUCCESS) {                                             \
-            throw std::runtime_error(                                            \
-                std::string("Vulkan error: ") + to_string(_result) +             \
-                " at " + __FILE__ + ":" + std::to_string(__LINE__) +            \
-                "\nExpression: " + #expr                                          \
-            );                                                                   \
-        }                                                                        \
-    } while (false)
-```
-
----
-
-## 3. Bug 追踪规范
-
-### Bug 报告模板
-
-按照 `docs/bugs/README.md` 使用稳定主题命名，例如
-`swapchain-resize-crash.md`。同一问题从发现到修复始终更新同一文件：
-
-```markdown
-# Bug Report: [简短描述]
-
-**首次发现**: YYYY-MM-DD
-**最近更新**: YYYY-MM-DD
-**严重程度**: Critical / High / Medium / Low
-**状态**: Open / In Progress / Resolved
-**影响模块**: RHI / Render / Asset / UI / Example
-
-## 复现步骤
-
-1. 
-2. 
-3. 
-
-## 预期行为
-
-描述预期应该发生什么。
-
-## 实际行为
-
-描述实际发生了什么。
-
-## 环境
-
-- GPU: 
-- Driver Version: 
-- OS: Windows 11
-- Vulkan SDK: 1.3.xxx
-
-## 堆栈跟踪 / 错误信息
-
-```
-[粘贴错误信息]
-```
-
-## 分析
-
-[分析可能的原因]
-
-## 修复方案
-
-[描述如何修复]
-
-## 回归验证
-
-- [ ] Debug 构建通过
-- [ ] 相关测试通过
-- [ ] 对应示例运行通过
-- [ ] 相关文档已同步
-```
-
-Bug 修复完成时必须记录根因和回归结果。若修复改变公共接口或模块职责，
-还需要同步 `docs/design/`；若具有架构意义，则在 `docs/logs/` 对应主题中
-追加简要记录。
-
-### 示例
-
-```markdown
-# Bug Report: SwapChain 重建时崩溃
-
-**日期**: 2026-04-11  
-**严重程度**: High  
-**状态**: Resolved
-
-## 复现步骤
-
-1. 启动程序
-2. 将窗口拖动到屏幕边缘触发 resize
-3. 快速连续多次 resize
-
-## 预期行为
-
-窗口平滑 resize，不崩溃。
-
-## 实际行为
-
-程序崩溃，vkAcquireNextImageKHR 返回 VK_ERROR_OUT_OF_DATE_KHR 
-后未正确处理。
-
-## 修复方案
-
-在 `SwapChain::acquireNextImage` 中添加重试逻辑，
-当返回 `VK_ERROR_OUT_OF_DATE_KHR` 时自动调用 `recreate()` 并重试。
-```
-
----
-
-## 4. 调试工具集成
-
-### RenderDoc
-
-在 Debug 构建中自动注入 RenderDoc hook：
-
-```cpp
-// 在 Engine 初始化时调用
-void initRenderDoc() {
-#ifdef KU_DEBUG
-    if (auto loader = RENDERDOC_GetAPI eLoaderFunc(RENDERDOC_API_1_1_2);
-        loader(RENDERDOC_UUID_1_1_2, (void**)&rdoc) == 1) {
-        rdoc->SetCaptureSavePath(savePath);
-        KU_INFO("RenderDoc hook initialized");
-    }
-#endif
-}
-```
-
-### Vulkan Configurator
-
-打印关键 Vulkan 配置信息：
-
-```cpp
-void printVulkanInfo(const RHIDevice& device) {
-    auto& props = device.physicalDeviceProperties();
-    
-    KU_INFO("=== Vulkan Info ===");
-    KU_INFO("Driver Version: {}", props.driverVersion);
-    KU_INFO("Vulkan Version: {}.{}.{}",
-        VK_VERSION_MAJOR(props.apiVersion),
-        VK_VERSION_MINOR(props.apiVersion),
-        VK_VERSION_PATCH(props.apiVersion));
-    KU_INFO("Device: {}", props.deviceName);
-    KU_INFO("Device Type: {}", 
-        [props.deviceType](auto types) {
-            switch (props.deviceType) {
-                case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU: return "Discrete";
-                case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: return "Integrated";
-                case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU: return "Virtual";
-                default: return "Other";
-            }
-        });
-}
-```
+具体问题的复现、根因和回归过程写入 [bugs](../bugs/README.md)；每日完成摘要写入 [logs](../logs/README.md)，不在本设计文件复制 Bug 模板或历史案例。

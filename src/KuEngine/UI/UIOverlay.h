@@ -2,6 +2,7 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <cstdint>
 #include <string_view>
 #include <vector>
 #include <memory>
@@ -11,6 +12,17 @@ struct GLFWwindow;
 namespace ku {
 
 class RHIDevice;
+
+struct UIFrameStatistics {
+    float fps = 0.0f;
+    float frameTimeMilliseconds = 0.0f;
+    float cpuTimeMilliseconds = 0.0f;
+    double gpuTimeMilliseconds = 0.0;
+    uint64_t drawCalls = 0;
+    uint64_t submittedVertices = 0;
+    bool cpuTimeValid = false;
+    bool gpuTimeValid = false;
+};
 
 class UIOverlay {
 public:
@@ -25,8 +37,8 @@ public:
 
     void newFrame();
     void render(VkCommandBuffer cmd, VkImageView imageView, VkImageLayout imageLayout);
-    void drawStats(float fps, float deltaTime);
-    void drawFPSPanel(float fps, float deltaTime);
+    void drawStats(const UIFrameStatistics& stats);
+    void drawFPSPanel(const UIFrameStatistics& stats);
     void onSwapChainRecreated(uint32_t imageCount);
 
 private:

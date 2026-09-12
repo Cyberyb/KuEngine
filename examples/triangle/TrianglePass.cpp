@@ -69,7 +69,7 @@ void TrianglePass::execute(CommandList& cmd, const FrameData&)
         sizeof(float) * 4,
         m_triangleColor.data());
 
-    vkCmdDraw(cmd, 3, 1, 0, 0);
+    cmd.draw(3);
 }
 
 void TrianglePass::drawUI()

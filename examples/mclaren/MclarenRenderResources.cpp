@@ -948,7 +948,7 @@ void MclarenRenderResources::drawSkybox(
         0,
         sizeof(push),
         &push);
-    vkCmdDraw(cmd, 3, 1, 0, 0);
+    cmd.draw(3);
 }
 
 void MclarenRenderResources::destroyVulkanHandles()

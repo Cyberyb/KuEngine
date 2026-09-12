@@ -1,73 +1,57 @@
-# Triangle 示例技术说明
+# 示例模块设计
 
-本文档解释 `examples/triangle` 示例中实际使用的关键技术与执行流程。
+核对日期：2026-09-12。保留原 Triangle 文档路径，现在统一说明四个示例的当前装配。
 
-## 1. 技术栈
+## 公共入口
 
-- 图形 API: Vulkan 1.3
-- 渲染方式: Dynamic Rendering（`vkCmdBeginRendering` / `vkCmdEndRendering`）
-- 窗口系统: GLFW3
-- 语言标准: C++20
-- 构建系统: CMake + vcpkg
-- Shader 工具: `glslc`（来自 Vulkan SDK）
+四个 main 都创建 EngineConfig、Engine，通过 addPass<T>() 注册后 compile/run。Vulkan 帧循环、交换链、同步、深度和 UI Backend 由 Engine 持有。
 
-## 2. 运行时模块关系
+| 示例 | Pass/组件 | 当前绘制 |
+|---|---|---|
+| [Triangle](../../examples/triangle/TrianglePass.cpp) | TrianglePass | Shader 生成 3 顶点，颜色经 fragment Push Constant 传入 |
+| [Cube](../../examples/cube/CubePass.cpp) | CubePass | Shader 生成实心 36 顶点或线框 24 顶点；两套 Pipeline |
+| [Alpha3Pass](../../examples/alpha3pass/AlphaPasses.cpp) | 三个 AlphaShapePass | 每个 3 顶点，显式依赖链，共享颜色附件 |
+| [Mclaren](../../examples/mclaren/MclarenPass.cpp) | MclarenPass 及三个辅助组件 | 同一 Scope 中先画 Skybox，再逐 SubMesh indexed draw |
 
-示例主程序在 [examples/triangle/main.cpp](examples/triangle/main.cpp) 中直接串联以下模块：
+## Triangle 与 Cube
 
-- `Window`: GLFW 窗口与事件循环
-- `RHIInstance`: Vulkan 实例创建
-- `RHIDevice`: 物理设备选择、逻辑设备、队列、VMA
-- `SwapChain`: 交换链图像与视图管理
-- `SyncManager`: 每帧信号量与 Fence 同步
-- `CommandList`: 命令缓冲录制
-- `RenderPipeline + TrianglePass`: 渲染通道组织与三角形 draw call
+TrianglePass 从当前运行目录 shaders 读取 SPIR-V，以 RenderContext 的颜色格式创建 Pipeline。不使用 Vertex Buffer 或深度；Draw Call=1，提交顶点=3。
 
-## 3. 图形管线要点
+Cube 的 MVP、颜色和模式通过 Push Constants 传给 Shader；左键拖动更新旋转，UI 切换实心/线框、距离和颜色。当前也不启用 Runtime 深度。两种模式都是一次 draw。
 
-实现位于 [src/KuEngine/RHI/RHIPipeline.cpp](src/KuEngine/RHI/RHIPipeline.cpp)。
+## Alpha3Pass
 
-- 使用 2 个 shader stage：Vertex + Fragment
-- 无顶点缓冲输入（由 `gl_VertexIndex` 生成可见几何三角形）
-- 开启动态状态：Viewport / Scissor
-- 通过 `VkPipelineRenderingCreateInfo` 绑定 color attachment format（无需传统 `VkRenderPass`）
+Background → MainTriangle → Accent 通过 dependsOn 声明顺序，并共同写 SwapChainColor。首节点使用 RuntimeDefault Load，后续节点使用 LOAD，Store=STORE 保留颜色；每个节点有独立 Rendering Scope。各节点 UI 调整颜色、位置与缩放。
 
-## 4. 帧渲染流程
+启用全部节点且 Pipeline 就绪时，业务 draw 数为 3、提交顶点为 9。该示例不创建离屏中间图像。
 
-主循环每帧执行流程如下：
+## Mclaren 组件关系
 
-1. `waitForFrame` 等待上一帧 GPU 完成
-2. `acquireNextImage` 获取交换链图像索引
-3. 录制命令缓冲
-4. 图像布局转换：`PRESENT_SRC_KHR -> COLOR_ATTACHMENT_OPTIMAL`
-5. `vkCmdBeginRendering`
-6. 执行 `TrianglePass::execute`，内部调用 `vkCmdDraw(cmd, 3, 1, 0, 0)`
-7. `vkCmdEndRendering`
-8. 图像布局转换：`COLOR_ATTACHMENT_OPTIMAL -> PRESENT_SRC_KHR`
-9. 提交队列并 present
+```mermaid
+flowchart LR
+    Pass["MclarenPass：编排与 UI"]
+    Scene["MclarenSceneAsset：CPU 场景与配置"]
+    Camera["OrbitCameraController：输入与矩阵"]
+    Resources["MclarenRenderResources：GPU 资源"]
+    PBR["PBRRenderer：逐 draw 提交"]
+    Pass --> Scene
+    Pass --> Camera
+    Pass --> Resources
+    Pass --> PBR
+    Scene --> Resources
+    Resources --> PBR
+```
 
-## 5. Shader 技术点
+- SceneAsset 读取场景中的多个模型并合并 Mesh，材质 JSON 只使用首个有效引用；保存相机、光照、模型中心和 fitScale。GPU 上传后 releaseCpuMesh 释放 CPU Mesh。
+- CameraController 消费 Input 和 ImGuiIO 鼠标/滚轮信息，管理旋转、缩放、投影及局部视口。
+- RenderResources 拥有 Shader/Pipeline、GpuMesh、Texture、Descriptor/Sampler、动态 UBO、上传器及 PBRRenderer。
+- Pass 声明 SwapChainColor 和可选 SceneDepth；update 更新输入，execute 设置局部 viewport/scissor、计算相机与逐 draw 数据、画 Skybox/PBR。
+- ready 为 false、视口无宽度或数据更新失败时提前退出，统计只累加实际经过 CommandList 的绘制。
 
-Shader 源码位置：
+Mclaren main 设置 enableDepth=true；Depth Image 和 resize 生命周期均属于 Engine。更多 GPU 绑定细节见 [PBR 设计](10-pbr-rendering.md)。
 
-- [examples/triangle/shaders/triangle.vert](examples/triangle/shaders/triangle.vert)
-- [examples/triangle/shaders/triangle.frag](examples/triangle/shaders/triangle.frag)
+## 当前约束与验证入口
 
-关键设计：
+MclarenRenderResources 仍是较大的示例专属容器；CameraController 可以独立做 CPU 测试，其他示例绘制仍需 GPU 冒烟验证。当前没有通用 Scene/ECS 或编辑器。
 
-- 顶点着色器不依赖顶点缓冲，直接构造居中可见三角形坐标
-- 片段着色器颜色由 push constants 传入，可通过 UI 实时调整
-
-## 6. CMake 集成点
-
-在 [examples/triangle/CMakeLists.txt](examples/triangle/CMakeLists.txt) 中：
-
-- 生成 `TriangleApp` 可执行文件
-- 构建后复制 shader 源文件与脚本到运行目录
-- 若检测到 `Vulkan_GLSLC_EXECUTABLE`，自动编译 `.vert/.frag` 为 `.spv`
-
-## 7. 当前实现边界
-
-- 该示例目标是“最小可运行三角形链路”，优先验证 RHI 与渲染流程
-- 已接入基础 UI（FPS 与颜色面板），尚未接入资源系统、复杂材质与多 Pass 调度
-- 可作为后续扩展（纹理、uniform、相机、RenderGraph）的基线示例
+运行和回归操作见 [usage](../usage/README.md)，此处仅描述模块设计。

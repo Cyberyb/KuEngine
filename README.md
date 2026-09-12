@@ -70,30 +70,37 @@ KuEngine/
 │   └── KuEngine/          # Core engine library
 │       ├── Core/          # Engine, Window (GLFW3), Input, Log
 │       ├── RHI/           # Vulkan abstraction layer
-│       ├── Render/        # RenderPass, RenderPipeline
+│       ├── Render/        # Pass, Graph execution, Mesh, Texture, PBR
+│       ├── Asset/         # Scene/material config and glTF loading
 │       ├── UI/            # UI overlay abstraction
 │       └── KuEngine.h     # Aggregated public include
 ├── examples/
 │   ├── CMakeLists.txt
-│   └── triangle/          # MVP: visible triangle + runtime UI control
+│   ├── triangle/          # Minimal draw and runtime UI control
+│   ├── cube/              # Solid/wireframe and input
+│   ├── alpha3pass/        # Three-pass graph execution
+│   └── mclaren/           # Model, materials, depth and PBR
 ├── docs/                  # Documentation center
 │   ├── design/            # Current architecture and design contracts
-│   ├── logs/              # Topic-based engineering evolution logs
+│   ├── logs/              # Concise daily iteration logs
+│   ├── structure/         # Architecture, roadmap and historical archives
 │   ├── bugs/              # Bug reports and fix verification
-│   └── usage/             # Examples, regression and release guides
+│   └── usage/             # Examples, debugging and regression guides
 └── tests/                 # Unit tests
 ```
 
 ## Documentation
 
 - [Documentation Center](docs/README.md)
-- [Overview](docs/design/00-overview.md)
+- [当前宏观架构](docs/structure/current-architecture.md)
+- [开发目标与计划](docs/structure/roadmap.md)
+- [模块设计索引](docs/design/README.md)
 - [RHI Layer Design](docs/design/01-rhi-layer.md)
 - [RenderPass Interface](docs/design/02-render-pass.md)
 - [Logging & Debugging](docs/design/03-logging.md)
-- [Triangle 示例技术说明](docs/design/04-triangle-example-tech.md)
-- [UI 层架构与自定义开发](docs/design/05-ui-layer.md)
-- [工作主题日志](docs/logs/README.md)
+- [四个示例的设计](docs/design/04-triangle-example-tech.md)
+- [UI 与性能统计](docs/design/05-ui-layer.md)
+- [每日迭代日志](docs/logs/README.md)
 - [Bug 维护规则](docs/bugs/README.md)
 - [Triangle 示例运行指南](docs/usage/triangle-example.md)
 
@@ -105,12 +112,7 @@ KuEngine/
 
 ## Roadmap Summary
 
-| Version | Product Goal |
-|---------|--------------|
-| v0.2 | RenderGraph alpha, multi-pass orchestration, deterministic resize recovery |
-| v0.3 | Algorithm-validation workflow: texture/material inputs + glTF scene baseline |
-| v0.4 | Compute-enabled validation loop and GPU timing instrumentation |
-| v0.5 | Research-ready toolkit: capture/replay, reproducible benchmark presets |
+Current capabilities and future priorities are maintained in [Architecture](docs/structure/current-architecture.md) and [Roadmap](docs/structure/roadmap.md).
 
 ## License
 

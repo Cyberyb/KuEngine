@@ -2,11 +2,19 @@
 #pragma once
 
 #include "RHICommon.h"
+#include <cstdint>
 #include <vulkan/vulkan.h>
 
 namespace ku {
 
 class RHIDevice;
+
+struct CommandListStatistics {
+    uint64_t drawCalls = 0;
+    uint64_t submittedVertices = 0;
+    double gpuTimeMilliseconds = 0.0;
+    bool gpuTimeValid = false;
+};
 
 class CommandList {
 public:
@@ -15,6 +23,7 @@ public:
 
     void begin();
     void end();
+    void collectGpuTime();
 
     [[nodiscard]] VkCommandBuffer cmd() const { return m_cmd; }
     [[nodiscard]] operator VkCommandBuffer() const { return m_cmd; }
@@ -27,10 +36,32 @@ public:
     void copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
     void copyBufferToImage(VkBuffer src, VkImage dst, uint32_t width, uint32_t height);
 
+    void draw(
+        uint32_t vertexCount,
+        uint32_t instanceCount = 1,
+        uint32_t firstVertex = 0,
+        uint32_t firstInstance = 0);
+    void drawIndexed(
+        uint32_t indexCount,
+        uint32_t instanceCount = 1,
+        uint32_t firstIndex = 0,
+        int32_t vertexOffset = 0,
+        uint32_t firstInstance = 0);
+
+    [[nodiscard]] const CommandListStatistics& statistics() const
+    {
+        return m_statistics;
+    }
+
 private:
     VkCommandBuffer m_cmd = VK_NULL_HANDLE;
     VkDevice        m_device = VK_NULL_HANDLE;
+    VkQueryPool     m_timestampQueryPool = VK_NULL_HANDLE;
+    float           m_timestampPeriod = 0.0f;
+    uint32_t        m_timestampValidBits = 0;
     bool            m_recording = false;
+    bool            m_timestampPending = false;
+    CommandListStatistics m_statistics{};
 };
 
 } // namespace ku

@@ -123,10 +123,10 @@ void CubePass::execute(CommandList& cmd, const FrameData&)
 
     if (m_wireframeMode) {
         // 12 edges x 2 vertices per edge.
-        vkCmdDraw(cmd, 24, 1, 0, 0);
+        cmd.draw(24);
     } else {
         // 6 faces x 2 triangles x 3 vertices.
-        vkCmdDraw(cmd, 36, 1, 0, 0);
+        cmd.draw(36);
     }
 }
 

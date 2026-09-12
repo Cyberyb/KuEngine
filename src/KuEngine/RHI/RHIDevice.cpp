@@ -21,6 +21,7 @@ struct DeviceCandidate {
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
     uint32_t graphicsQueueFamily = UINT32_MAX;
     uint32_t presentQueueFamily = UINT32_MAX;
+    uint32_t graphicsTimestampValidBits = 0;
     uint64_t score = 0;
 };
 
@@ -113,6 +114,8 @@ std::optional<DeviceCandidate> evaluateDevice(
             (queueProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
         if (supportsGraphics && candidate.graphicsQueueFamily == UINT32_MAX) {
             candidate.graphicsQueueFamily = i;
+            candidate.graphicsTimestampValidBits =
+                queueProperties[i].timestampValidBits;
         }
         if (supportsPresent && candidate.presentQueueFamily == UINT32_MAX) {
             candidate.presentQueueFamily = i;
@@ -120,6 +123,8 @@ std::optional<DeviceCandidate> evaluateDevice(
         if (supportsGraphics && supportsPresent) {
             candidate.graphicsQueueFamily = i;
             candidate.presentQueueFamily = i;
+            candidate.graphicsTimestampValidBits =
+                queueProperties[i].timestampValidBits;
             break;
         }
     }
@@ -232,6 +237,7 @@ void RHIDevice::pickPhysicalDevice(VkSurfaceKHR surface)
     m_features13 = selected->features13;
     m_graphicsQueueFamily = selected->graphicsQueueFamily;
     m_presentQueueFamily = selected->presentQueueFamily;
+    m_graphicsTimestampValidBits = selected->graphicsTimestampValidBits;
     vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &m_memoryProperties);
 
     KU_INFO(

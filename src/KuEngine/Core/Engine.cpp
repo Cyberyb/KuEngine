@@ -199,6 +199,7 @@ void Engine::render()
 
     const uint32_t frameIndex = m_syncManager->currentFrame();
     m_syncManager->waitForFrame(frameIndex);
+    m_commandList->collectGpuTime();
 
     const uint32_t imageIndex =
         m_swapChain->acquireNextImage(m_syncManager->frameSync(frameIndex).imageAvailable);
@@ -207,6 +208,7 @@ void Engine::render()
         return;
     }
     m_syncManager->setCurrentImage(imageIndex);
+    const auto cpuRenderStart = Clock::now();
 
     FrameData frameData{};
     frameData.frameIndex = frameIndex;
@@ -216,11 +218,6 @@ void Engine::render()
 
     m_ui->newFrame();
     m_renderPipeline->update(frameData);
-
-    const float fps = m_deltaTime > 0.0f ? (1.0f / m_deltaTime) : 0.0f;
-    if (m_config.showStats) {
-        m_ui->drawFPSPanel(fps, m_deltaTime);
-    }
     m_renderPipeline->drawUI();
 
     m_commandList->begin();
@@ -265,6 +262,20 @@ void Engine::render()
     }
 
     m_renderPipeline->execute(*m_commandList, frameData);
+    if (m_config.showStats) {
+        const CommandListStatistics& stats = m_commandList->statistics();
+        UIFrameStatistics uiStats{};
+        uiStats.fps =
+            m_deltaTime > 0.0f ? (1.0f / m_deltaTime) : 0.0f;
+        uiStats.frameTimeMilliseconds = m_deltaTime * 1000.0f;
+        uiStats.cpuTimeMilliseconds = m_cpuRenderTimeMs;
+        uiStats.gpuTimeMilliseconds = stats.gpuTimeMilliseconds;
+        uiStats.drawCalls = stats.drawCalls;
+        uiStats.submittedVertices = stats.submittedVertices;
+        uiStats.cpuTimeValid = m_cpuRenderTimeValid;
+        uiStats.gpuTimeValid = stats.gpuTimeValid;
+        m_ui->drawFPSPanel(uiStats);
+    }
     m_renderPipeline->executeOverlay(
         *m_commandList,
         [this, imageIndex](VkCommandBuffer cmd) {
@@ -287,6 +298,9 @@ void Engine::render()
         frameIndex,
         m_device->graphicsQueue(),
         std::span<VkCommandBuffer>(&buffer, 1));
+    m_cpuRenderTimeMs = std::chrono::duration<float, std::milli>(
+        Clock::now() - cpuRenderStart).count();
+    m_cpuRenderTimeValid = true;
     if (m_depthTexture) {
         m_depthInitialized = m_renderPipeline->externalContentsValid(
             runtime_resource::sceneDepth);

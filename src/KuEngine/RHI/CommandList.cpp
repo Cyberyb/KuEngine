@@ -1,6 +1,8 @@
 ﻿#include "CommandList.h"
 #include "RHIDevice.h"
 
+#include <array>
+
 namespace ku {
 
 namespace {
@@ -33,7 +35,10 @@ VkAccessFlags accessMaskForLayout(VkImageLayout layout, bool isDst)
 } // namespace
 
 CommandList::CommandList(const RHIDevice& device, VkCommandPool pool)
-    : m_device(device.device()), m_recording(false)
+    : m_device(device.device()),
+      m_timestampPeriod(device.properties().limits.timestampPeriod),
+      m_timestampValidBits(device.graphicsTimestampValidBits()),
+      m_recording(false)
 {
     VkCommandBufferAllocateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -41,27 +46,105 @@ CommandList::CommandList(const RHIDevice& device, VkCommandPool pool)
     info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     info.commandBufferCount = 1;
     VK_CHECK(vkAllocateCommandBuffers(m_device, &info, &m_cmd));
+
+    if (m_timestampValidBits > 0 && m_timestampPeriod > 0.0f) {
+        VkQueryPoolCreateInfo queryInfo{};
+        queryInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+        queryInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+        queryInfo.queryCount = 2;
+        VK_CHECK(vkCreateQueryPool(
+            m_device,
+            &queryInfo,
+            nullptr,
+            &m_timestampQueryPool));
+    }
 }
 
 CommandList::~CommandList()
 {
+    if (m_timestampQueryPool != VK_NULL_HANDLE) {
+        vkDestroyQueryPool(m_device, m_timestampQueryPool, nullptr);
+        m_timestampQueryPool = VK_NULL_HANDLE;
+    }
     if (m_cmd) {} // freed with pool
+}
+
+void CommandList::collectGpuTime()
+{
+    if (m_timestampQueryPool == VK_NULL_HANDLE || !m_timestampPending) {
+        return;
+    }
+
+    // Each timestamp is followed by its availability value.
+    std::array<uint64_t, 4> queryData{};
+    const VkResult result = vkGetQueryPoolResults(
+        m_device,
+        m_timestampQueryPool,
+        0,
+        2,
+        sizeof(queryData),
+        queryData.data(),
+        sizeof(uint64_t) * 2,
+        VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+
+    m_timestampPending = false;
+    m_statistics.gpuTimeValid = false;
+    if (result == VK_NOT_READY) {
+        return;
+    }
+    VK_CHECK(result);
+    if (queryData[1] == 0 || queryData[3] == 0) {
+        return;
+    }
+
+    uint64_t elapsedTicks = 0;
+    if (m_timestampValidBits >= 64) {
+        elapsedTicks = queryData[2] - queryData[0];
+    } else {
+        const uint64_t timestampMask =
+            (uint64_t{1} << m_timestampValidBits) - 1;
+        elapsedTicks = (queryData[2] - queryData[0]) & timestampMask;
+    }
+
+    m_statistics.gpuTimeMilliseconds =
+        static_cast<double>(elapsedTicks)
+        * static_cast<double>(m_timestampPeriod)
+        / 1'000'000.0;
+    m_statistics.gpuTimeValid = true;
 }
 
 void CommandList::begin()
 {
     VK_CHECK(vkResetCommandBuffer(m_cmd, 0));
+    m_statistics.drawCalls = 0;
+    m_statistics.submittedVertices = 0;
 
     VkCommandBufferBeginInfo info{};
     info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     VK_CHECK(vkBeginCommandBuffer(m_cmd, &info));
+    if (m_timestampQueryPool != VK_NULL_HANDLE) {
+        vkCmdResetQueryPool(m_cmd, m_timestampQueryPool, 0, 2);
+        vkCmdWriteTimestamp(
+            m_cmd,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            m_timestampQueryPool,
+            0);
+    }
     m_recording = true;
 }
 
 void CommandList::end()
 {
+    if (m_timestampQueryPool != VK_NULL_HANDLE) {
+        vkCmdWriteTimestamp(
+            m_cmd,
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            m_timestampQueryPool,
+            1);
+    }
     VK_CHECK(vkEndCommandBuffer(m_cmd));
+    m_timestampPending = m_timestampQueryPool != VK_NULL_HANDLE;
     m_recording = false;
 }
 
@@ -108,6 +191,42 @@ void CommandList::copyBufferToImage(VkBuffer src, VkImage dst, uint32_t width, u
     region.imageExtent = {width, height, 1};
 
     vkCmdCopyBufferToImage(m_cmd, src, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+}
+
+void CommandList::draw(
+    uint32_t vertexCount,
+    uint32_t instanceCount,
+    uint32_t firstVertex,
+    uint32_t firstInstance)
+{
+    vkCmdDraw(
+        m_cmd,
+        vertexCount,
+        instanceCount,
+        firstVertex,
+        firstInstance);
+    ++m_statistics.drawCalls;
+    m_statistics.submittedVertices +=
+        static_cast<uint64_t>(vertexCount) * instanceCount;
+}
+
+void CommandList::drawIndexed(
+    uint32_t indexCount,
+    uint32_t instanceCount,
+    uint32_t firstIndex,
+    int32_t vertexOffset,
+    uint32_t firstInstance)
+{
+    vkCmdDrawIndexed(
+        m_cmd,
+        indexCount,
+        instanceCount,
+        firstIndex,
+        vertexOffset,
+        firstInstance);
+    ++m_statistics.drawCalls;
+    m_statistics.submittedVertices +=
+        static_cast<uint64_t>(indexCount) * instanceCount;
 }
 
 } // namespace ku

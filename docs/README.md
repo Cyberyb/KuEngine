@@ -1,77 +1,43 @@
 # KuEngine 文档中心
 
-本目录按“文档职责”组织。代码发生变化时，应更新对应主题的现有文档，而不是为每次工作创建新的零散记录。
+文档按职责维护。当前设计以工作区源码为准，包含尚未提交的实现；历史快照只用于对比。最近一次全量核对：2026-09-12。
 
 ## 目录职责
 
-| 目录 | 内容 | 何时更新 |
+| 目录 | 内容 | 维护方式 |
 |---|---|---|
-| `design/` | 当前架构、接口约束、资源规范和阶段性设计 | 模块职责、公共接口或架构边界发生变化时 |
-| `logs/` | 按宏观工作主题维护的演进记录 | 架构优化、功能演进、重要重构完成时 |
-| `bugs/` | 可复现问题、根因、修复和回归结果 | 发现需要追踪的 Bug，以及 Bug 状态变化时 |
-| `usage/` | 示例运行方法、回归步骤和发布说明 | 用户操作、运行参数或验收流程变化时 |
+| [design](design/README.md) | 各模块当前职责、接口、所有权、数据流和实现约束 | 模块代码发生任何修改，都必须检查并同步对应设计说明 |
+| [logs](logs/README.md) | 每日迭代简记 | 一天一个 `YYYY-MM-DD.md`，一段完成概述加模块更新列表 |
+| [structure](structure/README.md) | 当前宏观架构、未来开发目标和计划 | 架构边界改变时更新现状，目标或优先级改变时更新路线图 |
+| [usage](usage/README.md) | 构建、运行、调试和回归操作 | 命令、路径、交互或检查方法变化时同步 |
+| [bugs](bugs/README.md) | 具体问题的复现、根因和修复记录 | 在同一个问题文件内持续更新状态 |
 
-## 文档入口
+## 阅读入口
 
-### 状态说明
+- 了解项目：[当前宏观架构](structure/current-architecture.md)。
+- 阅读模块：[设计索引](design/README.md)。
+- 查看下一步：[开发路线图](structure/roadmap.md)。
+- 运行项目：[使用说明索引](usage/README.md)。
+- 回顾迭代：[按日期的日志](logs/README.md)。
+- 对比历史：[架构快照与历史资料](structure/archive/README.md)。
 
-| 标记 | 含义 |
+## 代码与文档同步约定
+
+每次修改模块代码，都在同一轮工作中核对对应 design 文档，修订受影响的职责、流程、参数、约束、图示和源码链接。即使公共接口没有变化，内部行为变化也需要反映；若修改确实不影响设计事实，明确记录已核对，无需制造无意义改写。
+
+| 修改范围 | 必须核对的 design 文档 |
 |---|---|
-| 当前 | 应与当前代码保持同步，可作为实现事实入口 |
-| 专项 | 描述某一模块；使用前应同时参考总览和代码 |
-| 历史 | 已完成阶段或版本记录，不代表当前待办 |
+| Core/Engine、Window、Input | [Core Runtime](design/06-core-runtime.md) |
+| RHI、同步、上传、命令统计、Timestamp Query | [RHI](design/01-rhi-layer.md) |
+| RenderPass、RenderContext、RenderGraph、RenderPipeline | [渲染调度](design/02-render-pass.md) |
+| Core/Log、Vulkan 错误处理 | [日志与诊断](design/03-logging.md) |
+| UIOverlay、性能统计口径 | [UI 与统计](design/05-ui-layer.md) |
+| AssetConfig、资源路径、JSON | [资产配置](design/07-resource-asset-spec.md) |
+| ModelLoader、glTF 数据转换 | [模型加载](design/08-gltf-model-loading.md) |
+| GpuMesh、TextureFactory、Material、PBR、Mclaren 资源 | [PBR 与 GPU 资源](design/10-pbr-rendering.md) |
+| 四个示例的装配、Pass 和相机 | [示例设计](design/04-triangle-example-tech.md) |
+| CMake、Shader、启动与编译脚本 | [构建与 Shader](design/09-shader-source-debug-mode.md) |
 
-### 架构与设计
+跨模块变更还需核对 design 总览和 structure 宏观架构；未来任务只进入 structure，完成记录只进入当日日志。移动或重命名文档时同步修复引用。
 
-| 文档 | 状态 | 定位 |
-|---|---|---|
-| [项目架构总览](design/00-overview.md) | 当前 | 项目分层、实际集成边界和版本状态入口 |
-| [RHI 层设计](design/01-rhi-layer.md) | 专项 | Vulkan 薄封装与资源生命周期 |
-| [RenderPass 与 RenderPipeline](design/02-render-pass.md) | 专项 | Pass 生命周期和渲染调度接口 |
-| [日志与调试规范](design/03-logging.md) | 当前 | 日志、Vulkan 错误和 Bug 追踪规则 |
-| [Triangle 技术说明](design/04-triangle-example-tech.md) | 历史 | v0.1 最小渲染基线 |
-| [UI 层架构](design/05-ui-layer.md) | 专项 | UIOverlay 和 Pass UI 职责 |
-| [v0.2 执行计划](design/06-v0.2-execution-plan.md) | 历史 | 已完成的 RenderGraph Alpha 阶段计划 |
-| [资源与资产规范](design/07-resource-asset-spec.md) | 当前 | 资源目录和资产命名约束 |
-| [glTF 模型加载](design/08-gltf-model-loading.md) | 当前 | 模型、材质和纹理加载链路 |
-| [Shader 源码调试模式](design/09-shader-source-debug-mode.md) | 专项 | Shader 编译与 RenderDoc 调试 |
-
-### 工作主题
-
-- [工作日志维护规则](logs/README.md)
-- [基础渲染、平台与示例](logs/rendering-platform-and-samples.md)
-- [RenderGraph 与渲染调度](logs/render-graph-and-scheduling.md)
-- [资产、材质与 PBR](logs/assets-materials-and-pbr.md)
-
-### Bug 与回归
-
-- [Bug 维护规则](bugs/README.md)
-- [Bug 报告模板](bugs/template.md)
-- [v0.2 回归检查](usage/v0.2-regression-checks.md)
-
-### 使用与发布
-
-- [Triangle 示例](usage/triangle-example.md)
-- [Alpha3Pass 示例](usage/alpha3pass-example.md)
-- [Mclaren 示例](usage/mclaren-example.md)
-- [v0.2 Alpha 发布说明](usage/v0.2-alpha-release-notes.md)
-
-## 代码变更对应关系
-
-| 变更类型 | 必须检查的文档 |
-|---|---|
-| 公共接口或模块职责变化 | `design/` 对应设计文档、`design/00-overview.md` |
-| 架构优化或跨模块重构 | `logs/` 对应主题文档，必要时同步 `CHANGELOG.md` |
-| Bug 修复 | `bugs/` 对应 Bug 文档；同步状态、根因、修复与回归结果 |
-| 示例操作或参数变化 | `usage/` 对应示例文档 |
-| 构建、测试或验收流程变化 | `README.md`、相关 `usage/` 文档 |
-| 发布或用户可见能力变化 | `CHANGELOG.md`、发布说明、相关主题日志 |
-
-## 更新原则
-
-1. 先更新已有主题文档；只有出现新的宏观领域时才新建工作日志。
-2. 工作日志文件名使用主题，不使用日期；日期作为文档内部时间线标题。
-3. 设计文档描述“现在如何工作”，工作日志描述“为何和如何演进”。
-4. Bug 文档描述具体问题，不把 Bug 细节混入工作日志。
-5. 删除、重命名文档时必须同步修复仓库内引用。
-6. 文档中的状态、接口和验证命令应以当前代码为准。
+这些是仓库维护约定，并非已经实现的自动文档生成或 CI 检查。

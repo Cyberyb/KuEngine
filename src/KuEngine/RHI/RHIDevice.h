@@ -20,6 +20,10 @@ public:
     [[nodiscard]] VkQueue presentQueue() const { return m_presentQueue; }
     [[nodiscard]] uint32_t graphicsQueueFamily() const { return m_graphicsQueueFamily; }
     [[nodiscard]] uint32_t presentQueueFamily() const { return m_presentQueueFamily; }
+    [[nodiscard]] uint32_t graphicsTimestampValidBits() const
+    {
+        return m_graphicsTimestampValidBits;
+    }
     [[nodiscard]] const VkPhysicalDeviceProperties& properties() const { return m_properties; }
     [[nodiscard]] const VkPhysicalDeviceFeatures& features() const { return m_features; }
     [[nodiscard]] const VkPhysicalDeviceVulkan13Features& features13() const
@@ -47,6 +51,7 @@ private:
     VkQueue                          m_presentQueue = VK_NULL_HANDLE;
     uint32_t                         m_graphicsQueueFamily = UINT32_MAX;
     uint32_t                         m_presentQueueFamily = UINT32_MAX;
+    uint32_t                         m_graphicsTimestampValidBits = 0;
 
     VkPhysicalDeviceProperties       m_properties{};
     VkPhysicalDeviceFeatures        m_features{};

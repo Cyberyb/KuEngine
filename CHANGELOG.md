@@ -7,20 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
-- v0.2 execution plan document: scope freeze, stage milestones, acceptance gates, and risk handling (`docs/design/06-v0.2-execution-plan.md`).
+- v0.2 execution plan document: scope freeze, stage milestones, acceptance gates, and risk handling (archived at `docs/structure/archive/v0.2-execution-plan.md`).
 - RenderGraph stage-1 foundation (`RenderGraph`, `RenderGraphBuilder`, `ResourceHandle`, pass resource access declarations).
 - RenderGraph stage-2 compiler features: dependency graph building, topological ordering, cycle detection, and barrier plan data (RAW/WAR/WAW).
 - New RenderGraph unit tests (`tests/core/test_render_graph.cpp`) covering ordering, missing dependency, cycle detection, and resource hazards.
 - CMake preset workflow for VS Code CMake Tools (`CMakePresets.json`, `.vscode/settings.json`).
 - New stage-4 sample `Alpha3PassApp` with three-pass alpha pipeline and runtime UI tuning.
 - Usage guide for the new sample (`docs/usage/alpha3pass-example.md`).
-- Stage-5 regression checklist (`docs/usage/v0.2-regression-checks.md`).
+- Stage-5 regression checklist (archived at `docs/structure/archive/v0.2-regression-checks.md`; current checks: `docs/usage/regression-checks.md`).
 - v0.3 asset config parser module (`src/KuEngine/Asset/AssetConfig.h`, `src/KuEngine/Asset/AssetConfig.cpp`) for scene/material JSON loading with default fallback.
 - New regression tests for asset config parsing (`tests/core/test_asset_config.cpp`).
 - v0.3 sample asset descriptors (`resources/scenes/sandbox/mclaren-sandbox.scene.json`, `resources/materials/pbr/mclaren-765lt.material.json`, `resources/manifests/asset-registry.json`).
 
 ### Changed
-- Reorganized engineering documentation: work logs are now maintained by broad topic instead of date, with explicit update rules for architecture changes and bug fixes.
+- Reorganized documentation (2026-09-12): design tracks current module implementations, logs use concise daily files, and structure contains architecture, roadmap, and historical archives.
 - Documentation sync for current engine status, roadmap, and module responsibilities.
 - Clarified MVP scope as "v0.1.x baseline complete" and aligned progress wording across docs.
 - Synced overview document with v0.2 stage-0 freeze conclusions and release gates.

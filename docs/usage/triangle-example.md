@@ -2,6 +2,8 @@
 
 本文档说明如何在当前仓库中编译并运行 Triangle 示例。
 
+当前示例运行在公共 Engine Runtime 上。资源就绪时统计面板显示 1 Draw Call、3 Vertices；CPU/GPU 显示最近完成帧。计时口径见 [UI 设计](../design/05-ui-layer.md)。
+
 ## 1. 前置条件
 
 - Windows 10/11
