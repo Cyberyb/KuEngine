@@ -8,6 +8,8 @@
 | [目标架构](target-architecture.md) | 未来模块边界、RDG 风格资源契约、双渲染路径与 Vulkan 原生扩展原则 |
 | [当前宏观架构](current-architecture.md) | 当前能力、所有权、主数据流与测试边界；随架构变更更新 |
 | [开发路线图](roadmap.md) | M0～M5 的交付顺序、依赖、工作范围和阶段验收条件 |
+| [实施工作包](implementation-plan.md) | 路线图拆出的稳定工作包、依赖、状态与各阶段出口；以 QA 验收结论更新 |
+| [多智能体协作](team-workflow.md) | 主 Agent、Developer、QA、Planner 的职责、门禁、写入顺序与配置入口 |
 | [Structure_725](Structure_725.md) | 2026-07-25 历史快照，用于迁移前后对比 |
 | [Structure_726](Structure_726.md) | 2026-07-26 历史快照，不覆盖后续统计等改动 |
 | [历史资料](archive/README.md) | 旧计划、发布/回归记录、原架构 PNG、PDF 与未完成草稿 |

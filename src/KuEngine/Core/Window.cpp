@@ -1,5 +1,6 @@
 ﻿#include "Window.h"
 #include "Log.h"
+#include "RuntimeError.h"
 
 #include <stdexcept>
 
@@ -14,7 +15,7 @@ Window::Window(std::string_view title, int width, int height)
 {
     if (g_glfwWindowCount == 0) {
         if (!glfwInit()) {
-            throw std::runtime_error("Failed to initialize GLFW");
+            throw RuntimeUnavailableError("Failed to initialize GLFW");
         }
     }
 
@@ -26,7 +27,7 @@ Window::Window(std::string_view title, int width, int height)
         if (g_glfwWindowCount == 0) {
             glfwTerminate();
         }
-        throw std::runtime_error("Failed to create GLFW window");
+        throw RuntimeUnavailableError("Failed to create GLFW window");
     }
 
     ++g_glfwWindowCount;

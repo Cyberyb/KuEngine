@@ -1,13 +1,13 @@
 # 当前模块设计总览
 
-核对日期：2026-09-12。以当前工作区源码为准；宏观能力与未来方向分别见 [架构现状](../structure/current-architecture.md) 和 [路线图](../structure/roadmap.md)。
+核对日期：2026-09-13。以当前工作区源码为准；宏观能力与未来方向分别见 [架构现状](../structure/current-architecture.md) 和 [路线图](../structure/roadmap.md)。
 
 ## 模块关系
 
 ```mermaid
 flowchart TB
     App["examples：配置 Engine、注册 Pass"]
-    Core["Core：Engine / Window / Input / Log"]
+    Core["Core：ApplicationRunner / Engine / Window / Input / Log"]
     Schedule["Render：RenderPipeline / RenderGraph"]
     Pass["示例 Pass 与场景编排"]
     Asset["Asset：AssetConfig / ModelLoader"]
@@ -28,13 +28,14 @@ flowchart TB
     UI --> RHI
 ```
 
-Engine 是实际运行入口，统一执行 acquire、record、submit、present。RenderPipeline 执行 Graph 编译结果，管理每个节点的 Dynamic Rendering Scope；Pass 记录业务命令。RenderPipeline 的调试面板目前直接依赖 ImGui。
+`ApplicationRunner` 是四个示例的共享启动入口，解析有限帧/resize/Validation 冒烟参数，构造 Engine 并在其销毁后归纳退出结果。Engine 是实际运行入口，统一执行 acquire、record、submit、present。RenderPipeline 执行 Graph 编译结果，管理每个节点的 Dynamic Rendering Scope；Pass 记录业务命令。RenderPipeline 的调试面板目前直接依赖 ImGui。
 
 ## 所有权与初始化信息
 
 | 对象 | 所有者 | 传递方式 |
 |---|---|---|
-| Window、Instance、Surface、Device、SwapChain | Engine | 引用/原始句柄供运行时使用 |
+| Window、Instance、Surface、Device、SwapChain | Engine | 引用/原始句柄供运行时使用；Instance 还持有验证请求、可用性和消息计数状态 |
+| ApplicationRunOptions、共享 ValidationMessageTracker | ApplicationRunner | 将命令行冒烟语义传给 Engine；Tracker 在 Instance/Messenger 销毁后仍可读取最终已捕获计数 |
 | CommandPool、CommandList、SyncManager、可选深度图像 | Engine | 在单帧同步边界内复用 |
 | RenderPipeline、UIOverlay | Engine | Engine 驱动生命周期 |
 | 各 RenderPass | RenderPipeline | `unique_ptr`；Graph 节点仅借用 Pass 指针 |
@@ -51,7 +52,7 @@ Engine 是实际运行入口，统一执行 acquire、record、submit、present�
 - Graph 会执行附件屏障和 Rendering Scope；内部 Image/Buffer 分配、资源别名、多 Queue 尚未实现。
 - RHI 中实际类为 `RHITexture`，持有 Image/View/VMA allocation；Sampler 由上层持有。没有独立 RHIImage 或公共 Descriptor Builder。
 - Mclaren 的材质、Descriptor、Pipeline 和环境装配位于示例的 RenderResources 中。
-- Draw Call/顶点统计由 CommandList 累加；CPU 由 Engine 计时，GPU 由 QueryPool 计时。
+- Draw Call/顶点统计由 CommandList 累加；CPU 由 Engine 计时，GPU 由 QueryPool 计时。Debug 构建中，Instance 会在可用时将 Vulkan Validation/Debug Utils 消息写入日志并累计警告、错误数；ApplicationRunner 会在 Runtime 销毁后将已捕获的 Validation error 映射为失败退出码，有限帧参数只决定自动化运行范围。
 - 当前构建使用 C++20、CMake、vcpkg、Vulkan、GLFW、ImGui、GLM、spdlog/fmt、JSON、tinygltf/stb 和 GoogleTest；没有实现 C++ Modules、完整 FrameGraph 或自动实验系统。
 
 ## 架构图片

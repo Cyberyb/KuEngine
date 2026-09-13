@@ -5,6 +5,7 @@
 
 namespace ku::log {
 
+[[nodiscard]] spdlog::level::level_enum configuredLevel() noexcept;
 void init();
 
 } // namespace ku::log

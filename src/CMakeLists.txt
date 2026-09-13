@@ -2,14 +2,22 @@ add_library(KuEngine STATIC)
 
 target_compile_features(KuEngine PUBLIC cxx_std_20)
 
+target_compile_definitions(KuEngine PUBLIC
+    $<$<CONFIG:Debug>:KU_DEBUG_BUILD=1>
+    $<$<NOT:$<CONFIG:Debug>>:KU_DEBUG_BUILD=0>
+)
+
 target_sources(KuEngine PRIVATE
     KuEngine/Asset/AssetConfig.cpp
     KuEngine/Asset/Model.cpp
     KuEngine/Core/Engine.cpp
+    KuEngine/Core/ApplicationRunner.cpp
+    KuEngine/Core/FrameStatistics.cpp
     KuEngine/Core/Window.cpp
     KuEngine/Core/Input.cpp
     KuEngine/Core/Log.cpp
     KuEngine/RHI/RHIInstance.cpp
+    KuEngine/RHI/VulkanValidation.cpp
     KuEngine/RHI/RHIDevice.cpp
     KuEngine/RHI/SwapChain.cpp
     KuEngine/RHI/RHIBuffer.cpp

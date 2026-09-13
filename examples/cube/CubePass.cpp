@@ -39,7 +39,7 @@ void CubePass::initialize(const RenderContext& context)
         m_fragShader = std::make_unique<RHIShader>(device, fragPath);
     } catch (const std::exception& e) {
         KU_ERROR("CubePass shader load failed: {}", e.what());
-        return;
+        throw;
     }
 
     GraphicsPipelineDesc solidDesc{};

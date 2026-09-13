@@ -19,7 +19,34 @@
 
 namespace ku {
 
-Engine::Engine(EngineConfig config)
+EngineRunDecision advanceEngineRun(
+    const EngineRunOptions& options,
+    bool frameSubmitted,
+    EngineRunResult& result) noexcept
+{
+    EngineRunDecision decision{};
+    if (!frameSubmitted) {
+        return decision;
+    }
+
+    ++result.submittedFrames;
+    if (options.resize
+        && !result.resizeRequested
+        && result.submittedFrames == options.resize->afterSubmittedFrame) {
+        result.resizeRequested = true;
+        decision.requestResize = true;
+    }
+    if (options.submittedFrameLimit > 0
+        && result.submittedFrames >= options.submittedFrameLimit) {
+        result.reachedFrameLimit = true;
+        decision.stop = true;
+    }
+    return decision;
+}
+
+Engine::Engine(
+    EngineConfig config,
+    std::shared_ptr<ValidationMessageTracker> validationMessages)
     : m_config(std::move(config))
 {
     if (m_config.width == 0 || m_config.height == 0) {
@@ -43,7 +70,10 @@ Engine::Engine(EngineConfig config)
             m_config.title,
             static_cast<int>(m_config.width),
             static_cast<int>(m_config.height));
-        m_instance = std::make_unique<RHIInstance>("KuEngine", 1u);
+        m_instance = std::make_unique<RHIInstance>(
+            "KuEngine",
+            1u,
+            std::move(validationMessages));
         m_surface = m_instance->createSurface(m_window->handle());
         m_device = std::make_unique<RHIDevice>(m_instance->instance(), m_surface);
         m_commandPool = m_device->createCommandPool();
@@ -145,7 +175,7 @@ void Engine::compile()
     m_pipelineCompiled = true;
 }
 
-void Engine::run()
+EngineRunResult Engine::run(const EngineRunOptions& options)
 {
     if (!m_pipelineCompiled) {
         compile();
@@ -154,11 +184,13 @@ void Engine::run()
     KU_INFO("Starting main loop");
     m_running = true;
     m_lastTime = Clock::now();
-    mainLoop();
+    return mainLoop(options);
 }
 
-void Engine::mainLoop()
+EngineRunResult Engine::mainLoop(const EngineRunOptions& options)
 {
+    EngineRunResult result{};
+    uint64_t resizeGenerationAtRequest = 0;
     while (m_running && m_window && !m_window->shouldClose()) {
         pollEvents();
 
@@ -172,12 +204,48 @@ void Engine::mainLoop()
             continue;
         }
 
-        render();
+        const bool frameSubmitted = render();
+        if (result.resizeRequested
+            && !result.resizeCompleted
+            && m_swapChainGeneration > resizeGenerationAtRequest) {
+            result.resizeCompleted = true;
+            KU_INFO(
+                "KUENGINE_SMOKE_RESIZE_COMPLETE generation={} size={}x{}",
+                m_swapChainGeneration,
+                m_swapChain->width(),
+                m_swapChain->height());
+        }
+
+        const EngineRunDecision decision =
+            advanceEngineRun(options, frameSubmitted, result);
+        if (decision.requestResize) {
+            resizeGenerationAtRequest = m_swapChainGeneration;
+            glfwSetWindowSize(
+                m_window->handle(),
+                static_cast<int>(options.resize->width),
+                static_cast<int>(options.resize->height));
+            KU_INFO(
+                "KUENGINE_SMOKE_RESIZE after_frame={} size={}x{}",
+                result.submittedFrames,
+                options.resize->width,
+                options.resize->height);
+        }
+
+        if (decision.stop) {
+            m_running = false;
+        }
     }
 
     if (m_device) {
         m_device->waitIdle();
     }
+    completePendingFrameStatistics();
+    result.completedStatistics = m_frameStatistics.completedFrame();
+    if (m_renderPipeline) {
+        result.expectedStatistics =
+            m_renderPipeline->expectedFrameStatistics();
+    }
+    return result;
 }
 
 void Engine::pollEvents()
@@ -190,22 +258,22 @@ void Engine::pollEvents()
     Input::update(m_window->handle());
 }
 
-void Engine::render()
+bool Engine::render()
 {
     if (m_resizeRequested || m_window->wasResized()) {
         recreateSwapChain();
-        return;
+        return false;
     }
 
     const uint32_t frameIndex = m_syncManager->currentFrame();
     m_syncManager->waitForFrame(frameIndex);
-    m_commandList->collectGpuTime();
+    completePendingFrameStatistics();
 
     const uint32_t imageIndex =
         m_swapChain->acquireNextImage(m_syncManager->frameSync(frameIndex).imageAvailable);
     if (imageIndex == UINT32_MAX) {
         recreateSwapChain();
-        return;
+        return false;
     }
     m_syncManager->setCurrentImage(imageIndex);
     const auto cpuRenderStart = Clock::now();
@@ -263,17 +331,15 @@ void Engine::render()
 
     m_renderPipeline->execute(*m_commandList, frameData);
     if (m_config.showStats) {
-        const CommandListStatistics& stats = m_commandList->statistics();
         UIFrameStatistics uiStats{};
         uiStats.fps =
             m_deltaTime > 0.0f ? (1.0f / m_deltaTime) : 0.0f;
         uiStats.frameTimeMilliseconds = m_deltaTime * 1000.0f;
-        uiStats.cpuTimeMilliseconds = m_cpuRenderTimeMs;
-        uiStats.gpuTimeMilliseconds = stats.gpuTimeMilliseconds;
-        uiStats.drawCalls = stats.drawCalls;
-        uiStats.submittedVertices = stats.submittedVertices;
-        uiStats.cpuTimeValid = m_cpuRenderTimeValid;
-        uiStats.gpuTimeValid = stats.gpuTimeValid;
+        uiStats.completedFrame = m_frameStatistics.completedFrame();
+        uiStats.gpuStatusBeforeFirstCompletedFrame =
+            m_commandList->gpuTimingSupported()
+            ? GpuTimeStatus::Waiting
+            : GpuTimeStatus::Unsupported;
         m_ui->drawFPSPanel(uiStats);
     }
     m_renderPipeline->executeOverlay(
@@ -298,9 +364,15 @@ void Engine::render()
         frameIndex,
         m_device->graphicsQueue(),
         std::span<VkCommandBuffer>(&buffer, 1));
-    m_cpuRenderTimeMs = std::chrono::duration<float, std::milli>(
+    const float cpuRenderTimeMilliseconds =
+        std::chrono::duration<float, std::milli>(
         Clock::now() - cpuRenderStart).count();
-    m_cpuRenderTimeValid = true;
+    if (!m_frameStatistics.recordSubmittedFrame(
+            cpuRenderTimeMilliseconds,
+            m_commandList->statistics())) {
+        throw std::logic_error(
+            "A submitted frame statistics sample is still pending completion");
+    }
     if (m_depthTexture) {
         m_depthInitialized = m_renderPipeline->externalContentsValid(
             runtime_resource::sceneDepth);
@@ -315,6 +387,20 @@ void Engine::render()
 
     if (!presented || m_resizeRequested || m_window->wasResized()) {
         recreateSwapChain();
+    }
+    return true;
+}
+
+void Engine::completePendingFrameStatistics()
+{
+    if (!m_commandList || !m_frameStatistics.hasPendingFrame()) {
+        return;
+    }
+
+    const GpuTimeSample gpuTime = m_commandList->collectGpuTime();
+    if (!m_frameStatistics.completePendingFrame(gpuTime)) {
+        throw std::logic_error(
+            "Unable to publish pending submitted frame statistics");
     }
 }
 
@@ -351,6 +437,7 @@ void Engine::recreateSwapChain()
 
     m_window->resetResizedFlag();
     m_resizeRequested = false;
+    ++m_swapChainGeneration;
 
     KU_INFO(
         "Engine Runtime recreated SwapChain: {}x{} ({} images)",

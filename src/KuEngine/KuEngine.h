@@ -3,6 +3,9 @@
 
 #include "Asset/Model.h"
 #include "Core/Engine.h"
+#include "Core/ApplicationRunner.h"
+#include "Core/FrameStatistics.h"
+#include "Core/RuntimeError.h"
 #include "Core/Input.h"
 #include "Core/Log.h"
 #include "Core/Window.h"
@@ -16,6 +19,7 @@
 #include "RHI/RHICommon.h"
 #include "RHI/RHIDevice.h"
 #include "RHI/RHIInstance.h"
+#include "RHI/VulkanValidation.h"
 #include "RHI/RHIPipeline.h"
 #include "RHI/ResourceUploader.h"
 #include "RHI/RHIShader.h"

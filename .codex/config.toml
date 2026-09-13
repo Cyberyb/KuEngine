@@ -1,0 +1,23 @@
+# KuEngine project-level Codex configuration.
+# Role behavior is kept in separate files so each agent can evolve independently.
+
+[features]
+multi_agent = true
+
+[agents]
+# One root coordinator plus up to three specialist agents.
+max_threads = 4
+# Specialist agents report to the root coordinator and do not create nested teams.
+max_depth = 1
+
+[agents.developer]
+description = "Implements one scoped KuEngine work package, including directly related tests."
+config_file = "agents/developer.toml"
+
+[agents.qa]
+description = "Independently validates a completed work package and reports reproducible defects."
+config_file = "agents/qa.toml"
+
+[agents.planner]
+description = "Synchronizes KuEngine design, requirements, roadmap, usage, and iteration documents after verification."
+config_file = "agents/planner.toml"

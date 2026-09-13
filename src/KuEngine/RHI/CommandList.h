@@ -2,19 +2,13 @@
 #pragma once
 
 #include "RHICommon.h"
+#include "../Core/FrameStatistics.h"
 #include <cstdint>
 #include <vulkan/vulkan.h>
 
 namespace ku {
 
 class RHIDevice;
-
-struct CommandListStatistics {
-    uint64_t drawCalls = 0;
-    uint64_t submittedVertices = 0;
-    double gpuTimeMilliseconds = 0.0;
-    bool gpuTimeValid = false;
-};
 
 class CommandList {
 public:
@@ -23,7 +17,11 @@ public:
 
     void begin();
     void end();
-    void collectGpuTime();
+    [[nodiscard]] GpuTimeSample collectGpuTime();
+    [[nodiscard]] bool gpuTimingSupported() const noexcept
+    {
+        return m_timestampQueryPool != VK_NULL_HANDLE;
+    }
 
     [[nodiscard]] VkCommandBuffer cmd() const { return m_cmd; }
     [[nodiscard]] operator VkCommandBuffer() const { return m_cmd; }
@@ -48,9 +46,9 @@ public:
         int32_t vertexOffset = 0,
         uint32_t firstInstance = 0);
 
-    [[nodiscard]] const CommandListStatistics& statistics() const
+    [[nodiscard]] const CommandListStatistics& statistics() const noexcept
     {
-        return m_statistics;
+        return m_statistics.statistics();
     }
 
 private:
@@ -61,7 +59,7 @@ private:
     uint32_t        m_timestampValidBits = 0;
     bool            m_recording = false;
     bool            m_timestampPending = false;
-    CommandListStatistics m_statistics{};
+    CommandStatisticsAccumulator m_statistics;
 };
 
 } // namespace ku

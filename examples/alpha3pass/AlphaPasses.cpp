@@ -40,7 +40,7 @@ void AlphaShapePass::initialize(const RenderContext& context)
         m_fragShader = std::make_unique<RHIShader>(device, fragPath);
     } catch (const std::exception& e) {
         KU_ERROR("{}: shader load failed: {}", m_name, e.what());
-        return;
+        throw;
     }
 
     GraphicsPipelineDesc desc{};

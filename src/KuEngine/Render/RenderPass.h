@@ -4,8 +4,10 @@
 #include <cstdint>
 #include <string_view>
 #include <memory>
+#include <optional>
 #include <array>
 
+#include "../Core/FrameStatistics.h"
 #include "RenderContext.h"
 
 namespace ku {
@@ -37,6 +39,11 @@ public:
     virtual bool supportsInlineUI() const { return false; }
     virtual void drawUIInline() { drawUI(); }
     virtual void onResize(uint32_t width, uint32_t height) {(void)width; (void)height; }
+    [[nodiscard]] virtual std::optional<CommandListStatistics>
+    expectedFrameStatistics() const
+    {
+        return std::nullopt;
+    }
 
 protected:
     bool m_enabled = true;

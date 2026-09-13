@@ -1,6 +1,6 @@
 # 构建与 Shader 编译设计
 
-核对日期：2026-09-12。
+核对日期：2026-09-13。
 
 源码：[根 CMake](../../CMakeLists.txt)、[Presets](../../CMakePresets.json)、[库目标](../../src/CMakeLists.txt)、[Mclaren CMake](../../examples/mclaren/CMakeLists.txt)、[Shader 脚本](../../examples/mclaren/shaders/compile_shaders.bat)。
 
@@ -8,7 +8,9 @@
 
 项目使用 CMake 3.27+、C++20，KuEngine 为静态库，公开 include 根为 src。头文件和实现一起位于 src/KuEngine，没有独立 include 目录。
 
-KUENGINE_BUILD_EXAMPLES 和 KUENGINE_BUILD_TESTS 默认开启。四个 App 为 TriangleApp、CubeApp、Alpha3PassApp、MclarenApp；CTest 注册 core_tests 和 mclaren_camera_tests。
+KUENGINE_BUILD_EXAMPLES 和 KUENGINE_BUILD_TESTS 默认开启。四个 App 为 TriangleApp、CubeApp、Alpha3PassApp、MclarenApp；CTest 默认注册 core_tests 和 mclaren_camera_tests。根选项 `KUENGINE_ENABLE_GPU_SMOKE_TESTS` 默认关闭；开启后要求同时构建示例，并注册 `gpu-smoke` 标签的四个有限帧应用测试、受控 Validation error 负例，以及 `gpu-negative` 标签的缺 Shader 初始化失败负例。
+
+KuEngine 库目标按 CMake 配置公开 `KU_DEBUG_BUILD`：Debug 为 `1`，其余配置为 `0`。该定义同时控制应用日志级别与 Debug 构建的 Vulkan Validation 请求；它不是 Shader 调试开关，也不改变 Shader 编译脚本的模式选择。
 
 vcpkg 工具链提供 GLFW、ImGui、VMA、GLM、JSON、spdlog/fmt、GoogleTest 等依赖。大部分链接依赖为 PUBLIC。CMake 项目及版本宏仍为 0.1.0，历史 v0.2/v0.3 文档称谓不等同于当前发布版本号。
 
@@ -39,6 +41,8 @@ CMake Debug 下 glslc 使用 -g -O0。Shader 变化不一定触发 App 重新链
 源码调试开关由 batch 脚本读取；直接 CMake 构建仍走 glslc。公共 include 优先查运行目录 shaders/common，再查源码 resources/shaders/common。
 
 run_mclaren.bat 默认前台等待并返回应用退出码；bg 异步启动，只能反映启动动作。操作命令见 [Shader 调试指南](../usage/shader-debugging.md)。
+
+GPU Smoke 的 CTest 工作目录为各 App 的输出目录，使用 `SKIP_RETURN_CODE 77` 或脚本标记处理环境不可用。正常 smoke 测试要求 `KUENGINE_SMOKE_PASS`，并将 `KUENGINE_VALIDATION_ERROR`/`KUENGINE_SMOKE_FAIL` 视为失败；负例反向验证 Validation error 与初始化失败不会被误判为通过或 skip。具体命令和环境条件见 [回归检查](../usage/regression-checks.md)。
 
 ## 当前约束
 

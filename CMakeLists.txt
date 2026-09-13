@@ -14,6 +14,10 @@ endif()
 
 option(KUENGINE_BUILD_EXAMPLES "Build example applications" ON)
 option(KUENGINE_BUILD_TESTS "Build unit tests" ON)
+option(
+    KUENGINE_ENABLE_GPU_SMOKE_TESTS
+    "Register opt-in Vulkan GPU smoke tests with CTest"
+    OFF)
 
 find_package(glfw3 CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)

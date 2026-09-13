@@ -30,6 +30,11 @@ public:
     void execute(CommandList& cmd, const FrameData& frame) override;
     void drawUI() override;
     void onResize(uint32_t width, uint32_t height) override;
+    [[nodiscard]] std::optional<CommandListStatistics>
+    expectedFrameStatistics() const override
+    {
+        return CommandListStatistics{1, 3};
+    }
 
 private:
     struct alignas(16) PushConstants {

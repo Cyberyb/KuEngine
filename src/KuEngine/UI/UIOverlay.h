@@ -1,8 +1,11 @@
 ﻿// KuEngine UI 覆盖层模块：封装 ImGui 的 GLFW/Vulkan 接入、逐帧绘制与交换链适配。
 #pragma once
 
+#include "../Core/FrameStatistics.h"
+
 #include <vulkan/vulkan.h>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 #include <vector>
 #include <memory>
@@ -16,12 +19,8 @@ class RHIDevice;
 struct UIFrameStatistics {
     float fps = 0.0f;
     float frameTimeMilliseconds = 0.0f;
-    float cpuTimeMilliseconds = 0.0f;
-    double gpuTimeMilliseconds = 0.0;
-    uint64_t drawCalls = 0;
-    uint64_t submittedVertices = 0;
-    bool cpuTimeValid = false;
-    bool gpuTimeValid = false;
+    std::optional<CompletedFrameStatistics> completedFrame;
+    GpuTimeStatus gpuStatusBeforeFirstCompletedFrame = GpuTimeStatus::Waiting;
 };
 
 class UIOverlay {

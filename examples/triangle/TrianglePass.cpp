@@ -36,7 +36,7 @@ void TrianglePass::initialize(const RenderContext& context)
         KU_ERROR("Failed to load shaders: {}", e.what());
         KU_ERROR("  Expected at: {}", vertPath.string());
         KU_ERROR("  Expected at: {}", fragPath.string());
-        return;
+        throw;
     }
 
     GraphicsPipelineDesc desc{};

@@ -8,6 +8,7 @@
 #include <utility>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -66,6 +67,8 @@ public:
 
     [[nodiscard]] size_t passCount() const { return m_passes.size(); }
     [[nodiscard]] bool externalContentsValid(std::string_view resourceName) const;
+    [[nodiscard]] std::optional<CommandListStatistics>
+    expectedFrameStatistics() const;
 
 private:
     void executePassNode(

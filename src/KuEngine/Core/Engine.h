@@ -4,11 +4,13 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 #include <vulkan/vulkan.h>
 
+#include "FrameStatistics.h"
 #include "../Render/RenderPipeline.h"
 
 #define KU_VERSION "0.1.0"
@@ -23,6 +25,7 @@ class SyncManager;
 class CommandList;
 class RHITexture;
 class UIOverlay;
+class ValidationMessageTracker;
 namespace log {
 void init();
 }
@@ -44,9 +47,42 @@ struct EngineConfig {
     VkCompareOp depthCompareOp = VK_COMPARE_OP_LESS;
 };
 
+struct EngineResizeRequest {
+    uint64_t afterSubmittedFrame = 0;
+    uint32_t width = 0;
+    uint32_t height = 0;
+};
+
+struct EngineRunOptions {
+    // Zero preserves the normal interactive, unlimited main loop.
+    uint64_t submittedFrameLimit = 0;
+    std::optional<EngineResizeRequest> resize;
+};
+
+struct EngineRunResult {
+    uint64_t submittedFrames = 0;
+    bool reachedFrameLimit = false;
+    bool resizeRequested = false;
+    bool resizeCompleted = false;
+    std::optional<CompletedFrameStatistics> completedStatistics;
+    std::optional<CommandListStatistics> expectedStatistics;
+};
+
+struct EngineRunDecision {
+    bool requestResize = false;
+    bool stop = false;
+};
+
+[[nodiscard]] EngineRunDecision advanceEngineRun(
+    const EngineRunOptions& options,
+    bool frameSubmitted,
+    EngineRunResult& result) noexcept;
+
 class Engine {
 public:
-    explicit Engine(EngineConfig config = {});
+    explicit Engine(
+        EngineConfig config = {},
+        std::shared_ptr<ValidationMessageTracker> validationMessages = {});
     ~Engine();
 
     Engine(const Engine&) = delete;
@@ -60,7 +96,7 @@ public:
     }
 
     void compile();
-    void run();
+    [[nodiscard]] EngineRunResult run(const EngineRunOptions& options = {});
     void quit() { m_running = false; }
 
     [[nodiscard]] Window&           window()         const { return *m_window; }
@@ -81,12 +117,13 @@ public:
     [[nodiscard]] float   deltaTime()    const { return m_deltaTime; }
     [[nodiscard]] float   totalTime()    const { return m_totalTime; }
 
-    using Clock = std::chrono::high_resolution_clock;
+    using Clock = std::chrono::steady_clock;
 
 private:
-    void mainLoop();
+    [[nodiscard]] EngineRunResult mainLoop(const EngineRunOptions& options);
     void pollEvents();
-    void render();
+    [[nodiscard]] bool render();
+    void completePendingFrameStatistics();
     void recreateSwapChain();
     void createDepthAttachment();
     [[nodiscard]] VkFormat resolveDepthFormat(VkFormat requested) const;
@@ -112,11 +149,11 @@ private:
     bool     m_resizeRequested = false;
     bool     m_pipelineCompiled = false;
     bool     m_depthInitialized = false;
+    uint64_t m_swapChainGeneration = 0;
     float    m_deltaTime = 0.0f;
     float    m_totalTime = 0.0f;
-    float    m_cpuRenderTimeMs = 0.0f;
-    bool     m_cpuRenderTimeValid = false;
     Clock::time_point m_lastTime;
+    CompletedFrameStatisticsTracker m_frameStatistics;
     std::vector<VkImageLayout> m_swapChainImageLayouts;
 };
 

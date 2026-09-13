@@ -853,6 +853,25 @@ bool RenderPipeline::externalContentsValid(
         && found->second.contentsValid;
 }
 
+std::optional<CommandListStatistics>
+RenderPipeline::expectedFrameStatistics() const
+{
+    CommandStatisticsAccumulator total;
+    for (const auto& pass : m_passes) {
+        if (!pass->enabled()) {
+            continue;
+        }
+
+        const std::optional<CommandListStatistics> expected =
+            pass->expectedFrameStatistics();
+        if (!expected.has_value()) {
+            return std::nullopt;
+        }
+        total.add(*expected);
+    }
+    return total.statistics();
+}
+
 void RenderPipeline::clearExternalResources()
 {
     m_externalImageBindings.clear();

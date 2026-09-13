@@ -36,6 +36,8 @@ public:
     [[nodiscard]] bool supportsInlineUI() const override { return true; }
     void drawUIInline() override;
     void onResize(uint32_t width, uint32_t height) override;
+    [[nodiscard]] std::optional<CommandListStatistics>
+    expectedFrameStatistics() const override;
 
     void addRotation(float deltaYaw, float deltaPitch);
 private:

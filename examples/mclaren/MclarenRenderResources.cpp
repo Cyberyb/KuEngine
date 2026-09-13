@@ -86,6 +86,10 @@ bool MclarenRenderResources::initialize(
             depthFormat,
             depthCompareOp);
         configurePbrRenderer(depthFormat);
+        if (!ready()) {
+            throw std::runtime_error(
+                "Mclaren GPU resources did not reach the ready state");
+        }
     } catch (const std::exception& error) {
         errorMessage = error.what();
         KU_ERROR(
@@ -739,14 +743,12 @@ void MclarenRenderResources::createEnvironmentResources(
     if (!createAndUploadHdrTexture(
             scene.environmentPath(),
             m_environmentTexture)) {
-        KU_WARN(
-            "MclarenRenderResources: environment HDR fallback to white texture: {}",
-            scene.environmentPath().string());
+        throw std::runtime_error(
+            "Failed to load or upload environment HDR: "
+            + scene.environmentPath().string());
     }
 
-    const VkImageView environmentView = m_environmentTexture
-        ? m_environmentTexture->imageView()
-        : m_fallbackWhiteTexture->imageView();
+    const VkImageView environmentView = m_environmentTexture->imageView();
     VkDescriptorImageInfo imageInfo{};
     imageInfo.sampler = m_sampler;
     imageInfo.imageView = environmentView;

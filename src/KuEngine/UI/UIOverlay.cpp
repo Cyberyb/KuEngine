@@ -171,21 +171,45 @@ void UIOverlay::drawStats(const UIFrameStatistics& stats)
         return;
     }
 
-    ImGui::Text("FPS: %.1f", stats.fps);
-    ImGui::Text("Frame: %.2f ms", stats.frameTimeMilliseconds);
-    if (stats.cpuTimeValid) {
-        ImGui::Text("CPU: %.2f ms", stats.cpuTimeMilliseconds);
-    } else {
-        ImGui::TextDisabled("CPU: N/A");
+    ImGui::Text("Loop FPS: %.1f", stats.fps);
+    ImGui::Text("Loop Frame: %.2f ms", stats.frameTimeMilliseconds);
+    ImGui::TextDisabled("FPS/Frame: current main-loop sample");
+    ImGui::Separator();
+
+    if (!stats.completedFrame.has_value()) {
+        ImGui::TextDisabled("Completed Submit: waiting");
+        ImGui::TextDisabled("CPU: N/A (waiting)");
+        if (stats.gpuStatusBeforeFirstCompletedFrame
+            == GpuTimeStatus::Unsupported) {
+            ImGui::TextDisabled("GPU: N/A (timestamp unsupported)");
+        } else {
+            ImGui::TextDisabled("GPU: N/A (waiting)");
+        }
+        ImGui::TextDisabled("Draw Calls: N/A (waiting)");
+        ImGui::TextDisabled("Vertices: N/A (waiting)");
+        return;
     }
-    if (stats.gpuTimeValid) {
-        ImGui::Text("GPU: %.2f ms", stats.gpuTimeMilliseconds);
-    } else {
-        ImGui::TextDisabled("GPU: N/A");
+
+    const CompletedFrameStatistics& completed = *stats.completedFrame;
+    ImGui::Text("Completed Submit: #%" PRIu64, completed.submittedFrame);
+    ImGui::Text("CPU: %.2f ms", completed.cpuTimeMilliseconds);
+    switch (completed.gpuTime.status) {
+        case GpuTimeStatus::Available:
+            ImGui::Text("GPU: %.2f ms", completed.gpuTime.milliseconds);
+            break;
+        case GpuTimeStatus::Unsupported:
+            ImGui::TextDisabled("GPU: N/A (timestamp unsupported)");
+            break;
+        case GpuTimeStatus::Waiting:
+        default:
+            ImGui::TextDisabled("GPU: N/A (waiting)");
+            break;
     }
-    ImGui::Text("Draw Calls: %" PRIu64, stats.drawCalls);
-    ImGui::Text("Vertices: %" PRIu64, stats.submittedVertices);
-    ImGui::TextDisabled("CPU/GPU: last completed frame");
+    ImGui::Text("Draw Calls: %" PRIu64, completed.commands.drawCalls);
+    ImGui::Text(
+        "Vertices: %" PRIu64,
+        completed.commands.submittedVertices);
+    ImGui::TextDisabled("CPU/GPU/Draw/Vertices: same completed submit");
 }
 
 void UIOverlay::onSwapChainRecreated(uint32_t imageCount)

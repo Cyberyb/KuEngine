@@ -11,6 +11,7 @@
 | [structure](structure/README.md) | 产品需求、目标架构、当前宏观架构和开发路线 | 需求变化先改产品需求，再同步目标架构与路线图；已实现架构变化更新现状 |
 | [usage](usage/README.md) | 构建、运行、调试和回归操作 | 命令、路径、交互或检查方法变化时同步 |
 | [bugs](bugs/README.md) | 具体问题的复现、根因和修复记录 | 在同一个问题文件内持续更新状态 |
+| [prompts](prompts/README.md) | 多智能体角色工作方式、交接格式和阶段 Prompt | 固定角色变化时更新角色 Prompt；阶段计划变化时同步相应阶段 Prompt |
 
 ## 阅读入口
 
@@ -20,6 +21,7 @@
 - 查看下一步：[开发路线图](structure/roadmap.md)。
 - 运行项目：[使用说明索引](usage/README.md)。
 - 回顾迭代：[按日期的日志](logs/README.md)。
+- 组织多智能体开发：[团队协作方式](structure/team-workflow.md) 与 [Prompt 索引](prompts/README.md)。
 - 对比历史：[架构快照与历史资料](structure/archive/README.md)。
 
 ## 代码与文档同步约定

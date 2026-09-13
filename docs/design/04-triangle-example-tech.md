@@ -1,10 +1,10 @@
 # 示例模块设计
 
-核对日期：2026-09-12。保留原 Triangle 文档路径，现在统一说明四个示例的当前装配。
+核对日期：2026-09-13。保留原 Triangle 文档路径，现在统一说明四个示例的当前装配。
 
 ## 公共入口
 
-四个 main 都创建 EngineConfig、Engine，通过 addPass<T>() 注册后 compile/run。Vulkan 帧循环、交换链、同步、深度和 UI Backend 由 Engine 持有。
+四个 main 都创建 `EngineConfig`，再交给 `runApplication()` 统一解析参数、创建 Engine、注册 Pass、compile/run 和归纳退出码。Vulkan 帧循环、交换链、同步、深度和 UI Backend 由 Engine 持有。
 
 | 示例 | Pass/组件 | 当前绘制 |
 |---|---|---|
@@ -12,6 +12,8 @@
 | [Cube](../../examples/cube/CubePass.cpp) | CubePass | Shader 生成实心 36 顶点或线框 24 顶点；两套 Pipeline |
 | [Alpha3Pass](../../examples/alpha3pass/AlphaPasses.cpp) | 三个 AlphaShapePass | 每个 3 顶点，显式依赖链，共享颜色附件 |
 | [Mclaren](../../examples/mclaren/MclarenPass.cpp) | MclarenPass 及三个辅助组件 | 同一 Scope 中先画 Skybox，再逐 SubMesh indexed draw |
+
+四个示例共享以下非交互冒烟参数：`--smoke-frames N` 按成功提交的帧数停止（`0` 保持无限交互循环）；`--smoke-require-validation` 要求可捕获 Validation 消息；`--smoke-resize-after FRAME WIDTH HEIGHT` 在指定提交帧后请求窗口 resize，且帧上限至少比该帧多两帧；`--smoke-inject-validation-error` 仅用于受控负例，必须同时要求 Validation 与正帧数。普通不带参数的运行方式不变。
 
 ## Triangle 与 Cube
 

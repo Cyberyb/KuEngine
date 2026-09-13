@@ -54,8 +54,10 @@ constexpr const char* vkResultToString(VkResult result) {
 
 // ===== Debug/Release 辅助 =====
 
-#ifndef NDEBUG
-    #define KU_DEBUG_BUILD 1
-#else
-    #define KU_DEBUG_BUILD 0
+#ifndef KU_DEBUG_BUILD
+    #ifndef NDEBUG
+        #define KU_DEBUG_BUILD 1
+    #else
+        #define KU_DEBUG_BUILD 0
+    #endif
 #endif

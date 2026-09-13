@@ -13,6 +13,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <stdexcept>
 #include <vector>
 
 namespace ku {
@@ -40,7 +41,7 @@ void MclarenPass::initialize(const RenderContext& context)
 
     if (!m_scene.load(m_loadError)) {
         KU_ERROR("MclarenPass: {}", m_loadError);
-        return;
+        throw std::runtime_error(m_loadError);
     }
 
     m_camera.reset(m_scene.camera());
@@ -66,7 +67,7 @@ void MclarenPass::initialize(const RenderContext& context)
             context.depthFormat,
             context.depthCompareOp,
             m_loadError)) {
-        return;
+        throw std::runtime_error(m_loadError);
     }
     m_scene.releaseCpuMesh();
 
@@ -406,6 +407,26 @@ void MclarenPass::drawUIInline()
 void MclarenPass::onResize(uint32_t width, uint32_t height)
 {
     m_camera.onResize(width, height);
+}
+
+std::optional<CommandListStatistics>
+MclarenPass::expectedFrameStatistics() const
+{
+    if (!m_resources.ready()) {
+        return std::nullopt;
+    }
+
+    CommandStatisticsAccumulator expected;
+    if (m_enableSkybox) {
+        expected.recordDraw(3, 1);
+    }
+    for (const asset::SubMeshData& subMesh :
+        m_resources.mesh().subMeshes()) {
+        if (subMesh.indexCount > 0) {
+            expected.recordIndexedDraw(subMesh.indexCount, 1);
+        }
+    }
+    return expected.statistics();
 }
 
 void MclarenPass::addRotation(

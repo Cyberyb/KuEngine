@@ -1,6 +1,7 @@
 ﻿#include <set>
 #include "RHIDevice.h"
 #include "../Core/Log.h"
+#include "../Core/RuntimeError.h"
 
 #include <algorithm>
 #include <optional>
@@ -196,7 +197,7 @@ void RHIDevice::pickPhysicalDevice(VkSurfaceKHR surface)
 {
     uint32_t count = 0;
     VK_CHECK(vkEnumeratePhysicalDevices(m_instance, &count, nullptr));
-    if (count == 0) throw std::runtime_error("No Vulkan-capable GPU found");
+    if (count == 0) throw RuntimeUnavailableError("No Vulkan-capable GPU found");
 
     std::vector<VkPhysicalDevice> devices(count);
     VK_CHECK(vkEnumeratePhysicalDevices(m_instance, &count, devices.data()));
@@ -227,7 +228,7 @@ void RHIDevice::pickPhysicalDevice(VkSurfaceKHR surface)
     }
 
     if (!selected) {
-        throw std::runtime_error(
+        throw RuntimeUnavailableError(
             "No GPU satisfies the Runtime Vulkan 1.3, queue, feature, and SwapChain requirements");
     }
 

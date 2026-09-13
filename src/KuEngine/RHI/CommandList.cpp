@@ -69,10 +69,19 @@ CommandList::~CommandList()
     if (m_cmd) {} // freed with pool
 }
 
-void CommandList::collectGpuTime()
+GpuTimeSample CommandList::collectGpuTime()
 {
-    if (m_timestampQueryPool == VK_NULL_HANDLE || !m_timestampPending) {
-        return;
+    if (m_timestampQueryPool == VK_NULL_HANDLE) {
+        return resolveGpuTimeSample(false, false, 0, 0, 0.0f, 0);
+    }
+    if (!m_timestampPending) {
+        return resolveGpuTimeSample(
+            true,
+            false,
+            0,
+            0,
+            m_timestampPeriod,
+            m_timestampValidBits);
     }
 
     // Each timestamp is followed by its availability value.
@@ -88,36 +97,29 @@ void CommandList::collectGpuTime()
         VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
 
     m_timestampPending = false;
-    m_statistics.gpuTimeValid = false;
     if (result == VK_NOT_READY) {
-        return;
+        return resolveGpuTimeSample(
+            true,
+            false,
+            0,
+            0,
+            m_timestampPeriod,
+            m_timestampValidBits);
     }
     VK_CHECK(result);
-    if (queryData[1] == 0 || queryData[3] == 0) {
-        return;
-    }
-
-    uint64_t elapsedTicks = 0;
-    if (m_timestampValidBits >= 64) {
-        elapsedTicks = queryData[2] - queryData[0];
-    } else {
-        const uint64_t timestampMask =
-            (uint64_t{1} << m_timestampValidBits) - 1;
-        elapsedTicks = (queryData[2] - queryData[0]) & timestampMask;
-    }
-
-    m_statistics.gpuTimeMilliseconds =
-        static_cast<double>(elapsedTicks)
-        * static_cast<double>(m_timestampPeriod)
-        / 1'000'000.0;
-    m_statistics.gpuTimeValid = true;
+    return resolveGpuTimeSample(
+        true,
+        queryData[1] != 0 && queryData[3] != 0,
+        queryData[0],
+        queryData[2],
+        m_timestampPeriod,
+        m_timestampValidBits);
 }
 
 void CommandList::begin()
 {
     VK_CHECK(vkResetCommandBuffer(m_cmd, 0));
-    m_statistics.drawCalls = 0;
-    m_statistics.submittedVertices = 0;
+    m_statistics.reset();
 
     VkCommandBufferBeginInfo info{};
     info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -205,9 +207,7 @@ void CommandList::draw(
         instanceCount,
         firstVertex,
         firstInstance);
-    ++m_statistics.drawCalls;
-    m_statistics.submittedVertices +=
-        static_cast<uint64_t>(vertexCount) * instanceCount;
+    m_statistics.recordDraw(vertexCount, instanceCount);
 }
 
 void CommandList::drawIndexed(
@@ -224,9 +224,7 @@ void CommandList::drawIndexed(
         firstIndex,
         vertexOffset,
         firstInstance);
-    ++m_statistics.drawCalls;
-    m_statistics.submittedVertices +=
-        static_cast<uint64_t>(indexCount) * instanceCount;
+    m_statistics.recordIndexedDraw(indexCount, instanceCount);
 }
 
 } // namespace ku

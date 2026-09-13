@@ -1,12 +1,12 @@
 # RHI 当前设计
 
-核对日期：2026-09-12。源码目录：[src/KuEngine/RHI](../../src/KuEngine/RHI)。
+核对日期：2026-09-13。源码目录：[src/KuEngine/RHI](../../src/KuEngine/RHI)。
 
 ## 对象边界
 
 | 类 | 持有与职责 |
 |---|---|
-| RHIInstance | Instance 创建/销毁、GLFW Surface 创建入口 |
+| RHIInstance | Instance 创建/销毁、GLFW Surface 创建入口、Validation/Debug Utils 可用性选择与 Messenger 生命周期 |
 | RHIDevice | 物理设备选择、逻辑设备、Graphics/Present Queue、VMA allocator |
 | SwapChain | 交换链和交换链 ImageView；Image 本身由交换链提供 |
 | SyncManager | 每帧的 imageAvailable、renderFinished Semaphore 与 inFlight Fence |
@@ -18,6 +18,14 @@
 | ResourceUploader | 临时命令池、Staging、拷贝和同步上传 |
 
 没有独立 RHIImage、RHICommandPool 或 RHIDescriptor 类。Engine 持有原始 VkCommandPool；Descriptor/Sampler 目前由 UI 或示例资源容器创建。
+
+## Instance 与 Validation 诊断
+
+`RHIInstance` 在 Debug 配置中请求 `VK_LAYER_KHRONOS_validation`，但先枚举 Instance Layer 和 `VK_EXT_debug_utils`。缺少 Layer 时记录警告并以禁用 Validation 的方式继续创建 Instance；Layer 可用而 Debug Utils 不可用时仍启用 Layer，但无法由 KuEngine 捕获其消息。
+
+同时具备 Layer 与 Debug Utils 时，Instance 在创建期间通过 `pNext` 注册回调，并在创建后显式创建 `VkDebugUtilsMessengerEXT`；销毁时先销毁 Messenger，再销毁 Instance。`VulkanValidationState` 暴露 requested、validation enabled、message capture enabled 以及累计 warning/error 数。计数由可共享的 `ValidationMessageTracker` 原子保存；`RHIInstance` 可使用内部 Tracker，也可接收外部 Tracker，使 ApplicationRunner 能在 Instance/Messenger 销毁后读取已经捕获的最终计数。`resetValidationMessageCounts()` 是显式重置入口；目前 Runtime 不会按帧自动重置或将其显示到 UI。
+
+回调订阅 general、validation、performance 消息，将 error/warning/info/verbose 分别映射到 `KU_ERROR`/`KU_WARN`/`KU_INFO`/`KU_TRACE`，并始终返回 `VK_FALSE`。error 日志含 `KUENGINE_VALIDATION_ERROR` 标记；回调不会让日志异常跨越 Vulkan C ABI 边界。计数只覆盖已成功创建 Messenger 后、销毁前收到的 warning 和 error，不是 GPU 性能指标。RHI 本身不决定进程结果；ApplicationRunner 在 Engine 销毁后将非零 error 计数映射为退出码 3，`--smoke-require-validation` 额外要求消息捕获能力存在。
 
 ## 设备与交换链
 

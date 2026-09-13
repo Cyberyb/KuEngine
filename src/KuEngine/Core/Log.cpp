@@ -4,6 +4,15 @@
 
 namespace ku::log {
 
+spdlog::level::level_enum configuredLevel() noexcept
+{
+#if KU_DEBUG_BUILD
+    return spdlog::level::debug;
+#else
+    return spdlog::level::info;
+#endif
+}
+
 void init()
 {
     auto logger = spdlog::get("KuEngine");
@@ -12,11 +21,7 @@ void init()
     }
 
     spdlog::set_default_logger(logger);
-#if KU_DEBUG_BUILD
-    spdlog::set_level(spdlog::level::debug);
-#else
-    spdlog::set_level(spdlog::level::info);
-#endif
+    spdlog::set_level(configuredLevel());
     spdlog::set_pattern("[%T] [%n] [%^%l%$] %v");
 }
 

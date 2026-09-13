@@ -25,6 +25,14 @@ public:
     void execute(CommandList& cmd, const FrameData& frame) override;
     void drawUI() override;
     void onResize(uint32_t width, uint32_t height) override;
+    [[nodiscard]] std::optional<CommandListStatistics>
+    expectedFrameStatistics() const override
+    {
+        return CommandListStatistics{
+            1,
+            m_wireframeMode ? 24u : 36u,
+        };
+    }
 
     void addRotation(float deltaYaw, float deltaPitch);
     void setAspect(float aspect) { m_aspect = aspect; }
