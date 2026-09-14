@@ -70,6 +70,7 @@ Engine::Engine(
             m_config.title,
             static_cast<int>(m_config.width),
             static_cast<int>(m_config.height));
+        Input::attach(m_window->handle());
         m_instance = std::make_unique<RHIInstance>(
             "KuEngine",
             1u,
@@ -117,6 +118,9 @@ Engine::Engine(
             vkDestroySurfaceKHR(m_instance->instance(), m_surface, nullptr);
             m_surface = VK_NULL_HANDLE;
         }
+        if (m_window) {
+            Input::detach(m_window->handle());
+        }
         throw;
     }
 
@@ -149,6 +153,9 @@ Engine::~Engine()
     }
 
     m_instance.reset();
+    if (m_window) {
+        Input::detach(m_window->handle());
+    }
     m_window.reset();
     KU_INFO("Engine destroyed");
 }
@@ -181,6 +188,10 @@ EngineRunResult Engine::run(const EngineRunOptions& options)
         compile();
     }
 
+    if (options.sidebarExpanded.has_value()) {
+        m_ui->setSidebarExpanded(*options.sidebarExpanded);
+    }
+
     KU_INFO("Starting main loop");
     m_running = true;
     m_lastTime = Clock::now();
@@ -205,6 +216,12 @@ EngineRunResult Engine::mainLoop(const EngineRunOptions& options)
         }
 
         const bool frameSubmitted = render();
+        if (frameSubmitted) {
+            if (!result.firstSubmittedViewerLayout.has_value()) {
+                result.firstSubmittedViewerLayout = m_viewerLayout;
+            }
+            result.finalSubmittedViewerLayout = m_viewerLayout;
+        }
         if (result.resizeRequested
             && !result.resizeCompleted
             && m_swapChainGeneration > resizeGenerationAtRequest) {
@@ -255,7 +272,11 @@ void Engine::pollEvents()
     }
 
     m_window->processEvents();
-    Input::update(m_window->handle());
+    Input::update(
+        m_window->handle(),
+        m_window->isFocused()
+            && !m_window->isMinimized()
+            && !m_minimized);
 }
 
 bool Engine::render()
@@ -284,9 +305,49 @@ bool Engine::render()
     frameData.deltaTime = m_deltaTime;
     frameData.totalTime = m_totalTime;
 
+    const SidebarFrameLayout sidebarFrame = m_ui->describeSidebarFrame(
+        static_cast<float>(m_window->logicalWidth()),
+        static_cast<float>(m_window->logicalHeight()),
+        m_config.showStats);
+    m_viewerLayout = calculateViewerLayout(ViewerLayoutInput{
+        .windowLogicalWidth =
+            static_cast<double>(m_window->logicalWidth()),
+        .windowLogicalHeight =
+            static_cast<double>(m_window->logicalHeight()),
+        .framebufferExtent = {
+            m_swapChain->extent().width,
+            m_swapChain->extent().height,
+        },
+        .sidebarLogicalWidth =
+            static_cast<double>(sidebarFrame.reservedSceneLogicalWidth),
+        .reserveSidebar =
+            sidebarFrame.mode == SidebarLayoutMode::Expanded,
+        .uiOverlayLogical = {
+            static_cast<double>(sidebarFrame.window.x),
+            static_cast<double>(sidebarFrame.window.y),
+            static_cast<double>(sidebarFrame.window.width),
+            static_cast<double>(sidebarFrame.window.height),
+        },
+    });
+    frameData.viewerLayout = m_viewerLayout;
+
     m_ui->newFrame();
     m_renderPipeline->update(frameData);
-    m_renderPipeline->drawUI();
+
+    UIFrameStatistics uiStats{};
+    uiStats.fps =
+        m_deltaTime > 0.0f ? (1.0f / m_deltaTime) : 0.0f;
+    uiStats.frameTimeMilliseconds = m_deltaTime * 1000.0f;
+    uiStats.completedFrame = m_frameStatistics.completedFrame();
+    uiStats.gpuStatusBeforeFirstCompletedFrame =
+        m_commandList->gpuTimingSupported()
+        ? GpuTimeStatus::Waiting
+        : GpuTimeStatus::Unsupported;
+    m_ui->drawSidebar(
+        sidebarFrame,
+        uiStats,
+        [this]() { m_renderPipeline->drawPassUIContent(); },
+        [this]() { m_renderPipeline->drawRenderGraphUIContent(); });
 
     m_commandList->begin();
 
@@ -330,18 +391,6 @@ bool Engine::render()
     }
 
     m_renderPipeline->execute(*m_commandList, frameData);
-    if (m_config.showStats) {
-        UIFrameStatistics uiStats{};
-        uiStats.fps =
-            m_deltaTime > 0.0f ? (1.0f / m_deltaTime) : 0.0f;
-        uiStats.frameTimeMilliseconds = m_deltaTime * 1000.0f;
-        uiStats.completedFrame = m_frameStatistics.completedFrame();
-        uiStats.gpuStatusBeforeFirstCompletedFrame =
-            m_commandList->gpuTimingSupported()
-            ? GpuTimeStatus::Waiting
-            : GpuTimeStatus::Unsupported;
-        m_ui->drawFPSPanel(uiStats);
-    }
     m_renderPipeline->executeOverlay(
         *m_commandList,
         [this, imageIndex](VkCommandBuffer cmd) {

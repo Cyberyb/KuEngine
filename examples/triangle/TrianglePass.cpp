@@ -74,9 +74,8 @@ void TrianglePass::execute(CommandList& cmd, const FrameData&)
 
 void TrianglePass::drawUI()
 {
-    ImGui::Begin("Triangle Controls");
+    ImGui::SeparatorText("Appearance");
     ImGui::ColorEdit4("Color", m_triangleColor.data());
-    ImGui::End();
 }
 
 void TrianglePass::onResize(uint32_t width, uint32_t height)

@@ -11,6 +11,8 @@
 #include <glm/vec3.hpp>
 
 #include <KuEngine/Render/RenderPass.h>
+#include <KuEngine/Render/GpuModelAsset.h>
+#include <KuEngine/Render/PBRResources.h>
 
 #include "MclarenRenderResources.h"
 #include "MclarenSceneAsset.h"
@@ -33,17 +35,18 @@ public:
     void update(const FrameData& frame) override;
     void execute(CommandList& cmd, const FrameData& frame) override;
     void drawUI() override;
-    [[nodiscard]] bool supportsInlineUI() const override { return true; }
-    void drawUIInline() override;
-    void onResize(uint32_t width, uint32_t height) override;
     [[nodiscard]] std::optional<CommandListStatistics>
     expectedFrameStatistics() const override;
 
     void addRotation(float deltaYaw, float deltaPitch);
 private:
     MclarenSceneAsset m_scene;
+    GpuModelAsset m_gpuModel;
+    PBRMaterialResources m_materialResources;
+    PBREnvironmentResources m_environmentResources;
     MclarenRenderResources m_resources;
     OrbitCameraController m_camera;
+    ViewerLayout m_viewerLayout;
 
     std::string m_loadError;
     bool m_hasDepth = false;

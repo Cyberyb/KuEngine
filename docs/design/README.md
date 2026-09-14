@@ -2,7 +2,7 @@
 
 本目录只描述当前代码如何工作。实现计划、版本进度和历史设计保存在 [structure](../structure/README.md)，迭代摘要保存在 [logs](../logs/README.md)。
 
-核对基线：2026-09-13 工作区，含公共 Runtime、Graph 执行器、PBR 动态 UBO、性能统计、Validation 诊断与可选 GPU Smoke 基础。
+核对基线：2026-09-14 工作区，含公共 Runtime、Graph 执行器、PBR 动态 UBO、completed-submit 性能统计、Validation 诊断、已验收的 M0 GPU Smoke 基线，以及已验收 M1 的右侧栏、查看器布局/输入边界和 Mclaren 双模式相机。
 
 | 文档 | 模块与边界 |
 |---|---|

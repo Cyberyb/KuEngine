@@ -19,8 +19,7 @@ namespace ku {
 struct PBRDrawItem {
     uint32_t indexStart = 0;
     uint32_t indexCount = 0;
-    // 指向运行时绑定的数据（目前使用 PBRMaterialBinding）
-    const PBRMaterialBinding* materialBinding = nullptr;
+    uint32_t materialIndex = 0;
 };
 
 class PBRRenderer {
@@ -38,6 +37,11 @@ public:
     void setPipeline(RHIPipeline* pipeline) { m_pipeline = pipeline; }
     void setFrameDescriptorSet(VkDescriptorSet set) { m_frameDescriptorSet = set; }
     void setEnvironmentDescriptorSet(VkDescriptorSet set) { m_environmentDescriptorSet = set; }
+    void setMaterialBindings(
+        const std::vector<PBRMaterialBinding>* bindings)
+    {
+        m_materialBindings = bindings;
+    }
     void setVertexIndexBuffers(RHIBuffer* vb, RHIBuffer* ib) { m_vertexBuffer = vb; m_indexBuffer = ib; }
 
     void setPushConstants(const PBRPushConstants& push) { m_push = push; }
@@ -58,6 +62,7 @@ public:
 private:
     VkFormat m_depthFormat = VK_FORMAT_D32_SFLOAT;
     std::vector<PBRDrawItem> m_drawItems;
+    const std::vector<PBRMaterialBinding>* m_materialBindings = nullptr;
     RHIPipeline* m_pipeline = nullptr;
     VkDescriptorSet m_frameDescriptorSet = VK_NULL_HANDLE;
     VkDescriptorSet m_environmentDescriptorSet = VK_NULL_HANDLE;

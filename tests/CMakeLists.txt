@@ -4,10 +4,13 @@ add_executable(test_core
     core/test_engine.cpp
     core/test_render_graph.cpp
     core/test_asset_config.cpp
+    core/test_scene_assets.cpp
     core/test_application_runner.cpp
     core/test_frame_statistics.cpp
     core/test_pbr.cpp
     core/test_log.cpp
+    core/test_sidebar.cpp
+    core/test_viewer_layout.cpp
     core/test_vulkan_validation.cpp
 )
 
@@ -28,12 +31,15 @@ set_target_properties(test_core PROPERTIES
 add_test(NAME core_tests COMMAND test_core)
 
 add_executable(test_mclaren_camera
+    core/test_cube_viewer.cpp
     core/test_orbit_camera.cpp
+    ${CMAKE_SOURCE_DIR}/examples/cube/CubePass.cpp
     ${CMAKE_SOURCE_DIR}/examples/mclaren/OrbitCameraController.cpp
 )
 
 target_include_directories(test_mclaren_camera PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/examples/cube
     ${CMAKE_SOURCE_DIR}/examples/mclaren
 )
 
@@ -94,6 +100,14 @@ if(KUENGINE_ENABLE_GPU_SMOKE_TESTS)
         --smoke-frames 3
         --smoke-require-validation)
     set_tests_properties(gpu_smoke_mclaren PROPERTIES TIMEOUT 180)
+
+    kuengine_add_gpu_smoke(
+        gpu_smoke_viewer_layout_collapsed
+        TriangleApp
+        "KUENGINE_COMPLETED_STATS.*draws=1 vertices=3 .*status=matched"
+        --smoke-frames 3
+        --smoke-require-validation
+        --smoke-sidebar-collapsed)
 
     add_test(
         NAME gpu_smoke_validation_injection

@@ -11,6 +11,7 @@
 #include <vulkan/vulkan.h>
 
 #include "FrameStatistics.h"
+#include "ViewerLayout.h"
 #include "../Render/RenderPipeline.h"
 
 #define KU_VERSION "0.1.0"
@@ -57,6 +58,8 @@ struct EngineRunOptions {
     // Zero preserves the normal interactive, unlimited main loop.
     uint64_t submittedFrameLimit = 0;
     std::optional<EngineResizeRequest> resize;
+    // Primarily used by bounded viewer-layout checks. Unset keeps UI defaults.
+    std::optional<bool> sidebarExpanded;
 };
 
 struct EngineRunResult {
@@ -66,6 +69,8 @@ struct EngineRunResult {
     bool resizeCompleted = false;
     std::optional<CompletedFrameStatistics> completedStatistics;
     std::optional<CommandListStatistics> expectedStatistics;
+    std::optional<ViewerLayout> firstSubmittedViewerLayout;
+    std::optional<ViewerLayout> finalSubmittedViewerLayout;
 };
 
 struct EngineRunDecision {
@@ -116,6 +121,10 @@ public:
     [[nodiscard]] bool     isRunning()    const { return m_running; }
     [[nodiscard]] float   deltaTime()    const { return m_deltaTime; }
     [[nodiscard]] float   totalTime()    const { return m_totalTime; }
+    [[nodiscard]] const ViewerLayout& viewerLayout() const
+    {
+        return m_viewerLayout;
+    }
 
     using Clock = std::chrono::steady_clock;
 
@@ -154,6 +163,7 @@ private:
     float    m_totalTime = 0.0f;
     Clock::time_point m_lastTime;
     CompletedFrameStatisticsTracker m_frameStatistics;
+    ViewerLayout m_viewerLayout;
     std::vector<VkImageLayout> m_swapChainImageLayouts;
 };
 

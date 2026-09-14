@@ -5,6 +5,7 @@
 #include "../RHI/VulkanValidation.h"
 
 #include <charconv>
+#include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <limits>
@@ -71,6 +72,54 @@ void printCompletedStatistics(
         << " status=matched\n";
 }
 
+void printViewerLayout(
+    std::string_view sample,
+    const ViewerLayout& layout)
+{
+    std::cout
+        << "KUENGINE_VIEWER_LAYOUT sample=" << sample
+        << " logical=" << layout.windowLogical.width
+        << 'x' << layout.windowLogical.height
+        << " framebuffer=" << layout.framebufferExtent.width
+        << 'x' << layout.framebufferExtent.height
+        << " scene_logical=" << layout.sceneLogical.width
+        << 'x' << layout.sceneLogical.height
+        << " scene_pixels=" << layout.sceneFramebuffer.width
+        << 'x' << layout.sceneFramebuffer.height
+        << " aspect=" << layout.sceneAspect
+        << " sidebar_reserved=" << (layout.sidebarReserved ? 1 : 0)
+        << " overlay_fallback=" << (layout.sidebarOverlayFallback ? 1 : 0)
+        << '\n';
+}
+
+bool validViewerLayout(
+    const ViewerLayout& layout,
+    bool expectExpanded) noexcept
+{
+    const bool baseValid = layout.sceneRenderable()
+        && static_cast<uint64_t>(layout.sceneFramebuffer.x)
+                + layout.sceneFramebuffer.width
+            <= layout.framebufferExtent.width
+        && static_cast<uint64_t>(layout.sceneFramebuffer.y)
+                + layout.sceneFramebuffer.height
+            <= layout.framebufferExtent.height
+        && std::isfinite(layout.sceneAspect)
+        && layout.sceneAspect > 0.0f;
+    if (!baseValid) {
+        return false;
+    }
+
+    if (expectExpanded && !layout.sidebarOverlayFallback) {
+        return layout.sidebarReserved
+            && layout.sceneFramebuffer.width < layout.framebufferExtent.width;
+    }
+    if (!expectExpanded) {
+        return !layout.sidebarReserved
+            && layout.sceneFramebuffer.width == layout.framebufferExtent.width;
+    }
+    return true;
+}
+
 } // namespace
 
 ApplicationRunOptions parseApplicationRunOptions(
@@ -92,6 +141,9 @@ ApplicationRunOptions parseApplicationRunOptions(
             options.smokeArgumentsPresent = true;
         } else if (argument == "--smoke-inject-validation-error") {
             options.injectValidationError = true;
+            options.smokeArgumentsPresent = true;
+        } else if (argument == "--smoke-sidebar-collapsed") {
+            options.engine.sidebarExpanded = false;
             options.smokeArgumentsPresent = true;
         } else if (argument == "--smoke-resize-after") {
             if (i + 3 >= arguments.size()) {
@@ -232,6 +284,42 @@ int runApplication(
         return static_cast<int>(ApplicationExitCode::runtimeFailure);
     }
     if (options.engine.submittedFrameLimit > 0) {
+        if (!result.firstSubmittedViewerLayout.has_value()
+            || !result.finalSubmittedViewerLayout.has_value()) {
+            std::cerr << "KUENGINE_SMOKE_FAIL reason=viewer_layout_unavailable\n";
+            return static_cast<int>(ApplicationExitCode::runtimeFailure);
+        }
+
+        const bool expectExpanded =
+            options.engine.sidebarExpanded.value_or(true);
+        if (!validViewerLayout(
+                *result.firstSubmittedViewerLayout,
+                expectExpanded)
+            || !validViewerLayout(
+                *result.finalSubmittedViewerLayout,
+                expectExpanded)) {
+            std::cerr << "KUENGINE_SMOKE_FAIL reason=viewer_layout_invalid\n";
+            return static_cast<int>(ApplicationExitCode::runtimeFailure);
+        }
+        const ViewerLayout& first = *result.firstSubmittedViewerLayout;
+        const ViewerLayout& final = *result.finalSubmittedViewerLayout;
+        const bool resizeRequestsLogicalChange = options.engine.resize
+            && (std::abs(
+                    first.windowLogical.width
+                    - static_cast<double>(options.engine.resize->width)) > 0.5
+                || std::abs(
+                    first.windowLogical.height
+                    - static_cast<double>(options.engine.resize->height)) > 0.5);
+        const bool logicalResizeObserved =
+            std::abs(first.windowLogical.width - final.windowLogical.width) > 0.5
+            || std::abs(first.windowLogical.height - final.windowLogical.height) > 0.5;
+        if (resizeRequestsLogicalChange && !logicalResizeObserved) {
+            std::cerr << "KUENGINE_SMOKE_FAIL reason=viewer_layout_resize_not_observed\n";
+            return static_cast<int>(ApplicationExitCode::runtimeFailure);
+        }
+        printViewerLayout("first", first);
+        printViewerLayout("final", final);
+
         if (!result.completedStatistics.has_value()) {
             std::cerr << "KUENGINE_SMOKE_FAIL reason=completed_stats_unavailable\n";
             return static_cast<int>(ApplicationExitCode::runtimeFailure);

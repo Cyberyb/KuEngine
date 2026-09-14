@@ -104,12 +104,12 @@ void AlphaShapePass::execute(CommandList& cmd, const FrameData&)
 
 void AlphaShapePass::drawUI()
 {
-    const std::string panelName = m_name + " Pass";
-    ImGui::Begin(panelName.c_str());
+    ImGui::SeparatorText("Appearance");
     ImGui::ColorEdit4("Color", m_color.data());
+
+    ImGui::SeparatorText("Transform");
     ImGui::SliderFloat2("Offset", m_offset.data(), -1.0f, 1.0f);
     ImGui::SliderFloat2("Scale", m_scale.data(), 0.1f, 2.0f);
-    ImGui::End();
 }
 
 void AlphaShapePass::onResize(uint32_t width, uint32_t height)

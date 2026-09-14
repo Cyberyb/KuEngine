@@ -2,13 +2,12 @@
 #pragma once
 
 #include "../Core/FrameStatistics.h"
+#include "SidebarState.h"
 
 #include <vulkan/vulkan.h>
 #include <cstdint>
+#include <functional>
 #include <optional>
-#include <string_view>
-#include <vector>
-#include <memory>
 
 struct GLFWwindow;
 
@@ -25,6 +24,8 @@ struct UIFrameStatistics {
 
 class UIOverlay {
 public:
+    using SidebarContent = std::function<void()>;
+
     UIOverlay(
         const RHIDevice& device,
         ::GLFWwindow* window,
@@ -36,8 +37,23 @@ public:
 
     void newFrame();
     void render(VkCommandBuffer cmd, VkImageView imageView, VkImageLayout imageLayout);
-    void drawStats(const UIFrameStatistics& stats);
-    void drawFPSPanel(const UIFrameStatistics& stats);
+    [[nodiscard]] SidebarFrameLayout describeSidebarFrame(
+        float logicalWindowWidth,
+        float logicalWindowHeight,
+        bool showStats) const noexcept;
+    void setSidebarExpanded(bool expanded) noexcept
+    {
+        if (expanded) {
+            m_sidebarState.expand();
+        } else {
+            m_sidebarState.collapse();
+        }
+    }
+    void drawSidebar(
+        const SidebarFrameLayout& sidebarFrame,
+        const UIFrameStatistics& stats,
+        const SidebarContent& parameterContent,
+        const SidebarContent& renderGraphContent);
     void onSwapChainRecreated(uint32_t imageCount);
 
 private:
@@ -49,10 +65,15 @@ private:
         VkFormat depthFormat);
     [[nodiscard]] VkDescriptorPool createDescriptorPool() const;
     static void checkVkResult(VkResult result);
+    void drawStatisticsContent(
+        const UIFrameStatistics& stats,
+        bool compact) const;
 
     const RHIDevice* m_device = nullptr;
     VkDescriptorPool m_descriptorPool = VK_NULL_HANDLE;
     bool m_initialized = false;
+    SidebarState m_sidebarState;
+    SidebarLayoutPolicy m_sidebarLayoutPolicy;
 };
 
 } // namespace ku

@@ -1,6 +1,6 @@
 # Core 与公共 Runtime 设计
 
-核对日期：2026-09-13。
+核对日期：2026-09-14。
 
 源码：[Engine.h](../../src/KuEngine/Core/Engine.h)、[Engine.cpp](../../src/KuEngine/Core/Engine.cpp)、[ApplicationRunner](../../src/KuEngine/Core/ApplicationRunner.h)、[Window](../../src/KuEngine/Core/Window.h)、[Input](../../src/KuEngine/Core/Input.h)。
 
@@ -49,7 +49,7 @@ flowchart TD
     Present --> Decision
 ```
 
-FrameData 携带 frameIndex、imageIndex、deltaTime、totalTime。frameIndex 是同步槽索引，单帧配置下一直为 0；imageIndex 才是获取到的交换链图像索引。
+FrameData 携带 frameIndex、imageIndex、deltaTime、totalTime 和本帧 `ViewerLayout`。Engine 在 acquire 成功后、Pass update 前从逻辑窗口尺寸、framebuffer extent 与 Sidebar 快照计算它；Mclaren 只在示例层将这份 FrameData/Input/ImGui 状态适配为 `CameraInputSample`，Runtime 不拥有相机模式或场景相机。frameIndex 是同步槽索引，单帧配置下一直为 0；imageIndex 才是获取到的交换链图像索引。
 
 ## 深度、布局与 resize
 
@@ -57,16 +57,16 @@ Engine 持有深度 RHITexture，尺寸跟随 SwapChain；初次创建不执行�
 
 Engine 记录每个交换链图像的布局，并按名称绑定实际 Image、View、Extent、Aspect、Layout、Load/Store、Clear 和最终布局。Present 前颜色图像转换到 PRESENT_SRC_KHR。
 
-尺寸变化或交换链过期时，Engine 等待设备空闲、重建交换链与深度、清除外部绑定和通知 Pass::onResize。自动冒烟 resize 通过 GLFW 请求窗口尺寸变化；只有观察到新的 Swapchain generation 后才将 `resizeCompleted` 置为 true。最小化时暂缓绘制，主循环短暂休眠；M0 自动化没有覆盖人工最小化/恢复体验。
+尺寸变化或交换链过期时，Engine 等待设备空闲、重建交换链与深度、清除外部绑定和通知 Pass::onResize。自动冒烟 resize 通过 GLFW 请求窗口尺寸变化；只有观察到新的 Swapchain generation 后才将 `resizeCompleted` 置为 true。最小化时暂缓绘制，主循环短暂休眠；Input 以 interaction epoch 切断跳过帧前后的拖动连续性。QA 已人工检查最小化/恢复，但 Win+D 和物理非等比 DPI 尚未覆盖。
 
 退出时先等待 GPU，再销毁 Pass、UI 和图像/命令/同步/交换链及命令池，之后依次销毁 Device、Surface、Instance 和 Window，保证依赖对象仍存活。
 
 ## Window 与 Input
 
-Window 封装 GLFW 初始化、窗口、事件、framebuffer resize 与关闭回调；通过窗口计数控制 GLFW 初始化/终止。Input 保存全局静态按键/鼠标状态，支持 down、pressed、鼠标位置和位移；它没有滚轮查询接口，Mclaren 的滚轮值取自 ImGuiIO。
+Window 封装 GLFW 初始化、窗口、事件、framebuffer resize 与关闭回调；通过窗口计数控制 GLFW 初始化/终止。Input 保存全局静态按键/鼠标状态，支持 down、pressed、逻辑鼠标位置/位移、滚轮、活动状态和 interaction epoch。`ViewerLayout` 将逻辑输入矩形映射为 framebuffer 视口；当展开侧栏会保留右侧场景宽度，紧凑/重开模式覆盖场景；逻辑与像素比例独立计算，并在尺寸无效或过小时回退为可渲染的完整场景/至少一像素矩形。
 
 ## 计时与约束
 
-CPU 使用 Engine::Clock（当前为 high_resolution_clock）测量 acquire 成功后至 submit 返回的墙钟时间，包括 Pass 更新、UI 和命令记录；不包括事件轮询、Fence/acquire 等待与 present。详细显示语义见 [UI 与统计](05-ui-layer.md)。
+CPU 使用 Engine::Clock（`steady_clock`）测量 acquire 成功后至 submit 返回的墙钟时间，包括 Pass 更新、UI 和命令记录；不包括事件轮询、Fence/acquire 等待与 present。submit 后暂存 CPU 与业务计数，下一次 Fence 完成或退出 `waitIdle` 后与 GPU Query 合成 completed-submit 快照；FPS/Frame 仍是当前主循环的 `deltaTime`。详细显示语义见 [UI 与统计](05-ui-layer.md)。
 
 Runtime 的单帧限制是命令、动态 UBO、深度和 QueryPool 复用的前提。当前没有独立场景管理器、固定时间步模拟或多窗口运行调度。

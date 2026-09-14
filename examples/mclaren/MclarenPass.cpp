@@ -1,9 +1,12 @@
 #include "MclarenPass.h"
 
 #include <KuEngine/Core/Log.h>
+#include <KuEngine/Core/Input.h>
+#include <KuEngine/RHI/ResourceUploader.h>
 #include <KuEngine/Render/GpuMesh.h>
 #include <KuEngine/Render/PBRRenderer.h>
 #include <KuEngine/Render/RenderGraph.h>
+#include <KuEngine/Render/TextureFactory.h>
 
 #include <glm/glm.hpp>
 
@@ -38,6 +41,9 @@ void MclarenPass::initialize(const RenderContext& context)
 
     m_loadError.clear();
     m_resources.reset();
+    m_environmentResources.reset();
+    m_materialResources.reset();
+    m_gpuModel.reset();
 
     if (!m_scene.load(m_loadError)) {
         KU_ERROR("MclarenPass: {}", m_loadError);
@@ -60,13 +66,48 @@ void MclarenPass::initialize(const RenderContext& context)
     m_environmentIntensity = 0.7f;
     m_environmentExposure = 1.0f;
 
+    ResourceUploader uploader(device);
+    TextureFactory textureFactory(device, uploader);
+    if (!m_gpuModel.initialize(
+            device,
+            uploader,
+            m_scene.mesh(),
+            m_loadError)) {
+        throw std::runtime_error(m_loadError);
+    }
+    const asset::MaterialConfig* materialConfig =
+        m_scene.materialConfigUsed() ? &m_scene.materialConfig() : nullptr;
+    if (!m_materialResources.initialize(
+            device,
+            textureFactory,
+            m_scene.mesh(),
+            materialConfig,
+            m_loadError)) {
+        m_gpuModel.reset();
+        throw std::runtime_error(m_loadError);
+    }
+    if (!m_environmentResources.initialize(
+            device,
+            textureFactory,
+            m_scene.environmentImage(),
+            m_loadError)) {
+        m_materialResources.reset();
+        m_gpuModel.reset();
+        throw std::runtime_error(m_loadError);
+    }
     if (!m_resources.initialize(
             device,
             m_scene,
+            m_gpuModel,
+            m_materialResources,
+            m_environmentResources,
             context.colorFormat,
             context.depthFormat,
             context.depthCompareOp,
             m_loadError)) {
+        m_environmentResources.reset();
+        m_materialResources.reset();
+        m_gpuModel.reset();
         throw std::runtime_error(m_loadError);
     }
     m_scene.releaseCpuMesh();
@@ -77,10 +118,35 @@ void MclarenPass::initialize(const RenderContext& context)
         m_scene.environmentPath().string());
 }
 
-void MclarenPass::update(const FrameData&)
+void MclarenPass::update(const FrameData& frame)
 {
-    ImGuiIO& io = ImGui::GetIO();
-    m_camera.updateInput(io.WantCaptureMouse, io.MouseWheel);
+    m_viewerLayout = frame.viewerLayout;
+    const ImGuiIO& io = ImGui::GetIO();
+    m_camera.updateInput(
+        CameraInputSample{
+            .viewerLayout = frame.viewerLayout,
+            .deltaTime = frame.deltaTime,
+            .pointerX = Input::mouseX(),
+            .pointerY = Input::mouseY(),
+            .pointerDeltaX = Input::mouseDeltaX(),
+            .pointerDeltaY = Input::mouseDeltaY(),
+            .wheelY = Input::mouseWheelY(),
+            .leftDown = Input::isMouseButtonDown(Input::MOUSE_BUTTON_LEFT),
+            .leftPressed = Input::isMouseButtonPressed(Input::MOUSE_BUTTON_LEFT),
+            .rightDown = Input::isMouseButtonDown(Input::MOUSE_BUTTON_RIGHT),
+            .rightPressed = Input::isMouseButtonPressed(Input::MOUSE_BUTTON_RIGHT),
+            .moveForward = Input::isKeyDown(Input::KEY_W),
+            .moveBackward = Input::isKeyDown(Input::KEY_S),
+            .moveLeft = Input::isKeyDown(Input::KEY_A),
+            .moveRight = Input::isKeyDown(Input::KEY_D),
+            .moveDown = Input::isKeyDown(Input::KEY_Q),
+            .moveUp = Input::isKeyDown(Input::KEY_E),
+            .windowActive = Input::isActive(),
+            .uiCapturesMouse = io.WantCaptureMouse,
+            .uiCapturesKeyboard = io.WantCaptureKeyboard,
+            .uiWantsTextInput = io.WantTextInput,
+            .interactionEpoch = Input::interactionEpoch(),
+        });
 }
 
 void MclarenPass::execute(
@@ -91,35 +157,10 @@ void MclarenPass::execute(
         return;
     }
 
-    const OrbitViewportRegion region = m_camera.viewportRegion();
-    if (region.width <= 0.0f) {
-        return;
-    }
-
-    VkViewport viewport{};
-    viewport.x = region.x;
-    viewport.y = 0.0f;
-    viewport.width = region.width;
-    viewport.height = static_cast<float>(region.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-    VkRect2D scissor{};
-    scissor.offset = {
-        static_cast<int32_t>(region.scissorX),
-        0,
-    };
-    scissor.extent = {
-        region.scissorWidth,
-        region.height,
-    };
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
-
     const glm::mat4 model = m_camera.modelMatrix(
         m_scene.fitScale(),
         m_scene.modelCenter());
-    const OrbitCameraFrame cameraFrame = m_camera.frame();
+    const CameraFrame cameraFrame = m_camera.frame();
     const glm::mat4 mvp = cameraFrame.viewProjection * model;
     const glm::mat3 normalMatrix =
         glm::transpose(glm::inverse(glm::mat3(model)));
@@ -176,9 +217,9 @@ void MclarenPass::execute(
             m_enableOutputGamma);
     }
 
-    const GpuMesh& mesh = m_resources.mesh();
+    const GpuMesh& mesh = m_gpuModel.mesh();
     const std::vector<PBRMaterialBinding>& materials =
-        m_resources.materials();
+        m_materialResources.bindings();
     const float alphaMode = m_scene.materialConfigUsed()
         ? alphaModeToFlag(m_scene.materialConfig())
         : 0.0f;
@@ -196,13 +237,12 @@ void MclarenPass::execute(
         if (materialIndex >= materials.size()) {
             materialIndex = 0;
         }
-        const PBRMaterialBinding& material =
-            materials[materialIndex];
+        const PBRMaterialBinding& material = materials[materialIndex];
 
         drawItems.push_back(PBRDrawItem{
             subMesh.indexStart,
             subMesh.indexCount,
-            &material,
+            static_cast<uint32_t>(materialIndex),
         });
 
         PBRPushConstants push = basePush;
@@ -285,128 +325,181 @@ void MclarenPass::execute(
 
 void MclarenPass::drawUI()
 {
-    ImGui::Begin("Mclaren Model Controls");
-    drawUIInline();
-    ImGui::End();
-}
+    if (ImGui::CollapsingHeader(
+            "Scene",
+            ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Text("Model: %s", m_scene.modelLabel().c_str());
 
-void MclarenPass::drawUIInline()
-{
-    ImGui::Text("Model: %s", m_scene.modelLabel().c_str());
+        if (m_resources.ready()) {
+            const GpuMesh& mesh = m_gpuModel.mesh();
+            const PBRMaterialResourceStats& stats =
+                m_materialResources.stats();
+            ImGui::Text("Vertices: %u", mesh.vertexCount());
+            ImGui::Text("Indices: %u", mesh.indexCount());
+            ImGui::Text(
+                "SubMeshes: %u",
+                static_cast<uint32_t>(mesh.subMeshes().size()));
+            ImGui::Text(
+                "Textured materials (base/normal/orm/emissive): %u / %u / %u / %u",
+                stats.texturedBase,
+                stats.texturedNormal,
+                stats.texturedOrm,
+                stats.texturedEmissive);
+        } else {
+            ImGui::TextDisabled("GPU resources are not ready");
+        }
 
-    if (m_resources.ready()) {
-        const GpuMesh& mesh = m_resources.mesh();
-        const MclarenResourceStats& stats = m_resources.stats();
-        ImGui::Text("Vertices: %u", mesh.vertexCount());
-        ImGui::Text("Indices: %u", mesh.indexCount());
+        ImGui::TextWrapped(
+            "Scene Config: %s",
+            m_scene.sceneConfigUsed()
+                ? m_scene.scenePath().string().c_str()
+                : "fallback (not found)");
+        ImGui::TextWrapped(
+            "Material Config: %s",
+            m_scene.materialConfigUsed()
+                ? m_scene.materialPath().string().c_str()
+                : "fallback (not found)");
+        ImGui::TextWrapped(
+            "Environment HDR: %s",
+            m_scene.environmentPath().string().c_str());
+
+        if (!m_loadError.empty()) {
+            ImGui::TextColored(
+                ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+                "%s",
+                m_loadError.c_str());
+        }
+    }
+
+    if (ImGui::CollapsingHeader(
+            "Material",
+            ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Checkbox(
+            "Enable BaseColor Texture",
+            &m_enableTextureSampling);
+        ImGui::Checkbox("Enable Normal Map", &m_enableNormalMap);
+        ImGui::Checkbox("Enable ORM Map", &m_enableOrmMap);
+        ImGui::Checkbox("Flip UV-Y (Vulkan)", &m_flipUvY);
+        ImGui::ColorEdit4(
+            "Global BaseColor Factor",
+            m_globalBaseColorFactor.data());
+    }
+
+    if (ImGui::CollapsingHeader(
+            "Camera",
+            ImGuiTreeNodeFlags_DefaultOpen)) {
+        int cameraMode = m_camera.mode() == ViewerCameraMode::OrbitInspect
+            ? 0
+            : 1;
+        constexpr const char* cameraModes[] = {
+            "Orbit Inspect",
+            "Free Fly",
+        };
+        if (ImGui::Combo(
+                "Mode",
+                &cameraMode,
+                cameraModes,
+                static_cast<int>(std::size(cameraModes)))) {
+            m_camera.setMode(
+                cameraMode == 0
+                    ? ViewerCameraMode::OrbitInspect
+                    : ViewerCameraMode::FreeFly);
+        }
+
         ImGui::Text(
-            "SubMeshes: %u",
-            static_cast<uint32_t>(mesh.subMeshes().size()));
+            "Scene logical: %.0f x %.0f",
+            m_viewerLayout.sceneLogical.width,
+            m_viewerLayout.sceneLogical.height);
         ImGui::Text(
-            "Textured materials (base/normal/orm/emissive): %u / %u / %u / %u",
-            stats.texturedBase,
-            stats.texturedNormal,
-            stats.texturedOrm,
-            stats.texturedEmissive);
-    } else {
-        ImGui::TextDisabled("GPU resources are not ready");
+            "Scene viewport: %u x %u pixels",
+            m_viewerLayout.sceneFramebuffer.width,
+            m_viewerLayout.sceneFramebuffer.height);
+        ImGui::Text("Projection aspect: %.3f", m_camera.viewerAspect());
+
+        float fov = m_camera.fovYDegrees();
+        float nearPlane = m_camera.nearPlane();
+        float farPlane = m_camera.farPlane();
+        ImGui::SliderFloat("Camera FOV Y", &fov, 20.0f, 120.0f);
+        ImGui::SliderFloat("Camera Near", &nearPlane, 0.01f, 5.0f);
+        ImGui::SliderFloat("Camera Far", &farPlane, 5.0f, 500.0f);
+        m_camera.setProjection(fov, nearPlane, farPlane);
+
+        if (m_camera.mode() == ViewerCameraMode::OrbitInspect) {
+            ImGui::Text("Distance: %.2f", m_camera.distance());
+            ImGui::Text("Model Yaw: %.2f", m_camera.yaw());
+            ImGui::Text("Model Pitch: %.2f", m_camera.pitch());
+            ImGui::TextDisabled(
+                "Left drag: rotate model | Wheel: zoom");
+        } else {
+            const glm::vec3& position = m_camera.freePosition();
+            ImGui::Text(
+                "Position: %.2f, %.2f, %.2f",
+                position.x,
+                position.y,
+                position.z);
+            ImGui::Text(
+                "View Yaw/Pitch: %.2f / %.2f",
+                m_camera.freeYaw(),
+                m_camera.freePitch());
+            float moveSpeed = m_camera.moveSpeed();
+            if (ImGui::InputFloat(
+                    "Move Speed",
+                    &moveSpeed,
+                    0.25f,
+                    1.0f,
+                    "%.2f")) {
+                m_camera.setMoveSpeed(moveSpeed);
+            }
+            ImGui::TextDisabled(
+                "Right click scene to focus/look | WASD move | Q/E down/up");
+        }
+
+        if (ImGui::Button("Reset View")) {
+            m_camera.resetView();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset Model Rotation")) {
+            m_camera.resetRotation();
+        }
     }
 
-    ImGui::Checkbox(
-        "Enable BaseColor Texture",
-        &m_enableTextureSampling);
-    ImGui::Checkbox("Enable Normal Map", &m_enableNormalMap);
-    ImGui::Checkbox("Enable ORM Map", &m_enableOrmMap);
-    ImGui::Checkbox("Flip UV-Y (Vulkan)", &m_flipUvY);
-    ImGui::Checkbox(
-        "Encode Output Gamma (Linear->sRGB)",
-        &m_enableOutputGamma);
-    ImGui::ColorEdit4(
-        "Global BaseColor Factor",
-        m_globalBaseColorFactor.data());
-
-    ImGui::Separator();
-    ImGui::Text("Camera");
-    ImGui::Text(
-        "Camera Distance (Mouse Wheel): %.2f",
-        m_camera.distance());
-    ImGui::TextDisabled(
-        "Use mouse wheel over viewport to zoom");
-
-    float offsetX = m_camera.viewportOffsetX();
-    float visibleWidth = m_camera.visibleWidth();
-    ImGui::SliderFloat("Viewport Offset X", &offsetX, 0.0f, 1.0f);
-    ImGui::SliderFloat("Visible Width", &visibleWidth, 0.0f, 1.0f);
-    m_camera.setViewportRegion(offsetX, visibleWidth);
-
-    float fov = m_camera.fovYDegrees();
-    float nearPlane = m_camera.nearPlane();
-    float farPlane = m_camera.farPlane();
-    ImGui::SliderFloat("Camera FOV Y", &fov, 20.0f, 120.0f);
-    ImGui::SliderFloat("Camera Near", &nearPlane, 0.01f, 5.0f);
-    ImGui::SliderFloat("Camera Far", &farPlane, 5.0f, 500.0f);
-    m_camera.setProjection(fov, nearPlane, farPlane);
-    ImGui::Text("Yaw: %.2f", m_camera.yaw());
-    ImGui::Text("Pitch: %.2f", m_camera.pitch());
-
-    ImGui::Separator();
-    ImGui::Text("Lighting");
-    ImGui::SliderFloat3(
-        "Light Direction",
-        &m_lightDirection.x,
-        -1.0f,
-        1.0f);
-    ImGui::ColorEdit3("Light Color", &m_lightColor.x);
-    ImGui::SliderFloat(
-        "Light Intensity",
-        &m_lightIntensity,
-        0.0f,
-        4.0f);
-    ImGui::Checkbox("Enable Skybox", &m_enableSkybox);
-    ImGui::Checkbox(
-        "Enable Environment Reflections",
-        &m_enableEnvironmentMap);
-    ImGui::SliderFloat(
-        "Environment Exposure",
-        &m_environmentExposure,
-        0.1f,
-        4.0f);
-    ImGui::SliderFloat(
-        "Environment Intensity",
-        &m_environmentIntensity,
-        0.0f,
-        2.0f);
-
-    ImGui::Separator();
-    ImGui::TextWrapped(
-        "Scene Config: %s",
-        m_scene.sceneConfigUsed()
-            ? m_scene.scenePath().string().c_str()
-            : "fallback (not found)");
-    ImGui::TextWrapped(
-        "Material Config: %s",
-        m_scene.materialConfigUsed()
-            ? m_scene.materialPath().string().c_str()
-            : "fallback (not found)");
-    ImGui::TextWrapped(
-        "Environment HDR: %s",
-        m_scene.environmentPath().string().c_str());
-
-    if (!m_loadError.empty()) {
-        ImGui::TextColored(
-            ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
-            "%s",
-            m_loadError.c_str());
+    if (ImGui::CollapsingHeader(
+            "Lighting",
+            ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::SliderFloat3(
+            "Light Direction",
+            &m_lightDirection.x,
+            -1.0f,
+            1.0f);
+        ImGui::ColorEdit3("Light Color", &m_lightColor.x);
+        ImGui::SliderFloat(
+            "Light Intensity",
+            &m_lightIntensity,
+            0.0f,
+            4.0f);
     }
 
-    if (ImGui::Button("Reset Rotation")) {
-        m_camera.resetRotation();
+    if (ImGui::CollapsingHeader(
+            "Environment",
+            ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Checkbox("Enable Skybox", &m_enableSkybox);
+        ImGui::Checkbox(
+            "Enable Environment Reflections",
+            &m_enableEnvironmentMap);
+        ImGui::Checkbox(
+            "Encode Output Gamma (Linear->sRGB)",
+            &m_enableOutputGamma);
+        ImGui::SliderFloat(
+            "Environment Exposure",
+            &m_environmentExposure,
+            0.1f,
+            4.0f);
+        ImGui::SliderFloat(
+            "Environment Intensity",
+            &m_environmentIntensity,
+            0.0f,
+            2.0f);
     }
-}
-
-void MclarenPass::onResize(uint32_t width, uint32_t height)
-{
-    m_camera.onResize(width, height);
 }
 
 std::optional<CommandListStatistics>
@@ -421,7 +514,7 @@ MclarenPass::expectedFrameStatistics() const
         expected.recordDraw(3, 1);
     }
     for (const asset::SubMeshData& subMesh :
-        m_resources.mesh().subMeshes()) {
+        m_gpuModel.mesh().subMeshes()) {
         if (subMesh.indexCount > 0) {
             expected.recordIndexedDraw(subMesh.indexCount, 1);
         }

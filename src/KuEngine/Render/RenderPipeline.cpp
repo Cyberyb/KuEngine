@@ -637,15 +637,24 @@ void RenderPipeline::executePassNode(
     vkCmdBeginRendering(cmd, &renderingInfo);
     ++m_executeDebug.renderingScopes;
 
+    const ViewerPixelRect sceneRect = fitViewerRectToExtent(
+        frame.viewerLayout.sceneFramebuffer,
+        ViewerPixelExtent{renderExtent.width, renderExtent.height});
     VkViewport viewport{};
-    viewport.width = static_cast<float>(renderExtent.width);
-    viewport.height = static_cast<float>(renderExtent.height);
+    viewport.x = static_cast<float>(sceneRect.x);
+    viewport.y = static_cast<float>(sceneRect.y);
+    viewport.width = static_cast<float>(sceneRect.width);
+    viewport.height = static_cast<float>(sceneRect.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
     VkRect2D scissor{};
-    scissor.extent = renderExtent;
+    scissor.offset = {
+        static_cast<int32_t>(sceneRect.x),
+        static_cast<int32_t>(sceneRect.y),
+    };
+    scissor.extent = {sceneRect.width, sceneRect.height};
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     try {
@@ -877,18 +886,7 @@ void RenderPipeline::clearExternalResources()
     m_externalImageBindings.clear();
 }
 
-void RenderPipeline::drawUI()
-{
-    ImGui::SetNextWindowBgAlpha(0.85f);
-    ImGui::SetNextWindowSize(ImVec2(460.0f, 0.0f), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("RenderGraph Debug")) {
-        drawUIInline();
-    }
-    ImGui::End();
-}
-
-void RenderPipeline::drawUIInline()
+void RenderPipeline::drawRenderGraphUIContent()
 {
     ImGui::Text(
         "Compile: passes=%d resources=%d deps=%d barriers=%d",
@@ -971,18 +969,21 @@ void RenderPipeline::drawUIInline()
         }
     }
 
-    for (auto& pass : m_passes) {
+}
+
+void RenderPipeline::drawPassUIContent()
+{
+    for (size_t passIndex = 0; passIndex < m_passes.size(); ++passIndex) {
+        auto& pass = m_passes[passIndex];
         if (!pass->enabled()) {
             continue;
         }
 
-        if (pass->supportsInlineUI()) {
-            if (ImGui::CollapsingHeader(pass->name().data(), ImGuiTreeNodeFlags_DefaultOpen)) {
-                pass->drawUIInline();
-            }
-        } else {
-            pass->drawUI();
-        }
+        const std::string passName(pass->name());
+        ImGui::PushID(static_cast<int>(passIndex));
+        ImGui::SeparatorText(passName.c_str());
+        pass->drawUI();
+        ImGui::PopID();
     }
 }
 

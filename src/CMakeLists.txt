@@ -8,11 +8,16 @@ target_compile_definitions(KuEngine PUBLIC
 )
 
 target_sources(KuEngine PRIVATE
+    KuEngine/Asset/AssetPath.cpp
     KuEngine/Asset/AssetConfig.cpp
+    KuEngine/Asset/HDRImage.cpp
     KuEngine/Asset/Model.cpp
+    KuEngine/Asset/Scene.cpp
     KuEngine/Core/Engine.cpp
     KuEngine/Core/ApplicationRunner.cpp
     KuEngine/Core/FrameStatistics.cpp
+    KuEngine/Core/SceneInteraction.cpp
+    KuEngine/Core/ViewerLayout.cpp
     KuEngine/Core/Window.cpp
     KuEngine/Core/Input.cpp
     KuEngine/Core/Log.cpp
@@ -31,9 +36,12 @@ target_sources(KuEngine PRIVATE
     KuEngine/Render/RenderGraph.cpp
     KuEngine/Render/RenderPipeline.cpp
     KuEngine/Render/GpuMesh.cpp
+    KuEngine/Render/GpuModelAsset.cpp
     KuEngine/Render/PBRCommon.cpp
     KuEngine/Render/PBRRenderer.cpp
+    KuEngine/Render/PBRResources.cpp
     KuEngine/Render/TextureFactory.cpp
+    KuEngine/UI/SidebarState.cpp
     KuEngine/UI/UIOverlay.cpp
 )
 

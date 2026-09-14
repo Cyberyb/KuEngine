@@ -8,6 +8,7 @@
 #include <array>
 
 #include "../Core/FrameStatistics.h"
+#include "../Core/ViewerLayout.h"
 #include "RenderContext.h"
 
 namespace ku {
@@ -20,6 +21,7 @@ struct FrameData {
     uint32_t imageIndex;
     float    deltaTime;
     float    totalTime;
+    ViewerLayout viewerLayout{};
 };
 
 class RenderPass {
@@ -35,9 +37,8 @@ public:
     virtual void setup(RenderGraphBuilder& builder) {(void)builder; setup(); }
     virtual void update(const FrameData& frame) {(void)frame; }
     virtual void execute(CommandList& cmd, const FrameData& frame) {(void)cmd; (void)frame; }
+    // Draw this pass's controls inside the container owned by UIOverlay.
     virtual void drawUI() {}
-    virtual bool supportsInlineUI() const { return false; }
-    virtual void drawUIInline() { drawUI(); }
     virtual void onResize(uint32_t width, uint32_t height) {(void)width; (void)height; }
     [[nodiscard]] virtual std::optional<CommandListStatistics>
     expectedFrameStatistics() const

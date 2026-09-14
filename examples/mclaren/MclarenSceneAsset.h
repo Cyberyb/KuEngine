@@ -8,7 +8,9 @@
 #include <glm/vec3.hpp>
 
 #include <KuEngine/Asset/AssetConfig.h>
+#include <KuEngine/Asset/HDRImage.h>
 #include <KuEngine/Asset/Model.h>
+#include <KuEngine/Asset/Scene.h>
 
 namespace ku {
 
@@ -18,8 +20,19 @@ public:
     void releaseCpuMesh();
 
     [[nodiscard]] const asset::MeshData& mesh() const { return m_mesh; }
-    [[nodiscard]] const asset::SceneCameraConfig& camera() const { return m_camera; }
-    [[nodiscard]] const asset::SceneLightingConfig& lighting() const { return m_lighting; }
+    [[nodiscard]] const asset::SceneData& sceneData() const { return m_sceneData; }
+    [[nodiscard]] const asset::SceneCameraConfig& camera() const
+    {
+        return m_sceneData.camera;
+    }
+    [[nodiscard]] const asset::SceneLightingConfig& lighting() const
+    {
+        return m_sceneData.lighting;
+    }
+    [[nodiscard]] const asset::HDRImageData& environmentImage() const
+    {
+        return m_environmentImage;
+    }
     [[nodiscard]] const asset::MaterialConfig& materialConfig() const { return m_materialConfig; }
 
     [[nodiscard]] bool sceneConfigUsed() const { return m_sceneConfigUsed; }
@@ -37,9 +50,9 @@ public:
     }
 
 private:
+    asset::SceneData m_sceneData;
     asset::MeshData m_mesh;
-    asset::SceneCameraConfig m_camera{};
-    asset::SceneLightingConfig m_lighting{};
+    asset::HDRImageData m_environmentImage;
     asset::MaterialConfig m_materialConfig{};
 
     std::filesystem::path m_scenePath;

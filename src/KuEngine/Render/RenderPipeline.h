@@ -59,8 +59,8 @@ public:
         CommandList& cmd,
         const std::function<void(VkCommandBuffer)>& draw);
     void finalizeExternalImages(CommandList& cmd);
-    void drawUI();
-    void drawUIInline();
+    void drawPassUIContent();
+    void drawRenderGraphUIContent();
     void onResize(uint32_t width, uint32_t height);
     void bindExternalImage(const ExternalImageBindingInfo& info);
     void clearExternalResources();

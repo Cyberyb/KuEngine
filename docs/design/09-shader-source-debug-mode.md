@@ -1,6 +1,6 @@
 # 构建与 Shader 编译设计
 
-核对日期：2026-09-13。
+核对日期：2026-09-14。
 
 源码：[根 CMake](../../CMakeLists.txt)、[Presets](../../CMakePresets.json)、[库目标](../../src/CMakeLists.txt)、[Mclaren CMake](../../examples/mclaren/CMakeLists.txt)、[Shader 脚本](../../examples/mclaren/shaders/compile_shaders.bat)。
 
@@ -42,7 +42,7 @@ CMake Debug 下 glslc 使用 -g -O0。Shader 变化不一定触发 App 重新链
 
 run_mclaren.bat 默认前台等待并返回应用退出码；bg 异步启动，只能反映启动动作。操作命令见 [Shader 调试指南](../usage/shader-debugging.md)。
 
-GPU Smoke 的 CTest 工作目录为各 App 的输出目录，使用 `SKIP_RETURN_CODE 77` 或脚本标记处理环境不可用。正常 smoke 测试要求 `KUENGINE_SMOKE_PASS`，并将 `KUENGINE_VALIDATION_ERROR`/`KUENGINE_SMOKE_FAIL` 视为失败；负例反向验证 Validation error 与初始化失败不会被误判为通过或 skip。具体命令和环境条件见 [回归检查](../usage/regression-checks.md)。
+GPU Smoke 的 CTest 工作目录为各 App 的输出目录，使用 `SKIP_RETURN_CODE 77` 或脚本标记处理环境不可用。正常 smoke 测试要求带预期计数的 `KUENGINE_COMPLETED_STATS ... status=matched`，并将 `KUENGINE_VALIDATION_ERROR`/`KUENGINE_SMOKE_FAIL` 视为失败；负例反向验证 Validation error 与初始化失败不会被误判为通过或 skip。Debug 的顺序 Shader 复制已由 QA 验证；Release 并行构建仍存在复制同名 Shader 的竞态风险。具体命令和环境条件见 [回归检查](../usage/regression-checks.md)。
 
 ## 当前约束
 

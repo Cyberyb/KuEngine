@@ -10,10 +10,31 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <cstring>
 
 namespace ku {
+
+float adjustCubeCameraDistance(
+    float currentDistance,
+    double scrollY) noexcept
+{
+    const float safeDistance = std::isfinite(currentDistance)
+        ? currentDistance
+        : cubeCameraDefaultDistance;
+    if (!std::isfinite(scrollY)) {
+        return std::clamp(
+            safeDistance,
+            cubeCameraMinimumDistance,
+            cubeCameraMaximumDistance);
+    }
+
+    return std::clamp(
+        safeDistance - static_cast<float>(scrollY) * cubeCameraScrollStep,
+        cubeCameraMinimumDistance,
+        cubeCameraMaximumDistance);
+}
 
 CubePass::CubePass() = default;
 CubePass::~CubePass() = default;
@@ -66,25 +87,25 @@ void CubePass::initialize(const RenderContext& context)
     KU_INFO("CubePass: initialized");
 }
 
-void CubePass::update(const FrameData&)
+void CubePass::update(const FrameData& frame)
 {
-    const bool leftDown = Input::isMouseButtonDown(Input::MOUSE_BUTTON_LEFT);
-    if (!leftDown) {
-        m_dragging = false;
-        return;
-    }
-
-    const bool mouseCapturedByUI = ImGui::GetIO().WantCaptureMouse;
-    if (Input::isMouseButtonPressed(Input::MOUSE_BUTTON_LEFT)) {
-        m_dragging = !mouseCapturedByUI;
-        return;
-    }
-
-    if (m_dragging && !mouseCapturedByUI) {
-        addRotation(
-            Input::mouseDeltaX() * 0.01f,
-            Input::mouseDeltaY() * 0.01f);
-    }
+    m_aspect = frame.viewerLayout.sceneAspect;
+    const ImGuiIO& io = ImGui::GetIO();
+    const ScenePointerAction interaction = m_sceneInteraction.update(
+        frame.viewerLayout,
+        ScenePointerSample{
+            .logicalX = Input::mouseX(),
+            .logicalY = Input::mouseY(),
+            .deltaX = Input::mouseDeltaX(),
+            .deltaY = Input::mouseDeltaY(),
+            .scrollY = Input::mouseWheelY(),
+            .primaryDown = Input::isMouseButtonDown(Input::MOUSE_BUTTON_LEFT),
+            .primaryPressed = Input::isMouseButtonPressed(Input::MOUSE_BUTTON_LEFT),
+            .windowActive = Input::isActive(),
+            .uiCapturesPointer = io.WantCaptureMouse,
+            .interactionEpoch = Input::interactionEpoch(),
+        });
+    applyViewerInteraction(interaction);
 }
 
 void CubePass::execute(CommandList& cmd, const FrameData&)
@@ -132,32 +153,44 @@ void CubePass::execute(CommandList& cmd, const FrameData&)
 
 void CubePass::drawUI()
 {
-    ImGui::Begin("Cube Controls");
+    ImGui::SeparatorText("Appearance");
     ImGui::ColorEdit4("Cube Color", m_cubeColor.data());
     ImGui::Checkbox("Wireframe Mode", &m_wireframeMode);
-    ImGui::SliderFloat("Camera Distance", &m_distance, 2.0f, 8.0f);
+
+    ImGui::SeparatorText("Camera");
+    ImGui::SliderFloat(
+        "Camera Distance",
+        &m_distance,
+        cubeCameraMinimumDistance,
+        cubeCameraMaximumDistance);
     ImGui::Text("Yaw: %.2f", m_yaw);
     ImGui::Text("Pitch: %.2f", m_pitch);
     if (ImGui::Button("Reset Rotation")) {
         m_yaw = 0.0f;
         m_pitch = 0.0f;
     }
-    ImGui::End();
 }
 
 void CubePass::onResize(uint32_t width, uint32_t height)
 {
-    if (height == 0) {
-        return;
-    }
-
-    m_aspect = static_cast<float>(width) / static_cast<float>(height);
+    KU_DEBUG("CubePass: resize {}x{}", width, height);
 }
 
 void CubePass::addRotation(float deltaYaw, float deltaPitch)
 {
     m_yaw += deltaYaw;
     m_pitch = std::clamp(m_pitch + deltaPitch, -1.5f, 1.5f);
+}
+
+void CubePass::applyViewerInteraction(
+    const ScenePointerAction& interaction) noexcept
+{
+    m_distance = adjustCubeCameraDistance(m_distance, interaction.scrollY);
+    if (interaction.rotate) {
+        addRotation(
+            static_cast<float>(interaction.rotationDeltaX) * 0.01f,
+            static_cast<float>(interaction.rotationDeltaY) * 0.01f);
+    }
 }
 
 } // namespace ku

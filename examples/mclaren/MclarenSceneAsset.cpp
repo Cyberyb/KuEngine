@@ -1,5 +1,6 @@
 #include "MclarenSceneAsset.h"
 
+#include <KuEngine/Asset/AssetPath.h>
 #include <KuEngine/Core/Log.h>
 
 #include <glm/glm.hpp>
@@ -76,36 +77,42 @@ void appendMeshData(
 
 bool MclarenSceneAsset::load(std::string& errorMessage)
 {
-    *this = MclarenSceneAsset{};
+    MclarenSceneAsset candidate{};
     errorMessage.clear();
 
-    m_environmentPath = sourceOrRuntimePath(
+    candidate.m_environmentPath = sourceOrRuntimePath(
         std::filesystem::path("environments") / "hdr" / kDefaultEnvironmentHdr);
-    m_scenePath = sourceOrRuntimePath(
+    candidate.m_scenePath = sourceOrRuntimePath(
         std::filesystem::path("scenes") / "sandbox" / "mclaren-sandbox.scene.json");
 
-    std::vector<std::filesystem::path> modelPaths;
+    asset::SceneConfig loadConfig{};
     std::vector<std::filesystem::path> materialPaths;
+    std::filesystem::path resourcesRoot;
 
     asset::SceneConfig sceneConfig{};
     std::string configError;
-    if (asset::loadSceneConfigFromFile(m_scenePath, sceneConfig, &configError)) {
-        m_sceneConfigUsed = true;
-        m_camera = sceneConfig.camera;
-        m_lighting = sceneConfig.lighting;
+    if (asset::loadSceneConfigFromFile(
+            candidate.m_scenePath,
+            sceneConfig,
+            &configError)) {
+        candidate.m_sceneConfigUsed = true;
+        loadConfig.camera = sceneConfig.camera;
+        loadConfig.lighting = sceneConfig.lighting;
 
-        const std::filesystem::path resourcesRoot =
-            asset::findResourcesRoot(m_scenePath);
+        resourcesRoot = asset::findResourcesRoot(candidate.m_scenePath);
         if (resourcesRoot.empty()) {
             KU_WARN(
                 "MclarenSceneAsset: cannot resolve resources root from scene path: {}",
-                m_scenePath.string());
+                candidate.m_scenePath.string());
         } else {
             for (const asset::SceneNodeConfig& node : sceneConfig.nodes) {
                 if (!node.model.empty()) {
-                    const std::filesystem::path modelPath = resourcesRoot / node.model;
+                    const std::filesystem::path modelPath =
+                        asset::resolveAssetPath(resourcesRoot, node.model);
                     if (std::filesystem::exists(modelPath)) {
-                        modelPaths.push_back(modelPath);
+                        asset::SceneNodeConfig resolvedNode = node;
+                        resolvedNode.model = modelPath.string();
+                        loadConfig.nodes.push_back(std::move(resolvedNode));
                     } else {
                         KU_WARN(
                             "MclarenSceneAsset: model does not exist: {}",
@@ -115,7 +122,7 @@ bool MclarenSceneAsset::load(std::string& errorMessage)
 
                 if (!node.material.empty()) {
                     const std::filesystem::path materialPath =
-                        resourcesRoot / node.material;
+                        asset::resolveAssetPath(resourcesRoot, node.material);
                     if (std::filesystem::exists(materialPath)) {
                         materialPaths.push_back(materialPath);
                     } else {
@@ -130,29 +137,50 @@ bool MclarenSceneAsset::load(std::string& errorMessage)
         KU_WARN(
             "MclarenSceneAsset: scene config fallback to defaults: {}",
             configError);
-        m_scenePath.clear();
+        candidate.m_scenePath.clear();
     }
 
-    if (modelPaths.empty()) {
-        modelPaths.push_back(sourceOrRuntimePath(
-            std::filesystem::path("models") / "props" / "mclaren_765lt.glb"));
+    if (loadConfig.nodes.empty()) {
+        loadConfig.nodes.push_back(asset::SceneNodeConfig{
+            "mclaren",
+            sourceOrRuntimePath(
+                std::filesystem::path("models") / "props" / "mclaren_765lt.glb")
+                .string(),
+            {},
+        });
+    }
+    if (resourcesRoot.empty()) {
+        resourcesRoot = std::filesystem::current_path();
+    }
+
+    asset::SceneLoadDescription sceneDescription{};
+    sceneDescription.resourcesRoot = resourcesRoot;
+    sceneDescription.config = loadConfig;
+    sceneDescription.environmentPath = candidate.m_environmentPath;
+    if (!asset::SceneLoader::load(
+            sceneDescription,
+            candidate.m_sceneData,
+            &errorMessage)) {
+        errorMessage = "Model load failed: " + errorMessage;
+        return false;
     }
 
     if (!materialPaths.empty()) {
-        m_materialPath = materialPaths.front();
+        candidate.m_materialPath = materialPaths.front();
         if (asset::loadMaterialConfigFromFile(
-                m_materialPath,
-                m_materialConfig,
+                candidate.m_materialPath,
+                candidate.m_materialConfig,
                 &configError)) {
-            m_materialConfigUsed = true;
-            if (m_materialConfig.hasBaseColorFactor) {
-                m_globalBaseColorFactor = m_materialConfig.baseColorFactor;
+            candidate.m_materialConfigUsed = true;
+            if (candidate.m_materialConfig.hasBaseColorFactor) {
+                candidate.m_globalBaseColorFactor =
+                    candidate.m_materialConfig.baseColorFactor;
             }
         } else {
             KU_WARN(
                 "MclarenSceneAsset: material config fallback to glTF defaults: {}",
                 configError);
-            m_materialPath.clear();
+            candidate.m_materialPath.clear();
         }
 
         for (size_t i = 1; i < materialPaths.size(); ++i) {
@@ -165,42 +193,56 @@ bool MclarenSceneAsset::load(std::string& errorMessage)
         }
     }
 
-    if (modelPaths.size() == 1) {
-        m_modelLabel = modelPaths.front().string();
+    if (candidate.m_sceneData.instances.size() == 1) {
+        const asset::MeshAsset* meshAsset = candidate.m_sceneData.findMesh(
+            candidate.m_sceneData.instances.front().mesh);
+        candidate.m_modelLabel = meshAsset != nullptr
+            ? meshAsset->sourcePath.string()
+            : "scene model";
     } else {
         std::ostringstream label;
-        label << "scene (" << modelPaths.size() << " models)";
-        m_modelLabel = label.str();
+        label << "scene (" << candidate.m_sceneData.instances.size()
+              << " instances, " << candidate.m_sceneData.meshes.size()
+              << " unique models)";
+        candidate.m_modelLabel = label.str();
     }
 
-    bool loadedAny = false;
-    for (const std::filesystem::path& modelPath : modelPaths) {
-        try {
-            appendMeshData(asset::ModelLoader::loadFromFile(modelPath), m_mesh);
-            loadedAny = true;
-        } catch (const std::exception& error) {
-            KU_WARN(
-                "MclarenSceneAsset: model load failed ({}): {}",
-                modelPath.string(),
-                error.what());
+    for (const asset::SceneInstance& instance :
+         candidate.m_sceneData.instances) {
+        const asset::MeshAsset* meshAsset =
+            candidate.m_sceneData.findMesh(instance.mesh);
+        if (meshAsset == nullptr) {
+            errorMessage = "Scene instance references an invalid mesh handle";
+            return false;
         }
+        appendMeshData(meshAsset->mesh, candidate.m_mesh);
     }
 
-    if (!loadedAny) {
-        errorMessage = "Model load failed: no scene models were loaded";
+    if (!asset::HDRImageLoader::loadFromFile(
+            candidate.m_sceneData.environment.sourcePath,
+            candidate.m_environmentImage,
+            &errorMessage)) {
         return false;
     }
 
-    m_modelCenter = 0.5f * (m_mesh.boundsMin + m_mesh.boundsMax);
+    candidate.m_modelCenter =
+        0.5f * (candidate.m_mesh.boundsMin + candidate.m_mesh.boundsMax);
     const float radius =
-        0.5f * glm::length(m_mesh.boundsMax - m_mesh.boundsMin);
-    m_fitScale = radius > 1e-4f ? 1.5f / radius : 1.0f;
+        0.5f * glm::length(
+            candidate.m_mesh.boundsMax - candidate.m_mesh.boundsMin);
+    candidate.m_fitScale = radius > 1e-4f ? 1.5f / radius : 1.0f;
+
+    *this = std::move(candidate);
     return true;
 }
 
 void MclarenSceneAsset::releaseCpuMesh()
 {
     m_mesh = asset::MeshData{};
+    m_environmentImage = asset::HDRImageData{};
+    for (asset::MeshAsset& meshAsset : m_sceneData.meshes) {
+        meshAsset.mesh = asset::MeshData{};
+    }
 }
 
 } // namespace ku

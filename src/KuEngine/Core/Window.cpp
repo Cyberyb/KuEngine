@@ -2,6 +2,7 @@
 #include "Log.h"
 #include "RuntimeError.h"
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace ku {
@@ -11,7 +12,10 @@ int g_glfwWindowCount = 0;
 }
 
 Window::Window(std::string_view title, int width, int height)
-    : m_width(width), m_height(height)
+    : m_width(width),
+      m_height(height),
+      m_logicalWidth(width),
+      m_logicalHeight(height)
 {
     if (g_glfwWindowCount == 0) {
         if (!glfwInit()) {
@@ -32,10 +36,38 @@ Window::Window(std::string_view title, int width, int height)
 
     ++g_glfwWindowCount;
     glfwSetWindowUserPointer(m_window, this);
-    KU_INFO("Window created: {}x{}", width, height);
+    glfwGetWindowSize(m_window, &m_logicalWidth, &m_logicalHeight);
+    glfwGetFramebufferSize(m_window, &m_width, &m_height);
+    m_minimized = m_width == 0 || m_height == 0;
+    m_focused = glfwGetWindowAttrib(m_window, GLFW_FOCUSED) == GLFW_TRUE;
+    KU_INFO(
+        "Window created: logical={}x{} framebuffer={}x{}",
+        m_logicalWidth,
+        m_logicalHeight,
+        m_width,
+        m_height);
 
     glfwSetFramebufferSizeCallback(m_window, framebufferResizeCallback);
+    glfwSetWindowSizeCallback(m_window, windowSizeCallback);
+    glfwSetWindowFocusCallback(m_window, windowFocusCallback);
     glfwSetWindowCloseCallback(m_window, windowCloseCallback);
+}
+
+void Window::windowSizeCallback(GLFWwindow* window, int width, int height)
+{
+    auto* win = static_cast<Window*>(glfwGetWindowUserPointer(window));
+    if (win) {
+        win->m_logicalWidth = std::max(width, 0);
+        win->m_logicalHeight = std::max(height, 0);
+    }
+}
+
+void Window::windowFocusCallback(GLFWwindow* window, int focused)
+{
+    auto* win = static_cast<Window*>(glfwGetWindowUserPointer(window));
+    if (win) {
+        win->m_focused = focused == GLFW_TRUE;
+    }
 }
 
 Window::~Window()

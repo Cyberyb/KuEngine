@@ -145,35 +145,119 @@ void UIOverlay::render(VkCommandBuffer cmd, VkImageView imageView, VkImageLayout
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 }
 
-void UIOverlay::drawFPSPanel(const UIFrameStatistics& stats)
+SidebarFrameLayout UIOverlay::describeSidebarFrame(
+    float logicalWindowWidth,
+    float logicalWindowHeight,
+    bool showStats) const noexcept
+{
+    return ku::describeSidebarFrame(
+        m_sidebarState,
+        m_sidebarLayoutPolicy,
+        logicalWindowWidth,
+        logicalWindowHeight,
+        showStats);
+}
+
+void UIOverlay::drawSidebar(
+    const SidebarFrameLayout& sidebarFrame,
+    const UIFrameStatistics& stats,
+    const SidebarContent& parameterContent,
+    const SidebarContent& renderGraphContent)
 {
     if (!m_initialized) {
         return;
     }
 
-    ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_Always);
-    ImGui::SetNextWindowBgAlpha(0.35f);
-    const ImGuiWindowFlags overlayFlags =
-        ImGuiWindowFlags_NoDecoration |
-        ImGuiWindowFlags_AlwaysAutoResize |
-        ImGuiWindowFlags_NoSavedSettings |
-        ImGuiWindowFlags_NoFocusOnAppearing |
-        ImGuiWindowFlags_NoNav;
+    const SidebarLayoutMode mode = sidebarFrame.mode;
+    const SidebarLayout& layout = sidebarFrame.window;
+    const SidebarSections& sections = sidebarFrame.sections;
 
-    ImGui::Begin("KuEngine Stats", nullptr, overlayFlags);
-    drawStats(stats);
+    ImGui::SetNextWindowPos(ImVec2(layout.x, layout.y), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(
+        ImVec2(layout.width, layout.height),
+        ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(mode == SidebarLayoutMode::Expanded ? 0.94f : 0.82f);
+
+    ImGuiWindowFlags sidebarFlags =
+        ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_AlwaysVerticalScrollbar |
+        ImGuiWindowFlags_HorizontalScrollbar;
+
+    const char* windowTitle = mode == SidebarLayoutMode::Expanded
+        ? "KuEngine Sidebar"
+        : "KuEngine Sidebar##Compact";
+    ImGui::Begin(windowTitle, nullptr, sidebarFlags);
+
+    if (mode == SidebarLayoutMode::Expanded) {
+        if (ImGui::Button("Collapse Sidebar")) {
+            m_sidebarState.collapse();
+        }
+
+        bool compactStatsVisible = m_sidebarState.compactStatsVisible();
+        if (ImGui::Checkbox(
+                "Compact stats when collapsed",
+                &compactStatsVisible)) {
+            m_sidebarState.setCompactStatsVisible(compactStatsVisible);
+        }
+
+        if (ImGui::CollapsingHeader(
+                "Performance",
+                ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (sections.performance) {
+                drawStatisticsContent(stats, false);
+            } else {
+                ImGui::TextDisabled("Statistics hidden by runtime settings");
+            }
+        }
+
+        if (ImGui::CollapsingHeader(
+                "Parameters / Scene",
+                ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (parameterContent) {
+                parameterContent();
+            } else {
+                ImGui::TextDisabled("No parameters available");
+            }
+        }
+
+        if (ImGui::CollapsingHeader(
+                "Render Graph",
+                ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (renderGraphContent) {
+                renderGraphContent();
+            } else {
+                ImGui::TextDisabled("Render Graph information unavailable");
+            }
+        }
+    } else {
+        if (sections.reopenControl && ImGui::Button("Open Sidebar")) {
+            m_sidebarState.expand();
+        }
+
+        if (sections.performance) {
+            ImGui::SeparatorText("Performance");
+            drawStatisticsContent(stats, true);
+            if (ImGui::Button("Hide compact stats")) {
+                m_sidebarState.setCompactStatsVisible(false);
+            }
+        }
+    }
+
     ImGui::End();
 }
 
-void UIOverlay::drawStats(const UIFrameStatistics& stats)
+void UIOverlay::drawStatisticsContent(
+    const UIFrameStatistics& stats,
+    bool compact) const
 {
-    if (!m_initialized) {
-        return;
-    }
-
     ImGui::Text("Loop FPS: %.1f", stats.fps);
     ImGui::Text("Loop Frame: %.2f ms", stats.frameTimeMilliseconds);
-    ImGui::TextDisabled("FPS/Frame: current main-loop sample");
+    if (!compact) {
+        ImGui::TextDisabled("FPS/Frame: current main-loop sample");
+    }
     ImGui::Separator();
 
     if (!stats.completedFrame.has_value()) {
@@ -209,7 +293,9 @@ void UIOverlay::drawStats(const UIFrameStatistics& stats)
     ImGui::Text(
         "Vertices: %" PRIu64,
         completed.commands.submittedVertices);
-    ImGui::TextDisabled("CPU/GPU/Draw/Vertices: same completed submit");
+    if (!compact) {
+        ImGui::TextDisabled("CPU/GPU/Draw/Vertices: same completed submit");
+    }
 }
 
 void UIOverlay::onSwapChainRecreated(uint32_t imageCount)

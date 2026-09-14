@@ -102,7 +102,15 @@ void PBRRenderer::execute(CommandList& cmd, const FrameData& /*frame*/)
             continue;
         }
 
-        const PBRMaterialBinding* mat = item.materialBinding;
+        const PBRMaterialBinding* mat = nullptr;
+        if (m_materialBindings != nullptr
+            && !m_materialBindings->empty()) {
+            const size_t materialIndex = item.materialIndex
+                    < m_materialBindings->size()
+                ? static_cast<size_t>(item.materialIndex)
+                : 0u;
+            mat = &(*m_materialBindings)[materialIndex];
+        }
         if (m_frameDescriptorSet != VK_NULL_HANDLE) {
             const uint32_t dynamicOffset = havePerDrawFrames
                 ? m_firstDrawUniformOffset

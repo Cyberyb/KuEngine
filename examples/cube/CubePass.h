@@ -4,6 +4,7 @@
 #include <memory>
 #include <array>
 
+#include <KuEngine/Core/SceneInteraction.h>
 #include <KuEngine/RHI/CommandList.h>
 #include <KuEngine/Render/RenderPass.h>
 #include <KuEngine/RHI/RHIDevice.h>
@@ -11,6 +12,15 @@
 #include <KuEngine/RHI/RHIPipeline.h>
 
 namespace ku {
+
+inline constexpr float cubeCameraDefaultDistance = 3.5f;
+inline constexpr float cubeCameraMinimumDistance = 2.0f;
+inline constexpr float cubeCameraMaximumDistance = 8.0f;
+inline constexpr float cubeCameraScrollStep = 0.35f;
+
+[[nodiscard]] float adjustCubeCameraDistance(
+    float currentDistance,
+    double scrollY) noexcept;
 
 class CubePass : public RenderPass {
 public:
@@ -35,7 +45,9 @@ public:
     }
 
     void addRotation(float deltaYaw, float deltaPitch);
-    void setAspect(float aspect) { m_aspect = aspect; }
+    void applyViewerInteraction(const ScenePointerAction& interaction) noexcept;
+    [[nodiscard]] float projectionAspect() const { return m_aspect; }
+    [[nodiscard]] float cameraDistance() const { return m_distance; }
 
 private:
     struct alignas(16) PushConstants {
@@ -53,9 +65,9 @@ private:
     bool m_wireframeMode = false;
     float m_yaw = 0.0f;
     float m_pitch = 0.0f;
-    float m_distance = 3.5f;
+    float m_distance = cubeCameraDefaultDistance;
     float m_aspect = 16.0f / 9.0f;
-    bool m_dragging = false;
+    SceneInteractionGate m_sceneInteraction;
 };
 
 } // namespace ku

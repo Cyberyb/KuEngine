@@ -1,6 +1,6 @@
 # RHI 当前设计
 
-核对日期：2026-09-13。源码目录：[src/KuEngine/RHI](../../src/KuEngine/RHI)。
+核对日期：2026-09-14。源码目录：[src/KuEngine/RHI](../../src/KuEngine/RHI)。
 
 ## 对象边界
 
@@ -43,14 +43,16 @@ imageBarrier 使用传统 vkCmdPipelineBarrier，按 Layout 映射 Access Mask�
 
 直接 Vulkan 句柄仍可用。业务 draw 应通过 draw()/drawIndexed()，保证计数覆盖；新增原始 vkCmdDraw* 调用会绕过统计。
 
-## 绘制数量
+## 绘制数量与完成快照
 
 CommandListStatistics 持有：
 - drawCalls：通过封装记录的 draw 命令数量；
 - submittedVertices：普通绘制 vertexCount × instanceCount，索引绘制 indexCount × instanceCount；
 - gpuTimeMilliseconds / gpuTimeValid：最近一次读回的 GPU 时间。
 
-begin 只清零 draw 与顶点数量，保留读回的 GPU 时间。索引计数不是去重顶点数，也不是 Vertex Shader 实际调用数。ImGui 直接通过 Vulkan Backend 绘制，因此不计入业务 draw 数。
+begin 只清零本次录制的 draw 与顶点数量。加法和 `elementCount × instanceCount` 均使用 `uint64_t` 饱和累加，极端计数停在 `UINT64_MAX` 而不会回绕。索引计数不是去重顶点数，也不是 Vertex Shader 实际调用数。ImGui 直接通过 Vulkan Backend 绘制，因此不计入业务 draw 数。
+
+Engine 在 submit 返回后把 CPU 计时与本次 CommandList 计数记录为 pending；下一次 Fence 等待完成时（以及有限帧退出后的 device idle 后）读取 Timestamp 并发布同一 submitted frame 的 `CompletedFrameStatistics`。跳过 acquire/仅处理 resize 的循环不生成提交快照。
 
 ## GPU Timestamp
 
@@ -62,7 +64,7 @@ end → BOTTOM_OF_PIPE 时间戳 → 结束命令缓冲
 submit → 下一次 Fence 完成后读回
 ```
 
-collectGpuTime 用 64 位结果和 availability，不使用 WAIT_BIT 额外阻塞。时间换算为 ticks × timestampPeriod / 1,000,000 毫秒；根据 timestampValidBits 掩码处理计数器回绕。尚无结果或队列不支持时 gpuTimeValid 为 false。
+collectGpuTime 用 64 位结果和 availability，不使用 WAIT_BIT 额外阻塞。时间换算为 ticks × timestampPeriod / 1,000,000 毫秒；根据 timestampValidBits 掩码处理计数器回绕。`GpuTimeStatus` 明确区分 `Unsupported`（QueryPool/时间戳能力不存在）、`Waiting`（支持但尚无可读结果）与 `Available`（带毫秒值）。
 
 QueryPool 在 CommandList 析构时销毁，命令缓冲随外部命令池释放；调用方负责 GPU 完成后再读取、重用或销毁。end 将时间戳标记待收集，当前 Runtime 保证其后正常 submit；该接口本身不追踪任意调用方的提交状态。
 

@@ -1,6 +1,6 @@
 # KuEngine 实施工作包
 
-更新日期：2026-09-13。本页将 [开发路线图](roadmap.md) 拆为可独立实现、验收和文档同步的工作包。需求范围以 [产品需求](product-requirements.md) 为准；工作包状态只在 QA 给出结论后变更。`ACCEPTED` 表示该工作包的验收条件通过，不表示所属阶段已经完成。
+更新日期：2026-09-14。本页将 [开发路线图](roadmap.md) 拆为可独立实现、验收和文档同步的工作包。需求范围以 [产品需求](product-requirements.md) 为准；工作包状态只在 QA 给出结论后变更。`ACCEPTED` 表示该工作包的验收条件通过，不表示所属阶段已经完成。
 
 ## 状态与使用方式
 
@@ -8,23 +8,23 @@
 
 ## M0：基线与最小回归
 
-阶段状态：进行中。阶段出口仍要求四个示例在适用 Vulkan 环境中完成启动、绘制、退出与 resize 检查，且 Validation 错误可由脚本化检查报告失败。
+阶段状态：已完成。QA 已确认 WP01～03 与 M0 出口：CPU/CTest、四示例 Debug GPU Smoke、有限 resize、Validation 失败负例和实际 RTX 4060 Ti 画面/拖动/最小化恢复检查均有证据；无像素参考比对与不支持 Timestamp 的实体设备验证。
 
 | 工作包 | 状态 | 依赖 | 范围与验收焦点 |
 |---|---|---|---|
 | M0-WP01：Validation 可用性、Debug Messenger 与日志/计数基础 | ACCEPTED | 无 | Debug 配置按实际 Layer/`VK_EXT_debug_utils` 能力选择 Validation；Messenger 生命周期正确，回调日志不跨 C ABI 抛异常，warning/error 原子计数与 Debug 日志级别有单元测试。QA 已验收；未把 Validation 错误自动转为测试失败。 |
 | M0-WP02：有限帧运行与 Validation 自动失败 | ACCEPTED | M0-WP01 | `ApplicationRunner` 为四示例提供有限 submitted-frame、Triangle 自动 resize、统一 PASS/FAIL/SKIP/退出码与共享 Validation Tracker；可选 CTest GPU Smoke 覆盖四个应用、受控 Validation error 和缺 Shader 初始化负例。QA 已验收；人工画面与最小化/恢复未由此工作包验收。 |
-| M0-WP03：统计样本口径与基线检查 | READY | M0-WP02 | 核对并在必要时修正单调 CPU 计时、CPU/GPU 样本帧归属、Timestamp 不可用状态及四示例 Draw/Vertices 基线；不建设完整 Profiler。 |
+| M0-WP03：统计样本口径与基线检查 | ACCEPTED | M0-WP02 | 使用 steady_clock；completed-submit 快照将 CPU/GPU/Draw/Vertices 对齐，区分 GPU Unsupported/Waiting/Available，计数饱和；Runner 校验四例预期业务计数并输出 marker。QA 已验收；无每 Pass 曲线、像素回归或实体不支持 Timestamp 覆盖。 |
 
 ## M1：查看器交互框架
 
-阶段状态：未开始。出口：侧栏可收展、双相机可切换、输入焦点与主视口区域正确，既有参数和性能统计仍可用。
+阶段状态：已完成。QA 已确认 WP01～03 与 M1 阶段出口；侧栏、主视口/输入边界、OrbitInspect/FreeFly 与既有参数/统计均有相应验收依据。
 
 | 工作包 | 状态 | 依赖 | 范围与验收焦点 |
 |---|---|---|---|
-| M1-WP01：侧栏容器与现有控件迁入 | READY | M0-WP02 | 建立可收展侧栏和统计/Graph/已有参数分组，不改变资产或渲染路径语义。 |
-| M1-WP02：主视口矩形与输入命中 | READY | M1-WP01 | 投影、Viewport/Scissor、resize 与 UI 捕获对齐；首轮不引入离屏 UI 纹理。 |
-| M1-WP03：自由相机与模式切换 | READY | M1-WP02 | 保留当前拖动查看，加入 WASDQE、右键转向、速度和复位；输入文字不驱动相机。 |
+| M1-WP01：侧栏容器与现有控件迁入 | ACCEPTED | M0-WP02 | 唯一右侧栏承载 Performance、Parameters / Scene、Render Graph；支持展开、紧凑统计、隐藏紧凑统计和重开。Pass 提供 content-only UI，Pipeline 用 Pass 索引隔离 ID。QA 已验收四例唯一侧栏、收展/重开、小窗滚动、Alpha 控件隔离与 Mclaren 分组。 |
+| M1-WP02：主视口矩形与输入命中 | ACCEPTED | M1-WP01 | `ViewerLayout` 将逻辑输入 rect 与 framebuffer viewport 对齐；展开保留侧栏、紧凑覆盖，业务 viewport/scissor 限场景而 Overlay 覆盖完整附件。Cube/Mclaren 复用 SceneInteractionGate、滚轮、focus/epoch 边界，Mclaren 删除第二 viewport。QA 已验收比例、无黑缝、Cube UI 隔离/滚轮、resize、最小化恢复；未覆盖 Win+D、物理非等比 DPI、像素比对。 |
+| M1-WP03：自由相机与模式切换 | ACCEPTED | M1-WP02 | Mclaren 示例层提供 OrbitInspect/FreeFly、统一 CameraFrame、双向 handoff、右键场景焦点、WASDQE、速度与 reset；UI capture/text、focus/epoch 和 held-neutral 不驱动相机。QA 已验收 CPU Debug/Release、Debug GPU 7/7、Release/缺 Layer 语义与 Mclaren 两向切换/文本/reset/侧栏/窗口检查。持续右拖、六向/组合 held 实机手势未形成可靠证据，仅有永久测试和静态覆盖。 |
 
 ## M2：公共资产、材质与 Forward
 
@@ -71,8 +71,8 @@
 
 | 阶段 | 状态 | 满足条件 |
 |---|---|---|
-| M0 | 进行中 | M0-WP01～03 均通过，且路线图规定的四示例 GPU 冒烟证据完整 |
-| M1 | 未开始 | M1-WP01～03 通过 |
+| M0 | 已完成 | WP01～03 已验收，四示例 Debug GPU Smoke、有限 resize、Validation/初始化负例及 RTX 4060 Ti 人工检查证据完整；像素回归和不支持 Timestamp 实机验证不属于本出口 |
+| M1 | 已完成 | WP01～03 已验收；侧栏、主视口输入边界和 Mclaren 双模式相机出口已满足 |
 | M2 | 未开始 | M2-WP01～03 通过 |
 | M3 | 未开始 | M3-WP01～04 通过 |
 | M4 | 未开始 | M4-WP01～03 通过，并完成 REQ-01～13 整体检查 |

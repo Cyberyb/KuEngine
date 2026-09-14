@@ -1,6 +1,6 @@
 # 日志与诊断设计
 
-核对日期：2026-09-13。
+核对日期：2026-09-14。
 
 源码：[Log.h](../../src/KuEngine/Core/Log.h)、[Log.cpp](../../src/KuEngine/Core/Log.cpp)、[RHICommon.h](../../src/KuEngine/RHI/RHICommon.h)、[RHIInstance.cpp](../../src/KuEngine/RHI/RHIInstance.cpp)、[VulkanValidation](../../src/KuEngine/RHI/VulkanValidation.h)。
 
