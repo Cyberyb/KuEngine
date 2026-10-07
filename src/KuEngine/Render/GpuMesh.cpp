@@ -4,6 +4,7 @@
 #include <KuEngine/RHI/RHIDevice.h>
 #include <KuEngine/RHI/ResourceUploader.h>
 
+#include <limits>
 #include <stdexcept>
 
 namespace ku {
@@ -13,11 +14,32 @@ GpuMesh::GpuMesh(
     ResourceUploader& uploader,
     const asset::MeshData& meshData)
     : m_subMeshes(meshData.subMeshes)
-    , m_vertexCount(static_cast<uint32_t>(meshData.vertices.size()))
-    , m_indexCount(static_cast<uint32_t>(meshData.indices.size()))
 {
     if (meshData.vertices.empty() || meshData.indices.empty()) {
         throw std::invalid_argument("GpuMesh requires non-empty vertex and index data");
+    }
+    if (meshData.vertices.size() > std::numeric_limits<uint32_t>::max()
+        || meshData.indices.size() > std::numeric_limits<uint32_t>::max()) {
+        throw std::overflow_error("GpuMesh vertex or index count exceeds uint32_t");
+    }
+
+    m_vertexCount = static_cast<uint32_t>(meshData.vertices.size());
+    m_indexCount = static_cast<uint32_t>(meshData.indices.size());
+
+    for (const asset::SubMeshData& subMesh : m_subMeshes) {
+        const size_t indexStart = static_cast<size_t>(subMesh.indexStart);
+        const size_t indexCount = static_cast<size_t>(subMesh.indexCount);
+        if (indexStart > meshData.indices.size()
+            || indexCount > meshData.indices.size() - indexStart) {
+            throw std::invalid_argument("GpuMesh contains an out-of-range submesh");
+        }
+        for (size_t index = indexStart;
+             index < indexStart + indexCount;
+             ++index) {
+            if (meshData.indices[index] >= m_vertexCount) {
+                throw std::invalid_argument("GpuMesh contains an out-of-range vertex index");
+            }
+        }
     }
 
     if (m_subMeshes.empty()) {

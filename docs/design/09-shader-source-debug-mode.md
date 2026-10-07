@@ -1,6 +1,6 @@
 # 构建与 Shader 编译设计
 
-核对日期：2026-09-14。
+核对日期：2026-10-07。
 
 源码：[根 CMake](../../CMakeLists.txt)、[Presets](../../CMakePresets.json)、[库目标](../../src/CMakeLists.txt)、[Mclaren CMake](../../examples/mclaren/CMakeLists.txt)、[Shader 脚本](../../examples/mclaren/shaders/compile_shaders.bat)。
 
@@ -8,7 +8,7 @@
 
 项目使用 CMake 3.27+、C++20，KuEngine 为静态库，公开 include 根为 src。头文件和实现一起位于 src/KuEngine，没有独立 include 目录。
 
-KUENGINE_BUILD_EXAMPLES 和 KUENGINE_BUILD_TESTS 默认开启。四个 App 为 TriangleApp、CubeApp、Alpha3PassApp、MclarenApp；CTest 默认注册 core_tests 和 mclaren_camera_tests。根选项 `KUENGINE_ENABLE_GPU_SMOKE_TESTS` 默认关闭；开启后要求同时构建示例，并注册 `gpu-smoke` 标签的四个有限帧应用测试、受控 Validation error 负例，以及 `gpu-negative` 标签的缺 Shader 初始化失败负例。
+KUENGINE_BUILD_EXAMPLES 和 KUENGINE_BUILD_TESTS 默认开启。App 包含 Triangle、Cube、Alpha3Pass、Mclaren、ForwardReuse 与 GraphResourceProbe；CTest 默认注册 core_tests 和 mclaren_camera_tests。根选项 `KUENGINE_ENABLE_GPU_SMOKE_TESTS` 默认关闭；开启后要求同时构建示例，并注册含 GraphResourceProbe 的 `gpu-smoke` 有限帧测试、受控 Validation error 负例，以及 `gpu-negative` 标签的缺 Shader 初始化失败负例。
 
 KuEngine 库目标按 CMake 配置公开 `KU_DEBUG_BUILD`：Debug 为 `1`，其余配置为 `0`。该定义同时控制应用日志级别与 Debug 构建的 Vulkan Validation 请求；它不是 Shader 调试开关，也不改变 Shader 编译脚本的模式选择。
 
@@ -26,7 +26,7 @@ vcpkg 工具链提供 GLFW、ImGui、VMA、GLM、JSON、spdlog/fmt、GoogleTest 
 
 ## Shader 链路
 
-RHIShader 只加载 SPIR-V，不负责运行时 GLSL 编译或热重载。各示例 CMake 在 POST_BUILD 中调用 glslc 并复制 Shader 源码/脚本。Mclaren 还复制公共 lighting.glsl、模型、JSON 和 HDR。
+RHIShader 只按显式 path/stage/entry 加载 SPIR-V，不负责运行时 GLSL 编译或热重载；Graphics 使用唯一 vertex/fragment stage，Compute 单独建立 Compute Pipeline。各示例 CMake 在 POST_BUILD 中调用 glslc 并复制 Shader 源码/脚本；GraphResourceProbe 也复制其 `.comp` shader，Forward Display 另有全屏 display vertex/fragment shader。Mclaren 还复制公共 lighting.glsl、模型、JSON 和 HDR。
 
 CMake Debug 下 glslc 使用 -g -O0。Shader 变化不一定触发 App 重新链接，因此仅执行增量构建不保证 POST_BUILD 再运行；run 脚本会另行调用运行目录的 compile_shaders.bat。
 

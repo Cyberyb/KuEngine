@@ -36,11 +36,18 @@ public:
 
     void setPipeline(RHIPipeline* pipeline) { m_pipeline = pipeline; }
     void setFrameDescriptorSet(VkDescriptorSet set) { m_frameDescriptorSet = set; }
-    void setEnvironmentDescriptorSet(VkDescriptorSet set) { m_environmentDescriptorSet = set; }
+    void setEnvironmentDescriptorSet(VkDescriptorSet set) noexcept
+    {
+        m_environmentDescriptorSet = set;
+    }
     void setMaterialBindings(
         const std::vector<PBRMaterialBinding>* bindings)
     {
-        m_materialBindings = bindings;
+        // Keep draw-time material indices independent from caller vector
+        // storage. Descriptor ownership still remains with the GPU asset.
+        m_materialBindings = bindings != nullptr
+            ? *bindings
+            : std::vector<PBRMaterialBinding>{};
     }
     void setVertexIndexBuffers(RHIBuffer* vb, RHIBuffer* ib) { m_vertexBuffer = vb; m_indexBuffer = ib; }
 
@@ -62,7 +69,7 @@ public:
 private:
     VkFormat m_depthFormat = VK_FORMAT_D32_SFLOAT;
     std::vector<PBRDrawItem> m_drawItems;
-    const std::vector<PBRMaterialBinding>* m_materialBindings = nullptr;
+    std::vector<PBRMaterialBinding> m_materialBindings;
     RHIPipeline* m_pipeline = nullptr;
     VkDescriptorSet m_frameDescriptorSet = VK_NULL_HANDLE;
     VkDescriptorSet m_environmentDescriptorSet = VK_NULL_HANDLE;

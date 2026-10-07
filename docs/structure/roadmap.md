@@ -1,8 +1,8 @@
 # KuEngine 开发路线图
 
-更新日期：2026-09-14。本路线以“小型 Vulkan 渲染引擎，服务渲染特性的快速开发与验证”为目标。不预设发布日期，M0～M5 是工作阶段，不是软件发布版本。
+更新日期：2026-10-07。本路线以“小型 Vulkan 渲染引擎，服务渲染特性的快速开发与验证”为目标。不预设发布日期，M0～M5 是工作阶段，不是软件发布版本。
 
-需求范围和状态统一维护在 [产品需求](product-requirements.md)，架构边界见 [目标架构](target-architecture.md)，当前已实现内容见 [宏观架构](current-architecture.md)。M0、M1 已按本路线完成验收；M2～M5 尚未开始，后续工作包状态见 [实施工作包](implementation-plan.md)。
+需求范围和状态统一维护在 [产品需求](product-requirements.md)，架构边界见 [目标架构](target-architecture.md)，当前已实现内容见 [宏观架构](current-architecture.md)。M0～M3 已完成；M4～M5 未开始。用户要求在 M3 后停止本轮实现。
 
 ## 1. 最终交付形态
 
@@ -29,8 +29,8 @@ flowchart LR
 |---|---|---|---|
 | M0 | 可重复基线与最小 GPU 诊断（已完成） | REQ-07、14 | 四示例和现有统计可重复检查，验证结果有依据 |
 | M1 | 查看器交互框架（已完成） | REQ-07～10 | 侧栏收展、双模式相机、输入焦点与现有参数/统计均已验收 |
-| M2 | 公共资产、材质、环境和前向路径 | REQ-01～05、08 | 换模型/HDR，独立实例材质，PBR/Unlit 共用 Forward |
-| M3 | Graph 管理资源、同步与执行 | REQ-01、05、11～13 | 离屏 → 采样与 Compute → Graphics 真实运行 |
+| M2 | 公共资产、材质、环境和前向路径（已完成） | REQ-01～05、08 | 公共 Scene/GPU 资源、替换、实例材质语义和公共 Forward/ForwardReuse 均已验收；不包含 M3 图资源或 M4 Deferred |
+| M3 | Graph 管理资源、同步与执行（已完成） | REQ-01、05、11～13 | WP01～04 已验收 typed allocation/lifecycle、synchronization2、Compute/callback/native contract 与 Graph-owned Forward output/display |
 | M4 | 延迟路径与首个完整产品闭环 | REQ-04、06、13 | 同场景切换路径，材质语义一致，透明/输出/UI 完整 |
 | M5 | 资源并行与实验效率强化 | REQ-14 | 按帧资源安全，性能观测与结果复现更完整 |
 
@@ -65,6 +65,8 @@ M4 完成后按 REQ-01～13 的验收口径进行整体检查，形成首个功�
 
 ### M2：公共资产、材质与前向渲染
 
+状态：已完成（2026-09-16）。公共 SceneData/HDR/窄 GPU 资源、Mclaren 同步替换、实例材质语义和公共 Forward 已验收。
+
 范围：Asset、Render/Material、GpuMesh/TextureFactory、公共环境资源、MclarenRenderResources、Viewer。
 
 - 从 Mclaren 抽出轻量场景数据和通用 Mesh/Texture/材质/环境持有逻辑；保留示例装配，不只给大资源类换名字。
@@ -76,6 +78,8 @@ M4 完成后按 REQ-01～13 的验收口径进行整体检查，形成首个功�
 验收：不改 C++ 即可替换受支持模型和 HDR；至少两个实例能独立调材质/变换；坏路径不使已加载场景失效。PBR 响应灯光，Unlit 不响应光照；另一个小示例能复用同一套资产与 Forward 装配。现有四示例保持可运行。
 
 ### M3：让 Graph 承担真实资源与同步管理
+
+状态：已完成。WP01～04 已验收 typed Image/Buffer、同步2、Compute/callback/受约束 native access，以及 SceneColor/Depth/display 交接。
 
 范围：RenderGraph、RenderPipeline、CommandList、RHI Pipeline/Descriptor、Runtime 资源交接。
 
@@ -114,7 +118,7 @@ M4 完成后按 REQ-01～13 的验收口径进行整体检查，形成首个功�
 
 ## 4. 下一轮建议执行的范围
 
-M0、M1 已完成。下一阶段从 M2 的公共资产、材质与 Forward 边界开始；其范围、依赖和验收保持 [实施工作包](implementation-plan.md) 所列定义。每个工作包独立构建、检查并同步文档，避免把资产、材质和 Graph 同时改成一次大型重构。
+M0～M3 已完成，本轮按用户要求在 M3 停止。若继续，下一阶段为 M4-WP01 的最小 GBuffer 与 Deferred Lighting；其范围、依赖和验收保持 [实施工作包](implementation-plan.md) 所列定义。
 
 这轮不开始改 GBuffer，也不放开多帧并行。若 M0 发现现有正确性问题，先修复影响当前工作包的部分，不把所有底层技术债都设成 UI 的前置阻塞项。
 

@@ -4,6 +4,7 @@
 #include "RHICommon.h"
 #include "../Core/FrameStatistics.h"
 #include <cstdint>
+#include <span>
 #include <vulkan/vulkan.h>
 
 namespace ku {
@@ -30,8 +31,33 @@ public:
     void imageBarrier(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout,
                       VkPipelineStageFlags srcStage, VkPipelineStageFlags dstStage,
                       VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
+    void pipelineBarrier2(
+        std::span<const VkImageMemoryBarrier2> imageBarriers,
+        std::span<const VkBufferMemoryBarrier2> bufferBarriers);
 
     void copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
+    void copyBuffer(
+        VkBuffer src,
+        VkBuffer dst,
+        VkDeviceSize srcOffset,
+        VkDeviceSize dstOffset,
+        VkDeviceSize size);
+    void fillBuffer(
+        VkBuffer buffer,
+        VkDeviceSize offset,
+        VkDeviceSize size,
+        uint32_t data);
+    void bindVertexBuffer(VkBuffer buffer, VkDeviceSize offset = 0);
+    void bindIndexBuffer(
+        VkBuffer buffer,
+        VkDeviceSize offset = 0,
+        VkIndexType type = VK_INDEX_TYPE_UINT32);
+    void drawIndexedIndirect(
+        VkBuffer buffer,
+        VkDeviceSize offset,
+        uint32_t drawCount,
+        uint32_t stride,
+        uint32_t expectedIndexCount);
     void copyBufferToImage(VkBuffer src, VkImage dst, uint32_t width, uint32_t height);
 
     void draw(

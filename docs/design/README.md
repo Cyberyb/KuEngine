@@ -2,7 +2,7 @@
 
 本目录只描述当前代码如何工作。实现计划、版本进度和历史设计保存在 [structure](../structure/README.md)，迭代摘要保存在 [logs](../logs/README.md)。
 
-核对基线：2026-09-14 工作区，含公共 Runtime、Graph 执行器、PBR 动态 UBO、completed-submit 性能统计、Validation 诊断、已验收的 M0 GPU Smoke 基线，以及已验收 M1 的右侧栏、查看器布局/输入边界和 Mclaren 双模式相机。
+核对基线：2026-10-07 工作区，含已验收 M2、M3-WP01～04 的 typed Graph 资源、synchronization2、Compute/callback、受约束 native access 与 Graph-owned Forward output。
 
 | 文档 | 模块与边界 |
 |---|---|
@@ -17,5 +17,7 @@
 | [08 模型加载](08-gltf-model-loading.md) | glTF/GLB 到 CPU Mesh 的转换 |
 | [09 构建与 Shader](09-shader-source-debug-mode.md) | CMake、SPIR-V 编译与调试模式 |
 | [10 PBR 与 GPU 资源](10-pbr-rendering.md) | Mesh/Texture、Descriptor、动态 UBO、环境渲染 |
+| [11 公共 Forward](11-forward-rendering.md) | 公共 API、set 布局、资源所有权、draw 顺序与示例复用 |
+| [12 Graph 资源](12-graph-resources.md) | typed handle、descriptor、资源池、状态规划、同步2、Compute/callback、resize/export 生命周期 |
 
 每次修改模块都按 [同步约定](../README.md) 核对对应文档。各文档保留“当前约束”，用于准确描述实现边界；不在这些章节中排任务或列未来阶段。

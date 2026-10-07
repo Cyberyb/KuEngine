@@ -29,14 +29,24 @@ target_sources(KuEngine PRIVATE
     KuEngine/RHI/RHITexture.cpp
     KuEngine/RHI/RHIShader.cpp
     KuEngine/RHI/RHIPipeline.cpp
+    KuEngine/RHI/RHIParameterSet.cpp
     KuEngine/RHI/ResourceUploader.cpp
     KuEngine/RHI/SyncManager.cpp
     KuEngine/RHI/CommandList.cpp
     KuEngine/RHI/vma.cpp
     KuEngine/Render/RenderGraph.cpp
+    KuEngine/Render/GraphCommandContext.cpp
+    KuEngine/Render/RenderGraphStatePlanner.cpp
+    KuEngine/Render/RenderGraphResourcePool.cpp
     KuEngine/Render/RenderPipeline.cpp
     KuEngine/Render/GpuMesh.cpp
     KuEngine/Render/GpuModelAsset.cpp
+    KuEngine/Render/ForwardCommon.cpp
+    KuEngine/Render/ForwardGraphTargets.cpp
+    KuEngine/Render/ForwardDisplayProgram.cpp
+    KuEngine/Render/ForwardDisplayPass.cpp
+    KuEngine/Render/ForwardProgram.cpp
+    KuEngine/Render/ForwardRenderer.cpp
     KuEngine/Render/PBRCommon.cpp
     KuEngine/Render/PBRRenderer.cpp
     KuEngine/Render/PBRResources.cpp

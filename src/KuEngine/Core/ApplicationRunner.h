@@ -14,6 +14,7 @@ struct ApplicationRunOptions {
     bool smokeArgumentsPresent = false;
     bool requireValidation = false;
     bool injectValidationError = false;
+    bool recompileAfterSetup = false;
 };
 
 enum class ApplicationExitCode : int {

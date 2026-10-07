@@ -172,11 +172,71 @@ void CommandList::imageBarrier(VkImage image, VkImageLayout oldLayout, VkImageLa
     vkCmdPipelineBarrier(m_cmd, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
+void CommandList::pipelineBarrier2(
+    std::span<const VkImageMemoryBarrier2> imageBarriers,
+    std::span<const VkBufferMemoryBarrier2> bufferBarriers)
+{
+    VkDependencyInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    info.imageMemoryBarrierCount = static_cast<uint32_t>(imageBarriers.size());
+    info.pImageMemoryBarriers = imageBarriers.data();
+    info.bufferMemoryBarrierCount = static_cast<uint32_t>(bufferBarriers.size());
+    info.pBufferMemoryBarriers = bufferBarriers.data();
+    vkCmdPipelineBarrier2(m_cmd, &info);
+}
+
 void CommandList::copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size)
 {
+    copyBuffer(src, dst, 0, 0, size);
+}
+
+void CommandList::copyBuffer(
+    VkBuffer src,
+    VkBuffer dst,
+    VkDeviceSize srcOffset,
+    VkDeviceSize dstOffset,
+    VkDeviceSize size)
+{
     VkBufferCopy region{};
+    region.srcOffset = srcOffset;
+    region.dstOffset = dstOffset;
     region.size = size;
     vkCmdCopyBuffer(m_cmd, src, dst, 1, &region);
+}
+
+void CommandList::fillBuffer(
+    VkBuffer buffer,
+    VkDeviceSize offset,
+    VkDeviceSize size,
+    uint32_t data)
+{
+    vkCmdFillBuffer(m_cmd, buffer, offset, size, data);
+}
+
+void CommandList::bindVertexBuffer(VkBuffer buffer, VkDeviceSize offset)
+{
+    vkCmdBindVertexBuffers(m_cmd, 0, 1, &buffer, &offset);
+}
+
+void CommandList::bindIndexBuffer(
+    VkBuffer buffer,
+    VkDeviceSize offset,
+    VkIndexType type)
+{
+    vkCmdBindIndexBuffer(m_cmd, buffer, offset, type);
+}
+
+void CommandList::drawIndexedIndirect(
+    VkBuffer buffer,
+    VkDeviceSize offset,
+    uint32_t drawCount,
+    uint32_t stride,
+    uint32_t expectedIndexCount)
+{
+    vkCmdDrawIndexedIndirect(m_cmd, buffer, offset, drawCount, stride);
+    for (uint32_t index = 0; index < drawCount; ++index) {
+        m_statistics.recordIndexedDraw(expectedIndexCount, 1);
+    }
 }
 
 void CommandList::copyBufferToImage(VkBuffer src, VkImage dst, uint32_t width, uint32_t height)

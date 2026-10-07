@@ -5,7 +5,10 @@
 
 #include <glm/glm.hpp>
 
+#include <cmath>
+#include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <vector>
 
 namespace ku {
@@ -13,6 +16,7 @@ namespace ku {
 namespace {
 
 constexpr const char* kDefaultEnvironmentHdr = "citrus_orchard_road_puresky_4k.hdr";
+constexpr const char* kDefaultModel = "models/props/mclaren_765lt.glb";
 
 std::filesystem::path sourceOrRuntimePath(
     const std::filesystem::path& relativePath)
@@ -34,43 +38,14 @@ std::filesystem::path sourceOrRuntimePath(
     return runtimePath;
 }
 
-void appendMeshData(
-    const asset::MeshData& source,
-    asset::MeshData& target)
+std::filesystem::path defaultResourcesRoot()
 {
-    const uint32_t baseVertex = static_cast<uint32_t>(target.vertices.size());
-    const uint32_t baseIndex = static_cast<uint32_t>(target.indices.size());
-    const uint32_t baseMaterial = static_cast<uint32_t>(target.materials.size());
-
-    target.vertices.insert(
-        target.vertices.end(),
-        source.vertices.begin(),
-        source.vertices.end());
-    target.indices.reserve(target.indices.size() + source.indices.size());
-    for (const uint32_t index : source.indices) {
-        target.indices.push_back(baseVertex + index);
-    }
-
-    for (const asset::SubMeshData& subMesh : source.subMeshes) {
-        target.subMeshes.push_back(asset::SubMeshData{
-            baseIndex + subMesh.indexStart,
-            subMesh.indexCount,
-            baseMaterial + subMesh.materialIndex,
-        });
-    }
-
-    target.materials.insert(
-        target.materials.end(),
-        source.materials.begin(),
-        source.materials.end());
-
-    if (baseVertex == 0) {
-        target.boundsMin = source.boundsMin;
-        target.boundsMax = source.boundsMax;
-    } else {
-        target.boundsMin = glm::min(target.boundsMin, source.boundsMin);
-        target.boundsMax = glm::max(target.boundsMax, source.boundsMax);
-    }
+    const std::filesystem::path root = asset::findResourcesRoot(
+        sourceOrRuntimePath(kDefaultModel));
+    return root.empty()
+        ? asset::normalizeAssetPath(
+            std::filesystem::current_path() / "resources")
+        : asset::normalizeAssetPath(root);
 }
 
 } // namespace
@@ -80,13 +55,10 @@ bool MclarenSceneAsset::load(std::string& errorMessage)
     MclarenSceneAsset candidate{};
     errorMessage.clear();
 
-    candidate.m_environmentPath = sourceOrRuntimePath(
-        std::filesystem::path("environments") / "hdr" / kDefaultEnvironmentHdr);
     candidate.m_scenePath = sourceOrRuntimePath(
         std::filesystem::path("scenes") / "sandbox" / "mclaren-sandbox.scene.json");
 
     asset::SceneConfig loadConfig{};
-    std::vector<std::filesystem::path> materialPaths;
     std::filesystem::path resourcesRoot;
 
     asset::SceneConfig sceneConfig{};
@@ -120,17 +92,6 @@ bool MclarenSceneAsset::load(std::string& errorMessage)
                     }
                 }
 
-                if (!node.material.empty()) {
-                    const std::filesystem::path materialPath =
-                        asset::resolveAssetPath(resourcesRoot, node.material);
-                    if (std::filesystem::exists(materialPath)) {
-                        materialPaths.push_back(materialPath);
-                    } else {
-                        KU_WARN(
-                            "MclarenSceneAsset: material does not exist: {}",
-                            materialPath.string());
-                    }
-                }
             }
         }
     } else {
@@ -143,15 +104,21 @@ bool MclarenSceneAsset::load(std::string& errorMessage)
     if (loadConfig.nodes.empty()) {
         loadConfig.nodes.push_back(asset::SceneNodeConfig{
             "mclaren",
-            sourceOrRuntimePath(
-                std::filesystem::path("models") / "props" / "mclaren_765lt.glb")
-                .string(),
+            sourceOrRuntimePath(kDefaultModel).string(),
             {},
         });
     }
     if (resourcesRoot.empty()) {
-        resourcesRoot = std::filesystem::current_path();
+        resourcesRoot = defaultResourcesRoot();
     }
+    candidate.m_resourcesRoot = asset::normalizeAssetPath(resourcesRoot);
+    candidate.m_environmentPath = sceneConfig.environment.empty()
+        ? sourceOrRuntimePath(
+            std::filesystem::path("environments") / "hdr"
+                / kDefaultEnvironmentHdr)
+        : asset::resolveAssetPath(
+            candidate.m_resourcesRoot,
+            sceneConfig.environment);
 
     asset::SceneLoadDescription sceneDescription{};
     sceneDescription.resourcesRoot = resourcesRoot;
@@ -165,34 +132,106 @@ bool MclarenSceneAsset::load(std::string& errorMessage)
         return false;
     }
 
-    if (!materialPaths.empty()) {
-        candidate.m_materialPath = materialPaths.front();
-        if (asset::loadMaterialConfigFromFile(
-                candidate.m_materialPath,
-                candidate.m_materialConfig,
-                &configError)) {
-            candidate.m_materialConfigUsed = true;
-            if (candidate.m_materialConfig.hasBaseColorFactor) {
-                candidate.m_globalBaseColorFactor =
-                    candidate.m_materialConfig.baseColorFactor;
-            }
-        } else {
+    for (asset::SceneInstance& instance : candidate.m_sceneData.instances) {
+        if (instance.materialReference.empty()) {
+            continue;
+        }
+        asset::MaterialConfig referenced{};
+        if (!asset::loadMaterialConfigFromFile(
+                instance.materialReference, referenced, &configError)) {
             KU_WARN(
                 "MclarenSceneAsset: material config fallback to glTF defaults: {}",
                 configError);
-            candidate.m_materialPath.clear();
+            continue;
         }
-
-        for (size_t i = 1; i < materialPaths.size(); ++i) {
-            if (materialPaths[i] != materialPaths.front()) {
-                KU_WARN(
-                    "MclarenSceneAsset: multiple material configs found; only the first is used: {}",
-                    materialPaths.front().string());
-                break;
-            }
+        if (instance.hasMaterialOverride) {
+            asset::mergeMaterialConfig(referenced, instance.materialOverride);
+        }
+        instance.materialOverride = referenced;
+        instance.hasMaterialOverride = true;
+        if (candidate.m_materialPath.empty()) {
+            candidate.m_materialPath = instance.materialReference;
         }
     }
 
+    if (!finalizeModel(candidate, errorMessage)) {
+        return false;
+    }
+
+    if (!asset::HDRImageLoader::loadFromFile(
+            candidate.m_sceneData.environment.sourcePath,
+            candidate.m_environmentImage,
+            &errorMessage)) {
+        return false;
+    }
+
+    *this = std::move(candidate);
+    return true;
+}
+
+bool MclarenSceneAsset::loadModel(
+    const std::filesystem::path& modelPath,
+    const std::filesystem::path& resourcesRoot,
+    std::string& errorMessage)
+{
+    MclarenSceneAsset candidate{};
+    errorMessage.clear();
+    candidate.m_resourcesRoot = asset::normalizeAssetPath(resourcesRoot);
+
+    asset::SceneLoadDescription description{};
+    description.resourcesRoot = candidate.m_resourcesRoot;
+    description.config.nodes.push_back(asset::SceneNodeConfig{
+        "replacement-model",
+        modelPath.string(),
+        {},
+    });
+    if (!asset::SceneLoader::load(
+            description,
+            candidate.m_sceneData,
+            &errorMessage)) {
+        errorMessage = "Model load failed: " + errorMessage;
+        return false;
+    }
+    if (!finalizeModel(candidate, errorMessage)) {
+        return false;
+    }
+    *this = std::move(candidate);
+    return true;
+}
+
+bool MclarenSceneAsset::calculateModelFit(
+    const glm::vec3& boundsMin,
+    const glm::vec3& boundsMax,
+    glm::vec3& outCenter,
+    float& outScale) noexcept
+{
+    for (int component = 0; component < 3; ++component) {
+        if (!std::isfinite(boundsMin[component])
+            || !std::isfinite(boundsMax[component])
+            || boundsMin[component] > boundsMax[component]) {
+            return false;
+        }
+    }
+
+    const glm::vec3 center = 0.5f * (boundsMin + boundsMax);
+    const float radius = 0.5f * glm::length(boundsMax - boundsMin);
+    if (!std::isfinite(center.x) || !std::isfinite(center.y)
+        || !std::isfinite(center.z) || !std::isfinite(radius)) {
+        return false;
+    }
+    const float scale = radius > 1e-4f ? 1.5f / radius : 1.0f;
+    if (!std::isfinite(scale) || scale <= 0.0f) {
+        return false;
+    }
+    outCenter = center;
+    outScale = scale;
+    return true;
+}
+
+bool MclarenSceneAsset::finalizeModel(
+    MclarenSceneAsset& candidate,
+    std::string& errorMessage)
+{
     if (candidate.m_sceneData.instances.size() == 1) {
         const asset::MeshAsset* meshAsset = candidate.m_sceneData.findMesh(
             candidate.m_sceneData.instances.front().mesh);
@@ -207,38 +246,42 @@ bool MclarenSceneAsset::load(std::string& errorMessage)
         candidate.m_modelLabel = label.str();
     }
 
-    for (const asset::SceneInstance& instance :
-         candidate.m_sceneData.instances) {
+    glm::vec3 boundsMin(std::numeric_limits<float>::max());
+    glm::vec3 boundsMax(std::numeric_limits<float>::lowest());
+    for (const asset::SceneInstance& instance : candidate.m_sceneData.instances) {
         const asset::MeshAsset* meshAsset =
             candidate.m_sceneData.findMesh(instance.mesh);
         if (meshAsset == nullptr) {
             errorMessage = "Scene instance references an invalid mesh handle";
             return false;
         }
-        appendMeshData(meshAsset->mesh, candidate.m_mesh);
+        glm::vec3 instanceMin{};
+        glm::vec3 instanceMax{};
+        if (!asset::transformBounds(
+                meshAsset->mesh.boundsMin,
+                meshAsset->mesh.boundsMax,
+                asset::sceneTransformMatrix(instance.transform),
+                instanceMin,
+                instanceMax)) {
+            errorMessage = "Scene instance bounds are non-finite or invalid";
+            return false;
+        }
+        boundsMin = glm::min(boundsMin, instanceMin);
+        boundsMax = glm::max(boundsMax, instanceMax);
     }
-
-    if (!asset::HDRImageLoader::loadFromFile(
-            candidate.m_sceneData.environment.sourcePath,
-            candidate.m_environmentImage,
-            &errorMessage)) {
+    if (!calculateModelFit(
+            boundsMin,
+            boundsMax,
+            candidate.m_modelCenter,
+            candidate.m_fitScale)) {
+        errorMessage = "Model bounds are non-finite or invalid";
         return false;
     }
-
-    candidate.m_modelCenter =
-        0.5f * (candidate.m_mesh.boundsMin + candidate.m_mesh.boundsMax);
-    const float radius =
-        0.5f * glm::length(
-            candidate.m_mesh.boundsMax - candidate.m_mesh.boundsMin);
-    candidate.m_fitScale = radius > 1e-4f ? 1.5f / radius : 1.0f;
-
-    *this = std::move(candidate);
     return true;
 }
 
 void MclarenSceneAsset::releaseCpuMesh()
 {
-    m_mesh = asset::MeshData{};
     m_environmentImage = asset::HDRImageData{};
     for (asset::MeshAsset& meshAsset : m_sceneData.meshes) {
         meshAsset.mesh = asset::MeshData{};

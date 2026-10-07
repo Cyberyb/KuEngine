@@ -41,13 +41,15 @@ CubePass::~CubePass() = default;
 
 void CubePass::setup(RenderGraphBuilder& builder)
 {
-    const ResourceHandle swapChainColor =
-        builder.importExternal(runtime_resource::swapChainColor);
+    const ImageHandle swapChainColor = builder.importImage(
+        runtime_resource::swapChainColor,
+        m_colorTargetDesc);
     builder.colorAttachment(swapChainColor);
 }
 
 void CubePass::initialize(const RenderContext& context)
 {
+    m_colorTargetDesc = runtimeColorImageDesc(context);
     KU_INFO("CubePass: initializing...");
     RHIDevice& device = context.device;
 
@@ -56,8 +58,10 @@ void CubePass::initialize(const RenderContext& context)
     auto fragPath = shaderDir / "cube.frag.spv";
 
     try {
-        m_vertShader = std::make_unique<RHIShader>(device, vertPath);
-        m_fragShader = std::make_unique<RHIShader>(device, fragPath);
+        m_vertShader = std::make_unique<RHIShader>(device, ShaderDesc{
+            vertPath, VK_SHADER_STAGE_VERTEX_BIT, "main"});
+        m_fragShader = std::make_unique<RHIShader>(device, ShaderDesc{
+            fragPath, VK_SHADER_STAGE_FRAGMENT_BIT, "main"});
     } catch (const std::exception& e) {
         KU_ERROR("CubePass shader load failed: {}", e.what());
         throw;

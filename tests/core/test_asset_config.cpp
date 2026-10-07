@@ -56,6 +56,7 @@ TEST(AssetConfigTest, SceneConfigParsesCameraLightingAndNode)
     "color": [0.8, 0.9, 1.0],
     "intensity": 2.5
   },
+  "environment": "environments/hdr/studio.HDR",
   "nodes": [
     {
       "id": "car",
@@ -80,6 +81,9 @@ TEST(AssetConfigTest, SceneConfigParsesCameraLightingAndNode)
     EXPECT_FLOAT_EQ(sceneConfig.lighting.direction.x, 0.2f);
     EXPECT_FLOAT_EQ(sceneConfig.lighting.color.y, 0.9f);
     EXPECT_FLOAT_EQ(sceneConfig.lighting.intensity, 2.5f);
+    EXPECT_EQ(
+        sceneConfig.environment,
+        "environments/hdr/studio.HDR");
 
     ASSERT_EQ(sceneConfig.nodes.size(), 1u);
     EXPECT_EQ(sceneConfig.nodes[0].id, "car");
@@ -109,6 +113,7 @@ TEST(AssetConfigTest, SceneConfigFallsBackToDefaultsWhenFieldsMissing)
     EXPECT_FLOAT_EQ(sceneConfig.lighting.direction.y, 1.0f);
     EXPECT_FLOAT_EQ(sceneConfig.lighting.direction.z, 0.45f);
     EXPECT_FLOAT_EQ(sceneConfig.lighting.intensity, 1.0f);
+    EXPECT_TRUE(sceneConfig.environment.empty());
 
     ASSERT_EQ(sceneConfig.nodes.size(), 1u);
     EXPECT_EQ(sceneConfig.nodes[0].id, "only-id");

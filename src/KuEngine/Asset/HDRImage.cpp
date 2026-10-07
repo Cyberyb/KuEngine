@@ -58,6 +58,14 @@ bool HDRImageLoader::loadFromFile(
         errorMessage->clear();
     }
 
+    // stbi_loadf also accepts LDR formats by converting them to floats.  This
+    // loader is the HDR CPU boundary, so reject those inputs explicitly and
+    // leave the caller's published image untouched on failure.
+    if (path.empty() || stbi_is_hdr(path.string().c_str()) == 0) {
+        setError(errorMessage, "Input is not a supported HDR image: " + path.string());
+        return false;
+    }
+
     int width = 0;
     int height = 0;
     int sourceChannels = 0;

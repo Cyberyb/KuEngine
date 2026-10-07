@@ -1,6 +1,6 @@
 # UI 与性能统计设计
 
-核对日期：2026-09-14。
+核对日期：2026-10-07。
 
 源码：[UIOverlay](../../src/KuEngine/UI/UIOverlay.h)、[Engine::render](../../src/KuEngine/Core/Engine.cpp)、[CommandList](../../src/KuEngine/RHI/CommandList.cpp)。
 
@@ -10,7 +10,11 @@ Engine 持有单个 UIOverlay。UIOverlay 创建 ImGui Context、GLFW/Vulkan Bac
 
 Pass::drawUI 只构建业务参数内容；RenderPipeline 分别提供 Pass 内容和 Graph 调试内容，逐 Pass 以索引 `PushID` 隔离控件 ID。UIOverlay 将它们放进唯一右侧栏的 Performance、Parameters / Scene、Render Graph 区段，避免多个浮动窗口或 Alpha Pass 同名控件冲突。Render 模块目前直接依赖 ImGui。
 
-UIOverlay::render 调用 ImGui::Render 和 Vulkan Backend。imageView/imageLayout 参数当前未使用，实际附件由 RenderPipeline::executeOverlay 管理。
+Mclaren 的 Parameters / Scene 内另有 Model 与 HDR 区块：各自显示 Draft 路径、Load 按钮、Active 路径、generation、状态/分类和错误。Load 只将路径复制为不可变请求并禁用并发请求；它不在 ImGui 回调中读取文件、上传或销毁 GPU 对象。请求会在下一次可用的 Pass update 安全点处理，成功后刷新 Active/generation，失败时 Draft/状态可见而已发布的画面、统计和相机保持。
+
+Mclaren 当前还显示共享 mesh 数、材质 GPU variant 数、draw 和各语义贴图数量，并提供材质采样、相机、方向/首个点光、环境和替换控件。ForwardReuse 显示语义/背面视图预设、零光状态、共享 MeshHandle、variant 数和实例选择信息。它们是示例调试 UI，不是通用实例编辑器；没有完成产品需求中的实例选择/逐实例编辑工作流。
+
+UIOverlay::render 调用 ImGui::Render 和 Vulkan Backend。UI depth format 为 `VK_FORMAT_UNDEFINED`；Overlay 在 Display CLEAR/STORE 后对 SwapChainColor 使用 LOAD/read-write，实际附件由 RenderPipeline::executeOverlay 管理。
 
 ## 帧内调用位置
 

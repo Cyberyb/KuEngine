@@ -7,6 +7,9 @@
 
 namespace ku {
 
+[[nodiscard]] bool supportsRequiredVulkan13Features(
+    const VkPhysicalDeviceVulkan13Features& features) noexcept;
+
 class RHIDevice {
 public:
     RHIDevice(VkInstance instance, VkSurfaceKHR surface);
@@ -20,6 +23,10 @@ public:
     [[nodiscard]] VkQueue presentQueue() const { return m_presentQueue; }
     [[nodiscard]] uint32_t graphicsQueueFamily() const { return m_graphicsQueueFamily; }
     [[nodiscard]] uint32_t presentQueueFamily() const { return m_presentQueueFamily; }
+    [[nodiscard]] bool graphicsQueueSupportsCompute() const noexcept
+    {
+        return m_graphicsQueueSupportsCompute;
+    }
     [[nodiscard]] uint32_t graphicsTimestampValidBits() const
     {
         return m_graphicsTimestampValidBits;
@@ -52,6 +59,7 @@ private:
     uint32_t                         m_graphicsQueueFamily = UINT32_MAX;
     uint32_t                         m_presentQueueFamily = UINT32_MAX;
     uint32_t                         m_graphicsTimestampValidBits = 0;
+    bool                             m_graphicsQueueSupportsCompute = false;
 
     VkPhysicalDeviceProperties       m_properties{};
     VkPhysicalDeviceFeatures        m_features{};

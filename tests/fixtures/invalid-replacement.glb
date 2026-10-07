@@ -1,0 +1,1 @@
+This is intentionally not a valid glTF binary. It exercises retained-live CPU decode failure.

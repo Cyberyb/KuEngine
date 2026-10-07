@@ -5,26 +5,135 @@
 
 #include <algorithm>
 #include <array>
+#include <limits>
+#include <stdexcept>
 
 namespace ku {
 
+void validatePushConstantRanges(
+    std::span<const VkPushConstantRange> ranges,
+    uint32_t maxPushConstantsSize)
+{
+    for (size_t i = 0; i < ranges.size(); ++i) {
+        const VkPushConstantRange& range = ranges[i];
+        if (range.stageFlags == 0 || range.size == 0
+            || (range.offset % 4) != 0 || (range.size % 4) != 0
+            || range.offset > maxPushConstantsSize
+            || range.size > maxPushConstantsSize - range.offset) {
+            throw std::invalid_argument(
+                "Pipeline push constant range is invalid or exceeds the device limit");
+        }
+        for (size_t j = 0; j < i; ++j) {
+            const VkPushConstantRange& other = ranges[j];
+            const uint64_t begin = range.offset;
+            const uint64_t end = begin + range.size;
+            const uint64_t otherBegin = other.offset;
+            const uint64_t otherEnd = otherBegin + other.size;
+            if (begin < otherEnd && otherBegin < end
+                && (range.stageFlags & other.stageFlags) != 0) {
+                throw std::invalid_argument(
+                    "Overlapping push constant ranges cannot share shader stages");
+            }
+        }
+    }
+}
+
+void validatePipelineLayoutLimits(
+    size_t descriptorSetCount,
+    std::span<const VkPushConstantRange> ranges,
+    const VkPhysicalDeviceLimits& limits,
+    VkShaderStageFlags allowedStages)
+{
+    if (descriptorSetCount > limits.maxBoundDescriptorSets) {
+        throw std::invalid_argument(
+            "Pipeline layout exceeds maxBoundDescriptorSets");
+    }
+    validatePushConstantRanges(ranges, limits.maxPushConstantsSize);
+    for (const VkPushConstantRange& range : ranges) {
+        if ((range.stageFlags & ~allowedStages) != 0) {
+            throw std::invalid_argument(
+                "Pipeline push constant range uses an incompatible shader stage");
+        }
+    }
+}
+
+void validateGraphicsShaderStages(
+    std::span<const VkShaderStageFlagBits> stages)
+{
+    bool hasVertex = false;
+    bool hasFragment = false;
+    for (const VkShaderStageFlagBits stage : stages) {
+        bool* present = nullptr;
+        if (stage == VK_SHADER_STAGE_VERTEX_BIT) present = &hasVertex;
+        else if (stage == VK_SHADER_STAGE_FRAGMENT_BIT) present = &hasFragment;
+        else {
+            throw std::invalid_argument(
+                "GraphicsPipelineDesc contains an unsupported shader stage");
+        }
+        if (*present) {
+            throw std::invalid_argument(
+                "GraphicsPipelineDesc contains a duplicate shader stage");
+        }
+        *present = true;
+    }
+    if (!hasVertex || !hasFragment || stages.size() != 2) {
+        throw std::invalid_argument(
+            "GraphicsPipelineDesc requires exactly one vertex and one fragment shader");
+    }
+}
+
+void validateDispatchCount(
+    uint32_t groupCountX,
+    uint32_t groupCountY,
+    uint32_t groupCountZ,
+    const VkPhysicalDeviceLimits& limits)
+{
+    if (groupCountX == 0 || groupCountY == 0 || groupCountZ == 0
+        || groupCountX > limits.maxComputeWorkGroupCount[0]
+        || groupCountY > limits.maxComputeWorkGroupCount[1]
+        || groupCountZ > limits.maxComputeWorkGroupCount[2]) {
+        throw std::invalid_argument(
+            "Compute dispatch group count is zero or exceeds the device limit");
+    }
+}
+
+void validateComputeParameterSetBinding(
+    std::span<const VkDescriptorSetLayout> pipelineLayouts,
+    uint32_t setIndex,
+    VkDescriptorSetLayout parameterLayout,
+    VkDescriptorSet parameterSet)
+{
+    if (setIndex >= pipelineLayouts.size()
+        || parameterLayout == VK_NULL_HANDLE
+        || parameterSet == VK_NULL_HANDLE
+        || pipelineLayouts[setIndex] != parameterLayout) {
+        throw std::invalid_argument(
+            "Compute parameter set does not match the pipeline set layout");
+    }
+}
+
 RHIPipeline::RHIPipeline(const RHIDevice& device, const GraphicsPipelineDesc& desc)
     : m_device(device.device())
+    , m_descriptorSetCount(static_cast<uint32_t>(desc.descriptorSetLayouts.size()))
 {
-    if (desc.shaders.size() < 2) {
-        throw std::runtime_error("GraphicsPipelineDesc requires at least vertex and fragment shaders");
-    }
+    std::vector<VkShaderStageFlagBits> shaderStages;
+    shaderStages.reserve(desc.shaders.size());
+    for (const auto shader : desc.shaders) shaderStages.push_back(shader.get().stage());
+    validateGraphicsShaderStages(shaderStages);
+    validatePipelineLayoutLimits(
+        desc.descriptorSetLayouts.size(), desc.pushConstantRanges,
+        device.properties().limits,
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
 
     std::array<VkPipelineShaderStageCreateInfo, 2> stages{};
-    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-    stages[0].module = desc.shaders[0].get().module();
-    stages[0].pName = "main";
-
-    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    stages[1].module = desc.shaders[1].get().module();
-    stages[1].pName = "main";
+    for (const auto shaderRef : desc.shaders) {
+        const RHIShader& shader = shaderRef.get();
+        const size_t index = shader.stage() == VK_SHADER_STAGE_VERTEX_BIT ? 0 : 1;
+        stages[index].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        stages[index].stage = shader.stage();
+        stages[index].module = shader.module();
+        stages[index].pName = shader.entryPoint().c_str();
+    }
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -150,7 +259,25 @@ RHIPipeline::RHIPipeline(const RHIDevice& device, const GraphicsPipelineDesc& de
     pipelineInfo.renderPass = VK_NULL_HANDLE;
     pipelineInfo.subpass = 0;
 
-    VK_CHECK(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline));
+    try {
+        VK_CHECK(vkCreateGraphicsPipelines(
+            m_device,
+            VK_NULL_HANDLE,
+            1,
+            &pipelineInfo,
+            nullptr,
+            &m_pipeline));
+    } catch (...) {
+        // A throwing constructor does not run RHIPipeline::~RHIPipeline().
+        // Release any returned pipeline and the layout before propagating.
+        if (m_pipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_device, m_pipeline, nullptr);
+            m_pipeline = VK_NULL_HANDLE;
+        }
+        vkDestroyPipelineLayout(m_device, m_layout, nullptr);
+        m_layout = VK_NULL_HANDLE;
+        throw;
+    }
 
     KU_INFO("Graphics pipeline created");
 }
@@ -168,6 +295,85 @@ void RHIPipeline::bind(VkCommandBuffer cmd) const
     }
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+}
+
+RHIComputePipeline::RHIComputePipeline(
+    const RHIDevice& device,
+    const ComputePipelineDesc& desc)
+    : m_device(device.device())
+    , m_descriptorSetCount(
+          static_cast<uint32_t>(desc.descriptorSetLayouts.size()))
+    , m_descriptorSetLayouts(desc.descriptorSetLayouts)
+{
+    if (!device.graphicsQueueSupportsCompute()) {
+        throw std::runtime_error(
+            "Compute pipeline requires compute support on the graphics queue");
+    }
+    if (desc.shader == nullptr || !desc.shader->isValid()
+        || desc.shader->stage() != VK_SHADER_STAGE_COMPUTE_BIT) {
+        throw std::invalid_argument(
+            "ComputePipelineDesc requires one valid compute shader");
+    }
+    validatePipelineLayoutLimits(
+        desc.descriptorSetLayouts.size(), desc.pushConstantRanges,
+        device.properties().limits, VK_SHADER_STAGE_COMPUTE_BIT);
+
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount =
+        static_cast<uint32_t>(desc.descriptorSetLayouts.size());
+    layoutInfo.pSetLayouts = desc.descriptorSetLayouts.empty()
+        ? nullptr : desc.descriptorSetLayouts.data();
+    layoutInfo.pushConstantRangeCount =
+        static_cast<uint32_t>(desc.pushConstantRanges.size());
+    layoutInfo.pPushConstantRanges = desc.pushConstantRanges.empty()
+        ? nullptr : desc.pushConstantRanges.data();
+    VK_CHECK(vkCreatePipelineLayout(m_device, &layoutInfo, nullptr, &m_layout));
+
+    VkPipelineShaderStageCreateInfo stage{};
+    stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stage.module = desc.shader->module();
+    stage.pName = desc.shader->entryPoint().c_str();
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.stage = stage;
+    pipelineInfo.layout = m_layout;
+    try {
+        VK_CHECK(vkCreateComputePipelines(
+            m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline));
+    } catch (...) {
+        if (m_pipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_device, m_pipeline, nullptr);
+            m_pipeline = VK_NULL_HANDLE;
+        }
+        vkDestroyPipelineLayout(m_device, m_layout, nullptr);
+        m_layout = VK_NULL_HANDLE;
+        throw;
+    }
+    KU_INFO("Compute pipeline created");
+}
+
+RHIComputePipeline::~RHIComputePipeline()
+{
+    if (m_pipeline) vkDestroyPipeline(m_device, m_pipeline, nullptr);
+    if (m_layout) vkDestroyPipelineLayout(m_device, m_layout, nullptr);
+}
+
+void RHIComputePipeline::bind(VkCommandBuffer cmd) const
+{
+    if (m_pipeline != VK_NULL_HANDLE) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline);
+    }
+}
+
+VkDescriptorSetLayout RHIComputePipeline::descriptorSetLayout(
+    uint32_t index) const
+{
+    if (index >= m_descriptorSetLayouts.size()) {
+        throw std::out_of_range("Compute pipeline descriptor set index is out of range");
+    }
+    return m_descriptorSetLayouts[index];
 }
 
 } // namespace ku

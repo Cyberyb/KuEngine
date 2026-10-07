@@ -1,6 +1,6 @@
 # KuEngine 实施工作包
 
-更新日期：2026-09-14。本页将 [开发路线图](roadmap.md) 拆为可独立实现、验收和文档同步的工作包。需求范围以 [产品需求](product-requirements.md) 为准；工作包状态只在 QA 给出结论后变更。`ACCEPTED` 表示该工作包的验收条件通过，不表示所属阶段已经完成。
+更新日期：2026-10-07。本页将 [开发路线图](roadmap.md) 拆为可独立实现、验收和文档同步的工作包。需求范围以 [产品需求](product-requirements.md) 为准；工作包状态只在 QA 给出结论后变更。`ACCEPTED` 表示该工作包的验收条件通过，不表示所属阶段已经完成。
 
 ## 状态与使用方式
 
@@ -28,24 +28,24 @@
 
 ## M2：公共资产、材质与 Forward
 
-阶段状态：未开始。出口：受支持模型/HDR 可从配置或侧栏替换，实例可独立调变换/材质，PBR 与 Unlit 复用公共 Forward 装配。
+阶段状态：已完成（2026-09-16）。M2-WP01～03 已验收；受支持模型/HDR 可从配置或侧栏替换，实例拥有独立 TRS/材质 override，PBR 与 Unlit 复用公共 Forward 装配。
 
 | 工作包 | 状态 | 依赖 | 范围与验收焦点 |
 |---|---|---|---|
-| M2-WP01：轻量场景与公共 GPU 资源边界 | READY | M1-WP01 | 从 Mclaren 识别并迁出可复用 Mesh、Texture、材质、环境与实例持有职责，不引入 ECS。 |
-| M2-WP02：模型/HDR 替换与资源保留规则 | READY | M2-WP01 | 接入配置和侧栏入口；坏路径保留旧场景，明确 GPU 完成后的替换释放边界。 |
-| M2-WP03：材质语义与公共 Forward Renderer | READY | M2-WP01 | 独立实例材质/变换、PBR/Unlit、基础光照与环境输入；修复已确认的资产语义缺口。 |
+| M2-WP01：轻量场景与公共 GPU 资源边界 | ACCEPTED | M1-WP01 | AssetPath、SceneData/SceneLoader、严格 HDR CPU loader 与 GpuModelAsset/PBRMaterialResources/PBREnvironmentResources 已落地；Mclaren 保留默认/fit/label/合并适配和窄 GPU 装配。QA 通过 Debug/Release 构建、Debug CTest 9/9、定向计划 10/10、四例 smoke 和人工 Mclaren 检查；不含替换、实例编辑、Unlit/Forward、ECS/cache/registry。 |
+| M2-WP02：模型/HDR 替换与资源保留规则 | ACCEPTED | M2-WP01 | Mclaren Sidebar/CLI 入队 immutable 请求；单帧 Fence-safe update 同步构建/发布。Model 完整重建 Scene/fit/GPU/材质/帧容量/Pipeline/stats，HDR 独立重建固定 schema 环境并 rebind；失败保留 live state，device lost fatal。QA 通过 Debug CTest 13/13、replacement CPU 两配置各8/8、Release 直接 model→HDR smoke 和人工保留检查；无 OOM/device-lost、像素或长时覆盖。 |
+| M2-WP03：材质语义与公共 Forward Renderer | ACCEPTED | M2-WP01 | 实例 TRS/material override、PBR/Unlit、Opaque/Mask/Blend、五纹理/UV、最多四点光、公共 Forward 与 ForwardReuse 已验收；不含 IBL/OIT/Graph-owned output/多帧 retire。 |
 
 ## M3：Graph 管理资源与执行
 
-阶段状态：未开始。出口：Graph 创建并安全管理离屏资源，Graphics/Compute/Copy 的声明依赖可运行并通过 Validation；原生 Vulkan 访问有可检查契约。
+阶段状态：已完成。M3-WP01～04 均已验收；Graph 管理 typed internal image/buffer、synchronization2、Compute/callback、受约束 native access 与 Forward Graph targets/display。
 
 | 工作包 | 状态 | 依赖 | 范围与验收焦点 |
 |---|---|---|---|
-| M3-WP01：图资源描述、Handle 与生命周期 | READY | M2-WP03 | Image/Buffer 描述、外部导入导出、resize 与单帧生命周期。 |
-| M3-WP02：状态、同步与 Buffer 依赖 | READY | M3-WP01 | Stage/Access/Layout/子资源用途与 synchronization2；不引入多队列。 |
-| M3-WP03：Compute 与原生访问契约 | READY | M3-WP02 | Compute Pipeline、基础绑定、Graphics/Compute/Copy 示例和受约束的原生命令入口。 |
-| M3-WP04：Forward 图目标与最终输出 | READY | M3-WP03 | 将 SceneColor/Depth 与 UI/Present 状态交接纳入图。 |
+| M3-WP01：图资源描述、Handle 与生命周期 | ACCEPTED | M2-WP03 | typed Image/Buffer handle、严格同名 descriptor/kind/ownership、internal pool、external borrow、candidate compile/resize rollback、first-use/LOAD/export 校验、frame/epoch stale export 与 Probe 已验收；无 Buffer barrier/sync2。 |
+| M3-WP02：状态、同步与 Buffer 依赖 | ACCEPTED | M3-WP01 | 显式 ImageUse/BufferUse、stage/access/layout/range、CPU state planner、RAW/WAR/WAW、range split/merge、同步2批量 barrier 与 Probe 已验收；无 Compute、多队列或 resolver range containment。 |
+| M3-WP03：Compute 与原生访问契约 | ACCEPTED | M3-WP02 | RHI compute pipeline/parameter set、CallbackRenderPass、checked GraphCommandContext、受约束 native scope 与六 pass Probe 已验收；无自动裸 Vulkan 检测、无 compute queue/失败注入实机证据。 |
+| M3-WP04：Forward 图目标与最终输出 | ACCEPTED | M3-WP03 | ForwardGraphTargets、ForwardDisplayPass/Program、SceneColor/Depth 与 UI/Present 状态交接、resize/recompile 已验收；线性 HDR 统一输出与 Deferred 不在本包。 |
 
 ## M4：Deferred 与查看器闭环
 
@@ -73,7 +73,7 @@
 |---|---|---|
 | M0 | 已完成 | WP01～03 已验收，四示例 Debug GPU Smoke、有限 resize、Validation/初始化负例及 RTX 4060 Ti 人工检查证据完整；像素回归和不支持 Timestamp 实机验证不属于本出口 |
 | M1 | 已完成 | WP01～03 已验收；侧栏、主视口输入边界和 Mclaren 双模式相机出口已满足 |
-| M2 | 未开始 | M2-WP01～03 通过 |
-| M3 | 未开始 | M3-WP01～04 通过 |
+| M2 | 已完成 | WP01～03 已验收；公共资产、实例材质语义和公共 Forward 出口满足 |
+| M3 | 已完成 | WP01～04 已验收；Graph 资源、同步、Compute、native contract 与 Forward 输出出口满足 |
 | M4 | 未开始 | M4-WP01～03 通过，并完成 REQ-01～13 整体检查 |
 | M5 | 未开始 | M5-WP01～03 通过 |

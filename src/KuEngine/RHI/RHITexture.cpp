@@ -46,7 +46,20 @@ RHITexture::RHITexture(const RHIDevice& device, const CreateInfo& info)
     viewInfo.subresourceRange.levelCount = 1;
     viewInfo.subresourceRange.baseArrayLayer = 0;
     viewInfo.subresourceRange.layerCount = 1;
-    VK_CHECK(vkCreateImageView(m_device->device(), &viewInfo, nullptr, &m_imageView));
+    try {
+        VK_CHECK(vkCreateImageView(
+            m_device->device(),
+            &viewInfo,
+            nullptr,
+            &m_imageView));
+    } catch (...) {
+        // A throwing constructor does not run RHITexture::~RHITexture().
+        // Roll back the image allocation before propagating the failure.
+        vmaDestroyImage(m_device->allocator(), m_image, m_allocation);
+        m_image = VK_NULL_HANDLE;
+        m_allocation = VK_NULL_HANDLE;
+        throw;
+    }
 }
 
 RHITexture::~RHITexture()

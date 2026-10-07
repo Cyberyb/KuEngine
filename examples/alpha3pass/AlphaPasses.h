@@ -45,6 +45,7 @@ private:
 
     std::string m_name;
     std::string m_dependency;
+    ImageDesc m_colorTargetDesc{};
 
     std::unique_ptr<RHIShader> m_vertShader;
     std::unique_ptr<RHIShader> m_fragShader;

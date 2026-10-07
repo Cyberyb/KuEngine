@@ -28,6 +28,7 @@ AlphaShapePass::~AlphaShapePass() = default;
 
 void AlphaShapePass::initialize(const RenderContext& context)
 {
+    m_colorTargetDesc = runtimeColorImageDesc(context);
     KU_INFO("{}: initializing...", m_name);
     RHIDevice& device = context.device;
 
@@ -36,8 +37,10 @@ void AlphaShapePass::initialize(const RenderContext& context)
     const auto fragPath = shaderDir / "alpha.frag.spv";
 
     try {
-        m_vertShader = std::make_unique<RHIShader>(device, vertPath);
-        m_fragShader = std::make_unique<RHIShader>(device, fragPath);
+        m_vertShader = std::make_unique<RHIShader>(device, ShaderDesc{
+            vertPath, VK_SHADER_STAGE_VERTEX_BIT, "main"});
+        m_fragShader = std::make_unique<RHIShader>(device, ShaderDesc{
+            fragPath, VK_SHADER_STAGE_FRAGMENT_BIT, "main"});
     } catch (const std::exception& e) {
         KU_ERROR("{}: shader load failed: {}", m_name, e.what());
         throw;
@@ -65,8 +68,9 @@ void AlphaShapePass::initialize(const RenderContext& context)
 
 void AlphaShapePass::setup(RenderGraphBuilder& builder)
 {
-    const ResourceHandle swapChainColor =
-        builder.importExternal(runtime_resource::swapChainColor);
+    const ImageHandle swapChainColor = builder.importImage(
+        runtime_resource::swapChainColor,
+        m_colorTargetDesc);
     builder.colorAttachment(
         swapChainColor,
         m_dependency.empty()

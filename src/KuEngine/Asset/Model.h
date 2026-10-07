@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <vector>
 
+#include <KuEngine/Asset/AssetConfig.h>
+
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
@@ -40,6 +42,10 @@ struct MaterialData {
 
     glm::vec4 baseColorFactor{1.0f, 1.0f, 1.0f, 1.0f};
     glm::vec3 emissiveFactor{0.0f, 0.0f, 0.0f};
+    ShadingModel shadingModel = ShadingModel::PBR;
+    AlphaMode alphaMode = AlphaMode::Opaque;
+    float alphaCutoff = 0.5f;
+    bool doubleSided = false;
     float metallicFactor = 1.0f;
     float roughnessFactor = 1.0f;
     float normalScale = 1.0f;
@@ -47,12 +53,14 @@ struct MaterialData {
 
     TextureData baseColorTexture;
     TextureData normalTexture;
-    TextureData ormTexture;
+    TextureData metallicRoughnessTexture;
+    TextureData occlusionTexture;
     TextureData emissiveTexture;
 
     TextureTransform baseColorTransform{};
     TextureTransform normalTransform{};
-    TextureTransform ormTransform{};
+    TextureTransform metallicRoughnessTransform{};
+    TextureTransform occlusionTransform{};
     TextureTransform emissiveTransform{};
 };
 

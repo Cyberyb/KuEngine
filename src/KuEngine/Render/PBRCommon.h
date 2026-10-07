@@ -42,7 +42,7 @@ struct alignas(16) PBRSkyboxPushConstants {
     float params[4];
 };
 
-struct PBRMaterialBinding {
+struct MaterialGpuBinding {
     std::array<float, 4> baseColorFactor{1.0f, 1.0f, 1.0f, 1.0f};
     std::array<float, 3> emissiveFactor{0.0f, 0.0f, 0.0f};
     float metallicFactor = 1.0f;
@@ -52,22 +52,29 @@ struct PBRMaterialBinding {
 
     std::array<float, 4> baseUvScaleOffset{1.0f, 1.0f, 0.0f, 0.0f};
     std::array<float, 4> normalUvScaleOffset{1.0f, 1.0f, 0.0f, 0.0f};
-    std::array<float, 4> ormUvScaleOffset{1.0f, 1.0f, 0.0f, 0.0f};
+    std::array<float, 4> metallicRoughnessUvScaleOffset{1.0f, 1.0f, 0.0f, 0.0f};
+    std::array<float, 4> occlusionUvScaleOffset{1.0f, 1.0f, 0.0f, 0.0f};
+    std::array<float, 4> emissiveUvScaleOffset{1.0f, 1.0f, 0.0f, 0.0f};
     float baseUvRotation = 0.0f;
     float normalUvRotation = 0.0f;
-    float ormUvRotation = 0.0f;
+    float metallicRoughnessUvRotation = 0.0f;
+    float occlusionUvRotation = 0.0f;
     float emissiveUvRotation = 0.0f;
     float baseTexCoord = 0.0f;
     float normalTexCoord = 0.0f;
-    float ormTexCoord = 0.0f;
+    float metallicRoughnessTexCoord = 0.0f;
+    float occlusionTexCoord = 0.0f;
     float emissiveTexCoord = 0.0f;
 
     bool hasBaseColorTexture = false;
     bool hasNormalTexture = false;
-    bool hasOrmTexture = false;
+    bool hasMetallicRoughnessTexture = false;
+    bool hasOcclusionTexture = false;
     bool hasEmissiveTexture = false;
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
 };
+
+using PBRMaterialBinding = MaterialGpuBinding;
 
 [[nodiscard]] VkDeviceSize alignedUniformBufferStride(
     VkDeviceSize elementSize,
@@ -75,11 +82,26 @@ struct PBRMaterialBinding {
 
 std::string toLower(std::string_view text);
 bool isDisabledSource(const std::string& sourceLower);
+bool isCombinedOrmBinding(
+    const asset::MaterialConfig::TextureBindingConfig& binding);
 float clampTexCoordSet(uint32_t texCoord);
 
 const asset::TextureData* resolveGltfTexture(
     std::string_view source,
     const asset::MaterialData& material);
+
+enum class MaterialTextureSemantic {
+    BaseColor,
+    Normal,
+    MetallicRoughness,
+    Occlusion,
+    Emissive,
+};
+
+const asset::TextureData* resolveGltfTexture(
+    std::string_view source,
+    const asset::MaterialData& material,
+    MaterialTextureSemantic semantic);
 
 VkFormat formatForBinding(
     const asset::MaterialConfig::TextureBindingConfig& binding,

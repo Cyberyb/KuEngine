@@ -1,22 +1,21 @@
 # Core 与公共 Runtime 设计
 
-核对日期：2026-09-14。
+核对日期：2026-10-07（M3-WP03 Runtime/RHI 接口核对）。
 
 源码：[Engine.h](../../src/KuEngine/Core/Engine.h)、[Engine.cpp](../../src/KuEngine/Core/Engine.cpp)、[ApplicationRunner](../../src/KuEngine/Core/ApplicationRunner.h)、[Window](../../src/KuEngine/Core/Window.h)、[Input](../../src/KuEngine/Core/Input.h)。
 
 ## 职责与配置
 
-Engine 聚合窗口、Vulkan 对象、渲染管线和 UI，负责创建、运行、交换链重建与销毁。四个示例均通过 `Engine::addPass<T>()`、`compile()`、`run()` 接入。
+Engine 聚合窗口、Vulkan 对象、渲染管线和 UI，负责创建、运行、交换链重建与销毁。所有示例均通过 `Engine::addPass<T>()`、`compile()`、`run()` 接入。
 
 | EngineConfig 字段 | 当前含义 |
 |---|---|
 | title / width / height | 窗口配置；默认 1280 × 720 |
 | framesInFlight | 默认且只允许 1 |
 | showStats | 控制统计面板显示 |
-| enableDepth | 是否创建 Runtime 深度附件，默认 false |
+| enableDepth | 是否为需要深度的 Graph Pass 选择 depth format，默认 false；不创建 RuntimeDepth |
 | depthFormat | 启用深度时，UNDEFINED 表示自动选择支持的格式 |
 | clearColor / clearDepthStencil | 附件清除值 |
-| depthLoadOp / depthStoreOp | 默认 CLEAR / DONT_CARE |
 | depthCompareOp | 默认 LESS，传入 RenderContext |
 
 是否启用深度由 enableDepth 决定，不能仅通过 depthFormat 是否为 UNDEFINED 判断。
@@ -36,8 +35,8 @@ flowchart TD
     CPU["开始 CPU render 计时"]
     UI["ImGui NewFrame / Pass update / 控制面板"]
     Begin["CommandList begin：计数清零、Query reset、起始时间戳"]
-    Bind["绑定 SwapChainColor / 可选 SceneDepth"]
-    Graph["Graph 节点执行：屏障、Scope、Pass draw"]
+    Bind["绑定外部 SwapChainColor；Graph 解析 internal targets"]
+    Graph["Graph 节点执行：屏障、Scope、Pass/callback draw/compute"]
     Stats["填入当前 draw 数及最近 CPU/GPU 时间"]
     Overlay["UI Overlay Scope"]
     Final["收束外部图像布局 / 结束时间戳 / CommandList end"]
@@ -53,11 +52,11 @@ FrameData 携带 frameIndex、imageIndex、deltaTime、totalTime 和本帧 `View
 
 ## 深度、布局与 resize
 
-Engine 持有深度 RHITexture，尺寸跟随 SwapChain；初次创建不执行独立上传命令，首次布局转换由 Graph 完成。默认不保留深度内容；配置 LOAD 必须同时设置 STORE，否则构造时拒绝。请求 LOAD 但内容尚未初始化时，Runtime 将其转为 CLEAR。
+Engine 不再 allocation/bind RuntimeDepth；对需要 Forward depth 的示例，`enableDepth` 只触发 depth format 选择，Graph-owned ForwardSceneDepth 由 Pipeline pool 创建。clear value 通过 RenderContext 传给 Graph target；旧 Runtime depth Load/Store 配置已移除。
 
-Engine 记录每个交换链图像的布局，并按名称绑定实际 Image、View、Extent、Aspect、Layout、Load/Store、Clear 和最终布局。Present 前颜色图像转换到 PRESENT_SRC_KHR。
+Engine 记录每个交换链图像的布局，并按 typed handle 绑定实际 Image、View、Extent、Aspect、usage、Layout、Load/Store、Clear 和最终布局。Pipeline 验证外部 descriptor 与 expected usage 的完整超集；Graph internal allocation 是 Pipeline-owned pool 的职责，Engine 不拥有它。Present 前颜色图像转换到 PRESENT_SRC_KHR。
 
-尺寸变化或交换链过期时，Engine 等待设备空闲、重建交换链与深度、清除外部绑定和通知 Pass::onResize。自动冒烟 resize 通过 GLFW 请求窗口尺寸变化；只有观察到新的 Swapchain generation 后才将 `resizeCompleted` 置为 true。最小化时暂缓绘制，主循环短暂休眠；Input 以 interaction epoch 切断跳过帧前后的拖动连续性。QA 已人工检查最小化/恢复，但 Win+D 和物理非等比 DPI 尚未覆盖。
+尺寸变化或交换链过期时，Engine 等待设备空闲、重建交换链、清除外部绑定和通知 Pass::onResize；Pipeline pool 随后重建 relative internal targets。自动冒烟 resize 通过 GLFW 请求窗口尺寸变化；只有观察到新的 Swapchain generation 后才将 `resizeCompleted` 置为 true。最小化时暂缓绘制，主循环短暂休眠；Input 以 interaction epoch 切断跳过帧前后的拖动连续性。QA 已人工检查最小化/恢复，但 Win+D 和物理非等比 DPI 尚未覆盖。
 
 退出时先等待 GPU，再销毁 Pass、UI 和图像/命令/同步/交换链及命令池，之后依次销毁 Device、Surface、Instance 和 Window，保证依赖对象仍存活。
 

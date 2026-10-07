@@ -49,7 +49,7 @@ flowchart TB
 | RenderGraph | 描述资源、使用方式、依赖、内部资源生命周期及状态转换计划 | 理解某种 PBR 公式；接管应用所有长期对象 |
 | RenderPipeline / RHI | 执行图计划，记录 Graphics/Compute/Copy 命令，提供 Vulkan 能力与诊断 | 生成游戏场景；为尚未使用的扩展建立庞大抽象 |
 
-现有类优先原地演进。当前 `RenderPipeline` 是图执行器，不因为引入 Forward/Deferred 就直接把它改造成承载所有着色逻辑的 Renderer。`MclarenRenderResources` 中可复用部分逐步迁入公共层，Mclaren 保留为示例装配入口。
+现有类优先原地演进。当前 `RenderPipeline` 是图执行器，不因为引入 Forward/Deferred 就直接把它改造成承载所有着色逻辑的 Renderer。M2 已将公共 ForwardProgram/ForwardRenderer 与长期 mesh/material/environment 资产落地，Mclaren 保留为示例装配入口；旧 `MclarenRenderResources` 不是运行主路径。M3 已落地 display-ready LDR 的 Graph-owned output；线性 HDR 统一输出、Deferred 和多帧边界仍是未来目标。
 
 ## 3. 借鉴 RDG 的部分
 

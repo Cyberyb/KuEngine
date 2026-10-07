@@ -52,6 +52,18 @@ bool isDisabledSource(const std::string& sourceLower)
     return sourceLower == "none" || sourceLower == "disabled" || sourceLower == "off";
 }
 
+bool isCombinedOrmBinding(
+    const asset::MaterialConfig::TextureBindingConfig& binding)
+{
+    if (!binding.hasChannelMapping) {
+        return false;
+    }
+    const std::string channels = toLower(binding.channelMapping);
+    return channels.find("occlusion") != std::string::npos
+        && channels.find("roughness") != std::string::npos
+        && channels.find("metallic") != std::string::npos;
+}
+
 float clampTexCoordSet(uint32_t texCoord)
 {
     return texCoord == 0 ? 0.0f : 1.0f;
@@ -84,8 +96,11 @@ const asset::TextureData* resolveGltfTexture(
         if (token == "normaltexture") {
             return &material.normalTexture;
         }
-        if (token == "metallicroughnesstexture" || token == "occlusiontexture" || token == "ormtexture") {
-            return &material.ormTexture;
+        if (token == "metallicroughnesstexture" || token == "ormtexture") {
+            return &material.metallicRoughnessTexture;
+        }
+        if (token == "occlusiontexture") {
+            return &material.occlusionTexture;
         }
         if (token == "emissivetexture") {
             return &material.emissiveTexture;
@@ -100,6 +115,59 @@ const asset::TextureData* resolveGltfTexture(
     return nullptr;
 }
 
+const asset::TextureData* resolveGltfTexture(
+    std::string_view source,
+    const asset::MaterialData& material,
+    MaterialTextureSemantic semantic)
+{
+    const std::string sourceLower = toLower(source);
+    if (isDisabledSource(sourceLower)
+        || sourceLower.rfind("gltf:", 0) != 0) {
+        return nullptr;
+    }
+    std::string_view rest = std::string_view(source).substr(5);
+    size_t start = 0;
+    while (start < rest.size()) {
+        const size_t separator = rest.find('|', start);
+        const size_t end = separator == std::string_view::npos
+            ? rest.size()
+            : separator;
+        const std::string token = toLower(rest.substr(start, end - start));
+        const bool matches =
+            (semantic == MaterialTextureSemantic::BaseColor
+                && token == "basecolortexture")
+            || (semantic == MaterialTextureSemantic::Normal
+                && token == "normaltexture")
+            || (semantic == MaterialTextureSemantic::MetallicRoughness
+                && (token == "metallicroughnesstexture"
+                    || token == "ormtexture"))
+            || (semantic == MaterialTextureSemantic::Occlusion
+                && (token == "occlusiontexture"
+                    || token == "ormtexture"))
+            || (semantic == MaterialTextureSemantic::Emissive
+                && token == "emissivetexture");
+        if (matches) {
+            switch (semantic) {
+                case MaterialTextureSemantic::BaseColor:
+                    return &material.baseColorTexture;
+                case MaterialTextureSemantic::Normal:
+                    return &material.normalTexture;
+                case MaterialTextureSemantic::MetallicRoughness:
+                    return &material.metallicRoughnessTexture;
+                case MaterialTextureSemantic::Occlusion:
+                    return &material.occlusionTexture;
+                case MaterialTextureSemantic::Emissive:
+                    return &material.emissiveTexture;
+            }
+        }
+        if (separator == std::string_view::npos) {
+            break;
+        }
+        start = separator + 1;
+    }
+    return nullptr;
+}
+
 VkFormat formatForBinding(
     const asset::MaterialConfig::TextureBindingConfig& binding,
     VkFormat defaultFormat,
@@ -111,7 +179,10 @@ VkFormat formatForBinding(
 
     const std::string colorSpace = toLower(binding.colorSpace);
     if (colorSpace == "srgb") {
-        if (bindingName == "normal" || bindingName == "orm") {
+        if (bindingName == "normal"
+            || bindingName == "metallicRoughness"
+            || bindingName == "occlusion"
+            || bindingName == "orm") {
             KU_WARN("PBRCommon: {} binding uses sRGB, forcing Linear", std::string(bindingName));
             return kDefaultLinearFormat;
         }

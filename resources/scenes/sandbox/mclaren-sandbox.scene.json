@@ -2,6 +2,7 @@
   "id": "mclaren-sandbox",
   "version": "1.0.0",
   "description": "Minimal v0.3 validation scene for model/material input",
+  "environment": "environments/hdr/citrus_orchard_road_puresky_4k.hdr",
   "camera": {
     "position": [0.0, 0.0, 4.0],
     "target": [0.0, 0.0, 0.0],

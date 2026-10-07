@@ -24,7 +24,6 @@ class RHIDevice;
 class SwapChain;
 class SyncManager;
 class CommandList;
-class RHITexture;
 class UIOverlay;
 class ValidationMessageTracker;
 namespace log {
@@ -43,8 +42,6 @@ struct EngineConfig {
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
     VkClearColorValue clearColor{{0.08f, 0.09f, 0.12f, 1.0f}};
     VkClearDepthStencilValue clearDepthStencil{1.0f, 0};
-    VkAttachmentLoadOp depthLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    VkAttachmentStoreOp depthStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     VkCompareOp depthCompareOp = VK_COMPARE_OP_LESS;
 };
 
@@ -82,6 +79,12 @@ struct EngineRunDecision {
     const EngineRunOptions& options,
     bool frameSubmitted,
     EngineRunResult& result) noexcept;
+[[nodiscard]] constexpr bool swapchainFormatRequiresPipelineRecompile(
+    VkFormat previous,
+    VkFormat current) noexcept
+{
+    return previous != current;
+}
 
 class Engine {
 public:
@@ -98,6 +101,14 @@ public:
     {
         m_pipelineCompiled = false;
         return m_renderPipeline->addPass<T>(std::forward<Args>(args)...);
+    }
+
+    template<typename Parameters>
+    CallbackRenderPass<Parameters>& addCallbackPass(
+        CallbackPassDesc<Parameters> desc)
+    {
+        m_pipelineCompiled = false;
+        return m_renderPipeline->addCallbackPass(std::move(desc));
     }
 
     void compile();
@@ -134,7 +145,6 @@ private:
     [[nodiscard]] bool render();
     void completePendingFrameStatistics();
     void recreateSwapChain();
-    void createDepthAttachment();
     [[nodiscard]] VkFormat resolveDepthFormat(VkFormat requested) const;
 
     EngineConfig m_config;
@@ -144,20 +154,17 @@ private:
     std::unique_ptr<SwapChain>     m_swapChain;
     std::unique_ptr<SyncManager>   m_syncManager;
     std::unique_ptr<CommandList>   m_commandList;
-    std::unique_ptr<RHITexture>    m_depthTexture;
     std::unique_ptr<UIOverlay>     m_ui;
     std::unique_ptr<RenderPipeline> m_renderPipeline;
 
     VkSurfaceKHR  m_surface = VK_NULL_HANDLE;
     VkCommandPool m_commandPool = VK_NULL_HANDLE;
     VkFormat      m_depthFormat = VK_FORMAT_UNDEFINED;
-    VkImageLayout m_depthImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     bool     m_running = false;
     bool     m_minimized = false;
     bool     m_resizeRequested = false;
     bool     m_pipelineCompiled = false;
-    bool     m_depthInitialized = false;
     uint64_t m_swapChainGeneration = 0;
     float    m_deltaTime = 0.0f;
     float    m_totalTime = 0.0f;

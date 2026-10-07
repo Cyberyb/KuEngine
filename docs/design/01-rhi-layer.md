@@ -1,6 +1,6 @@
 # RHI 当前设计
 
-核对日期：2026-09-14。源码目录：[src/KuEngine/RHI](../../src/KuEngine/RHI)。
+核对日期：2026-10-07。源码目录：[src/KuEngine/RHI](../../src/KuEngine/RHI)。
 
 ## 对象边界
 
@@ -13,9 +13,11 @@
 | CommandList | 从调用方 CommandPool 分配的命令缓冲、绘制统计、Timestamp QueryPool |
 | RHIBuffer | VkBuffer 与 VMA allocation，map/unmap/flush/invalidate |
 | RHITexture | 2D VkImage、ImageView 与 VMA allocation，不包含 Sampler |
-| RHIShader | 从磁盘 SPIR-V 创建 ShaderModule |
-| RHIPipeline | Graphics Pipeline 与 PipelineLayout |
+| RHIShader | 用显式 path/stage/entry 从磁盘 SPIR-V 创建 ShaderModule |
+| RHIPipeline / RHIComputePipeline | 前者为唯一 vertex/fragment stage 的 Graphics Pipeline；后者为独立 RAII Compute Pipeline |
+| RHIParameterSet | UniformBuffer、StorageBuffer、CombinedSampler、StorageImage 的基础 descriptor set 校验、写入和失败回滚 |
 | ResourceUploader | 临时命令池、Staging、拷贝和同步上传 |
+| RHIRenderGraphResourceAllocator | 为 Pipeline-owned internal Graph image/buffer 创建 RHITexture/RHIBuffer；不拥有 external binding |
 
 没有独立 RHIImage、RHICommandPool 或 RHIDescriptor 类。Engine 持有原始 VkCommandPool；Descriptor/Sampler 目前由 UI 或示例资源容器创建。
 
@@ -29,7 +31,7 @@
 
 ## 设备与交换链
 
-[RHIDevice](../../src/KuEngine/RHI/RHIDevice.cpp) 检查 Vulkan 1.3、SwapChain 扩展、dynamicRendering/synchronization2、Graphics/Present 队列和可用 Surface 格式/呈现模式/颜色附件用法。合格设备按类型和能力评分；优先寻找可同时绘制和呈现的队列族。
+[RHIDevice](../../src/KuEngine/RHI/RHIDevice.cpp) 检查 Vulkan 1.3、SwapChain 扩展、dynamicRendering/synchronization2、Graphics/Present 队列和可用 Surface 格式/呈现模式/颜色附件用法。合格设备按类型和能力评分；优先寻找可同时绘制和呈现、且支持 Compute 的图形队列，但不把 Compute 支持提升为全局硬要求。
 
 设备暴露实际 Properties、Features、Features13 和图形队列 timestampValidBits。时间戳能力是可选项，0 位时不创建计时 QueryPool。
 
@@ -39,7 +41,7 @@
 
 CommandList::begin 重置并开始命令缓冲；end 结束记录。SyncManager 等待 Fence，submit 前重置 Fence，提交时等待 imageAvailable、发出 renderFinished，present 等待 renderFinished。
 
-imageBarrier 使用传统 vkCmdPipelineBarrier，按 Layout 映射 Access Mask，调用方传入 Stage 和 Aspect。覆盖 mip 0、layer 0；不是子资源状态追踪器，也没有 Queue Ownership Transfer 或 Graph Buffer Barrier。
+Graph 同步路径使用 `vkCmdPipelineBarrier2` 批量提交 image/buffer barrier；状态规划提供显式 stage/access/layout/range。`CommandList` 提供 callback 所需的 fill/copy、Compute pipeline/parameter binding 与 dispatch 记录；传统 `imageBarrier` 仍为低层兼容入口。没有 Queue Ownership Transfer、多队列或 Async Compute 调度。
 
 直接 Vulkan 句柄仍可用。业务 draw 应通过 draw()/drawIndexed()，保证计数覆盖；新增原始 vkCmdDraw* 调用会绕过统计。
 
@@ -76,8 +78,8 @@ GPU 数值是两时间戳间的命令执行跨度，可能受调度/队列等待
 
 RHIBuffer 的 CreateInfo 显式提供大小、Usage、VMA 用法和分配标记。CPU 写入非 coherent 内存时通过 flush 保证可见；上层仍负责 GPU/CPU 使用时序。
 
-RHITexture 持有一个 2D 图像及视图，可用于颜色纹理或 Runtime 深度。Sampler 由上层装配。
+RHITexture 持有一个 2D 图像及视图，可用于颜色纹理或 Runtime 深度。Sampler 由上层装配。若 ImageView 创建在构造中失败，构造函数会回滚已分配的 VMA Image；RHIPipeline 构造失败也会清理已创建的 PipelineLayout/Pipeline，避免异常路径残留 Vulkan 对象。
 
 ResourceUploader 接收字节数据并创建 Staging，统一拷贝 Buffer/2D Texture，纹理走 UNDEFINED → TRANSFER_DST → SHADER_READ_ONLY。上传后 queueWaitIdle；当前是初始化期同步设施。
 
-GraphicsPipelineDesc 提供顶点布局、DescriptorSetLayout、PushConstantRange、颜色/深度格式、拓扑、混合、剔除和深度状态。RHIPipeline 采用 Dynamic Rendering，前两个 Shader 按 Vertex/Fragment 处理；没有 Compute Pipeline 或 Pipeline Cache。附件格式必须与 Runtime 实际选择一致。
+`ShaderDesc` 明确 path、stage 与 entry；GraphicsPipelineDesc 只接受唯一的 vertex/fragment shader，并提供顶点布局、DescriptorSetLayout、PushConstantRange、颜色/深度格式、拓扑、混合、剔除和深度状态。RHIPipeline 采用 Dynamic Rendering；RHIComputePipeline 独立创建/销毁 Compute Pipeline。没有 Pipeline Cache。附件格式必须与 Runtime 实际选择一致。

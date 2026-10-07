@@ -1,5 +1,7 @@
 #include "Model.h"
 
+#include <cctype>
+
 #include <KuEngine/Core/Log.h>
 
 #include <glm/glm.hpp>
@@ -529,6 +531,18 @@ MaterialData extractMaterialData(const tinygltf::Model& model, int materialIndex
 
     const tinygltf::Material& material = model.materials[static_cast<size_t>(materialIndex)];
 
+    out.shadingModel = material.extensions.contains("KHR_materials_unlit")
+        ? ShadingModel::Unlit
+        : ShadingModel::PBR;
+    const std::string alphaMode = material.alphaMode;
+    if (alphaMode == "MASK") {
+        out.alphaMode = AlphaMode::Mask;
+    } else if (alphaMode == "BLEND") {
+        out.alphaMode = AlphaMode::Blend;
+    }
+    out.alphaCutoff = static_cast<float>(material.alphaCutoff);
+    out.doubleSided = material.doubleSided;
+
     const auto& factor = material.pbrMetallicRoughness.baseColorFactor;
     if (factor.size() == 4) {
         out.baseColorFactor = glm::vec4(
@@ -557,23 +571,22 @@ MaterialData extractMaterialData(const tinygltf::Model& model, int materialIndex
 
     out.baseColorTransform = readTextureTransform(material.pbrMetallicRoughness.baseColorTexture);
     out.normalTransform = readTextureTransform(material.normalTexture);
-    out.ormTransform = readTextureTransform(material.pbrMetallicRoughness.metallicRoughnessTexture);
+    out.metallicRoughnessTransform = readTextureTransform(
+        material.pbrMetallicRoughness.metallicRoughnessTexture);
+    out.occlusionTransform = readTextureTransform(material.occlusionTexture);
     out.emissiveTransform = readTextureTransform(material.emissiveTexture);
 
     out.baseColorTexture = extractTextureFromTextureIndex(
         model,
         material.pbrMetallicRoughness.baseColorTexture.index);
     out.normalTexture = extractTextureFromTextureIndex(model, material.normalTexture.index);
-    out.ormTexture = extractTextureFromTextureIndex(
+    out.metallicRoughnessTexture = extractTextureFromTextureIndex(
         model,
         material.pbrMetallicRoughness.metallicRoughnessTexture.index);
+    out.occlusionTexture = extractTextureFromTextureIndex(
+        model,
+        material.occlusionTexture.index);
     out.emissiveTexture = extractTextureFromTextureIndex(model, material.emissiveTexture.index);
-
-    // If metallicRoughness texture is missing but occlusion texture exists, reuse it as ORM input.
-    if (!out.ormTexture.valid() && material.occlusionTexture.index >= 0) {
-        out.ormTexture = extractTextureFromTextureIndex(model, material.occlusionTexture.index);
-        out.ormTransform = readTextureTransform(material.occlusionTexture);
-    }
 
     return out;
 }
@@ -603,7 +616,7 @@ TextureData extractTextureFromTextureIndex(const tinygltf::Model& model, int tex
         return {};
     }
     if (image.bits != 8) {
-        throw std::runtime_error("Only 8-bit baseColor textures are supported");
+        throw std::runtime_error("Only 8-bit glTF textures are supported");
     }
 
     int channels = image.component;
@@ -675,7 +688,15 @@ MeshData ModelLoader::loadFromFile(const std::filesystem::path& path)
     std::string errors;
 
     bool ok = false;
-    if (path.extension() == ".glb") {
+    std::string extension = path.extension().string();
+    std::transform(
+        extension.begin(),
+        extension.end(),
+        extension.begin(),
+        [](unsigned char value) {
+            return static_cast<char>(std::tolower(value));
+        });
+    if (extension == ".glb") {
         ok = loader.LoadBinaryFromFile(&model, &errors, &warnings, path.string());
     } else {
         ok = loader.LoadASCIIFromFile(&model, &errors, &warnings, path.string());

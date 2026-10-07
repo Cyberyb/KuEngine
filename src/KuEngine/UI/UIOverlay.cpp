@@ -18,11 +18,10 @@ UIOverlay::UIOverlay(
     ::GLFWwindow* window,
     VkInstance instance,
     VkFormat imageFormat,
-    uint32_t imageCount,
-    VkFormat depthFormat)
+    uint32_t imageCount)
     : m_device(&device)
 {
-    init(window, instance, imageFormat, imageCount, depthFormat);
+    init(window, instance, imageFormat, imageCount);
 }
 
 UIOverlay::~UIOverlay()
@@ -74,8 +73,7 @@ void UIOverlay::init(
     ::GLFWwindow* window,
     VkInstance instance,
     VkFormat imageFormat,
-    uint32_t imageCount,
-    VkFormat depthFormat)
+    uint32_t imageCount)
 {
     if (m_initialized) {
         return;
@@ -96,7 +94,7 @@ void UIOverlay::init(
     pipelineRenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     pipelineRenderingInfo.colorAttachmentCount = 1;
     pipelineRenderingInfo.pColorAttachmentFormats = &imageFormat;
-    pipelineRenderingInfo.depthAttachmentFormat = depthFormat;
+    pipelineRenderingInfo.depthAttachmentFormat = uiOverlayDepthFormat;
     pipelineRenderingInfo.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
 
     ImGui_ImplVulkan_InitInfo initInfo{};

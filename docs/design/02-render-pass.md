@@ -1,6 +1,6 @@
 # RenderPass、RenderGraph 与执行器设计
 
-核对日期：2026-09-14。
+核对日期：2026-10-07。
 
 源码：[RenderPass](../../src/KuEngine/Render/RenderPass.h)、[RenderContext](../../src/KuEngine/Render/RenderContext.h)、[RenderGraph](../../src/KuEngine/Render/RenderGraph.h)、[RenderPipeline](../../src/KuEngine/Render/RenderPipeline.cpp)。
 
@@ -21,11 +21,13 @@ RenderPipeline 通过 unique_ptr 持有 Pass。compile(context) 初始化 Pass�
 
 兼容的无参 setup() 仍存在，默认 builder 版本会调用它。没有 shutdown() 接口，清理由析构完成。Pass enabled 改变不会重新编译 Graph；附件的内容依赖仍需满足执行约束。
 
+Mclaren 的资产替换请求由 UI/CLI 入队，实际候选构建和发布发生在其 `update()`。Engine 调用 update 前已经等待当前单帧 Fence、完成 acquire，且尚未开始命令录制；因此当前 `framesInFlight == 1` 下这是可销毁旧 GPU 资产并交换新 state 的安全点。resize 跳过帧不会调用 update，待处理请求保留至下一正常帧；该机制不增加常态 `deviceWaitIdle`，也不适用于多帧并行的 retire 策略。Mclaren 与 ForwardReuse 的业务绘制均通过公共 `ForwardRenderer`，写入 Graph 创建的 SceneColor/SceneDepth；Display 才以 SwapChainColor 为外部附件。
+
 ## 初始化契约
 
 RenderContext 包括 RHIDevice 引用、colorFormat、depthFormat、initialExtent、framesInFlight、depthCompareOp，以及设备属性/特性引用。hasDepth() 根据最终深度格式判断可用性。
 
-运行时资源名称集中在 runtime_resource：SwapChainColor 和 SceneDepth。示例只引用逻辑名，实际图像由 Engine 每帧绑定。
+运行时外部资源名称集中在 runtime_resource：SwapChainColor。示例只引用逻辑名，实际交换链图像由 Engine 每帧绑定；ForwardSceneColor/ForwardSceneDepth 是 Graph internal targets。
 
 ## 声明与编译
 
@@ -39,7 +41,7 @@ flowchart LR
     Setup --> Access --> Dependency --> Order --> Plan
 ```
 
-ResourceDesc 目前只有 name 和 external。createResource 创建逻辑记录；importExternal 导入逻辑名称。它们都不会分配 Vulkan Image/Buffer。
+资源以 typed `ImageHandle`/`BufferHandle` 声明，包含 index、global graph generation 和 kind。create/import 记录完整 ImageDesc/BufferDesc；同名必须有相同 kind、ownership 和 descriptor。RenderPipeline 在 compile 后通过资源池分配 internal Image/Buffer，external 始终借用；具体 descriptor、pool、resize 与 export 生命周期见 [Graph 资源](12-graph-resources.md)。
 
 colorAttachment/depthAttachment 隐式声明写使用。PassAttachment 保存 Color/Depth 类型和 Load/Store 策略：
 - Load：RuntimeDefault、Load、Clear、DontCare；
@@ -51,7 +53,7 @@ colorAttachment/depthAttachment 隐式声明写使用。PassAttachment 保存 Co
 
 ExternalImageBindingInfo 提供 Image、ImageView、Extent、当前/最终 Layout、Aspect、清除值、默认 Load/Store 和 contentsValid。
 
-每个节点执行时，RenderPipeline 先发出屏障并对齐布局；有附件的节点校验绑定、类型和尺寸，解析 Load/Store，开启独立 Dynamic Rendering Scope。Scope 的 `renderArea` 始终覆盖完整附件；业务 Pass 的 viewport/scissor 使用 `FrameData::viewerLayout.sceneFramebuffer`，因此展开侧栏只缩小场景绘制区域，UI Overlay 仍能覆盖完整交换链。没有附件的节点直接执行回调。
+每个节点执行时，RenderPipeline 先发出屏障并对齐布局；有附件的节点校验绑定、类型和尺寸，解析 Load/Store，开启独立 Dynamic Rendering Scope。Scope 的 `renderArea` 始终覆盖完整附件；业务 Pass 的 viewport/scissor 使用 `FrameData::viewerLayout.sceneFramebuffer`，因此展开侧栏只缩小场景绘制区域，UI Overlay 仍能覆盖完整交换链。没有附件的节点可执行普通 Pass 或 Pipeline 拥有的 `CallbackRenderPass`。
 
 Load 请求要求此前 contentsValid；Store=STORE 才保留可供后续使用的内容。缺失外部绑定、非法附件或无效 Load 会报错。
 
@@ -65,6 +67,6 @@ finalizeExternalImages 收束外部图像到 finalLayout，供 Engine 提交和�
 
 ## 当前约束
 
-Graph 不管理真实内部资源、Buffer Barrier、资源别名、子资源范围、多 Queue 或异步 Compute；屏障规划偏保守，没有最小化保证。RenderPipeline 同时负责执行、外部绑定和 ImGui Graph Debug 面板。其执行摘要包含计划/已应用屏障、资源转换、Scope 和跳过计数。
+Graph 已管理真实 internal Image/Buffer allocation 和 synchronization2 image/buffer barrier；纯 CPU planner 在 disabled mask 后验证 RAW/WAR/WAW、range、writer epoch 与 first-use，并输出批量 barrier。RenderPipeline 仅在成功录制后提交 execution state/content shadow。`CallbackRenderPass` 经过 declare/prepare/execute：参数只读、recompile 使 handle 失效、只稳定借用 RHIDevice；其 `GraphCommandContext` 仅解析已声明 handle/use/range，并记录 fill/copy、Compute pipeline/parameter binding/dispatch。受约束 native scope 必须声明已知 capability/side-effect 与 use 子集，执行期外失效；unknown flag 在构造时拒绝，attachment scope 禁止 Compute/Transfer。Forward 已将 SceneColor/Depth 作为 Graph internal targets，并经 Display sampled→SwapChain→Overlay→Present；资源别名、多 Queue 仍未实现。旧对象只能标为 `TrustedLegacyObject`，不能自动识别任意裸 Vulkan 命令。RenderPipeline 同时负责 candidate compile/resize、internal pool、external binding、执行和 ImGui Graph Debug 面板。
 
 当前 CPU 测试覆盖逻辑依赖、循环/缺失依赖、Hazard、附件声明等；不是完整 GPU 执行回归。测试入口：[test_render_graph.cpp](../../tests/core/test_render_graph.cpp)。

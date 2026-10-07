@@ -3,6 +3,7 @@
 #include <KuEngine/Asset/AssetPath.h>
 #include <KuEngine/Asset/HDRImage.h>
 #include <KuEngine/Asset/Scene.h>
+#include <KuEngine/KuEngine.h>
 #include <KuEngine/Render/PBRResources.h>
 
 #include <filesystem>
@@ -69,6 +70,9 @@ TEST(SceneLoaderTest, DeduplicatesNormalizedPathsAndKeepsStableHandles)
     EXPECT_EQ(scene.findMesh(ku::asset::invalidMeshHandle), nullptr);
     EXPECT_EQ(scene.findMesh(1), nullptr);
     EXPECT_TRUE(scene.valid());
+    scene.instances[1].mesh = ku::asset::invalidMeshHandle;
+    EXPECT_FALSE(scene.valid());
+    scene.instances[1].mesh = 0;
     EXPECT_EQ(
         scene.environment.sourcePath,
         ku::asset::resolveAssetPath(
@@ -142,6 +146,48 @@ TEST(SceneLoaderTest, RejectsEmptyOrNonDrawableNodesWithoutPublishing)
     EXPECT_FLOAT_EQ(published.lighting.intensity, 9.0f);
 }
 
+TEST(SceneLoaderTest, RejectsOutOfRangeGeometryWithoutPublishing)
+{
+    ku::asset::SceneLoadDescription description = makeSceneDescription();
+    ku::asset::SceneData published{};
+    published.camera.fovYDeg = 23.0f;
+    std::string error;
+    EXPECT_FALSE(ku::asset::SceneLoader::load(
+        description,
+        published,
+        &error,
+        [](const std::filesystem::path&) {
+            ku::asset::MeshData mesh = makeDrawableMesh();
+            mesh.indices[1] = 99;
+            return mesh;
+        }));
+    EXPECT_NE(error.find("no drawable mesh"), std::string::npos);
+    EXPECT_FLOAT_EQ(published.camera.fovYDeg, 23.0f);
+    EXPECT_TRUE(published.meshes.empty());
+    EXPECT_TRUE(published.instances.empty());
+}
+
+TEST(SceneLoaderTest, RejectsMeshesWithoutDrawableSubMeshRanges)
+{
+    ku::asset::SceneLoadDescription description = makeSceneDescription();
+    ku::asset::SceneData published{};
+    published.camera.fovYDeg = 31.0f;
+    std::string error;
+    EXPECT_FALSE(ku::asset::SceneLoader::load(
+        description,
+        published,
+        &error,
+        [](const std::filesystem::path&) {
+            ku::asset::MeshData mesh = makeDrawableMesh();
+            mesh.subMeshes[0].indexCount = 0;
+            return mesh;
+        }));
+    EXPECT_NE(error.find("no drawable mesh"), std::string::npos);
+    EXPECT_FLOAT_EQ(published.camera.fovYDeg, 31.0f);
+    EXPECT_TRUE(published.meshes.empty());
+    EXPECT_TRUE(published.instances.empty());
+}
+
 TEST(HDRImageTest, ValidatesDimensionsPayloadAndOverflow)
 {
     ku::asset::HDRImageData image{};
@@ -180,6 +226,14 @@ TEST(HDRImageTest, DecodeFailureDoesNotPublishOutput)
 
 TEST(PBRResourcePlanTest, SuppliesFallbackForEmptyMaterials)
 {
+    EXPECT_EQ(ku::pbr_material_binding::baseColor, 0u);
+    EXPECT_EQ(ku::pbr_material_binding::normal, 1u);
+    EXPECT_EQ(ku::pbr_material_binding::metallicRoughness, 2u);
+    EXPECT_EQ(ku::pbr_material_binding::occlusion, 3u);
+    EXPECT_EQ(ku::pbr_material_binding::emissive, 4u);
+    EXPECT_EQ(ku::pbr_material_binding::count, 5u);
+    EXPECT_EQ(ku::pbr_environment_binding::environment, 0u);
+
     ku::asset::MeshData mesh = makeDrawableMesh(0);
     mesh.subMeshes[0].materialIndex = 9;
     const ku::PBRMaterialBuildPlan plan = ku::buildPBRMaterialPlan(mesh);
@@ -198,4 +252,23 @@ TEST(PBRResourcePlanTest, PreservesValidIndicesAndFallsBackInvalidOnes)
     const ku::PBRMaterialBuildPlan plan = ku::buildPBRMaterialPlan(mesh);
     EXPECT_EQ(plan.materialCount, 3u);
     EXPECT_EQ(plan.subMeshMaterialIndices, (std::vector<uint32_t>{2, 0}));
+}
+
+TEST(PBRResourcePlanTest, DistinguishesMissingInvalidAndReadyOptionalTextures)
+{
+    ku::asset::TextureData texture{};
+    EXPECT_EQ(
+        ku::classifyOptionalTexturePayload(texture),
+        ku::PBROptionalTexturePayload::Missing);
+
+    texture.width = 1;
+    texture.height = 1;
+    EXPECT_EQ(
+        ku::classifyOptionalTexturePayload(texture),
+        ku::PBROptionalTexturePayload::Invalid);
+
+    texture.rgba8 = {255, 255, 255, 255};
+    EXPECT_EQ(
+        ku::classifyOptionalTexturePayload(texture),
+        ku::PBROptionalTexturePayload::Ready);
 }

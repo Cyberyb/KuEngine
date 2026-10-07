@@ -1,0 +1,81 @@
+{
+  "asset": {"version": "2.0", "generator": "KuEngine ForwardReuse semantic card"},
+  "extensionsUsed": ["KHR_texture_transform"],
+  "buffers": [{
+    "byteLength": 642,
+    "uri": "data:application/octet-stream;base64,zcxMv2ZmJr/NzEy+AAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAAAAM3MTD9mZia/zcxMvgAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAgD/NzEw/ZmYmP83MTL4AAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAIA/zcxMv2ZmJj/NzEy+AAAAAAAAAAAAAIA/AAAAAAAAgD8AAIA/AAAAAAAAAQACAAAAAgADADMzM78AAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAAADNzEy9AAAAAAAAAAAAAAAAAAAAAAAAgD8AAIA/AAAAAAAAAAAAAIA/zcxMvc3MDD8AAAAAAAAAAAAAAAAAAIA/AACAPwAAgD8AAIA/AACAPzMzM7/NzAw/AAAAAAAAAAAAAAAAAACAPwAAAAAAAIA/AACAPwAAAAAAAAEAAgAAAAIAAwAAAIC+Zmbmvo/C9T0AAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAZmYmP2Zm5r6PwvU9AAAAAAAAAAAAAIA/AACAPwAAAAAAAAAAAACAP2ZmJj8zM7M+j8L1PQAAAAAAAAAAAACAPwAAgD8AAIA/AACAPwAAgD8AAIC+MzOzPo/C9T0AAAAAAAAAAAAAgD8AAAAAAACAPwAAgD8AAAAAAAABAAIAAAACAAMAmpkZPs3MTD7sUTg+AAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAACAPzMzMz/NzEw+7FE4PgAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAAACamdk+ZmYmP+xROD4AAAAAAAAAAAAAgD8AAAA/AACAPwAAgD8AAAA/AAABAAIA"
+  }],
+  "bufferViews": [
+    {"buffer":0,"byteOffset":0,"byteLength":160,"byteStride":40,"target":34962},
+    {"buffer":0,"byteOffset":160,"byteLength":12,"target":34963},
+    {"buffer":0,"byteOffset":172,"byteLength":160,"byteStride":40,"target":34962},
+    {"buffer":0,"byteOffset":332,"byteLength":12,"target":34963},
+    {"buffer":0,"byteOffset":344,"byteLength":160,"byteStride":40,"target":34962},
+    {"buffer":0,"byteOffset":504,"byteLength":12,"target":34963},
+    {"buffer":0,"byteOffset":516,"byteLength":120,"byteStride":40,"target":34962},
+    {"buffer":0,"byteOffset":636,"byteLength":6,"target":34963}
+  ],
+  "accessors": [
+    {"bufferView":0,"byteOffset":0,"componentType":5126,"count":4,"type":"VEC3","min":[-0.8,-0.65,-0.2],"max":[0.8,0.65,-0.2]},
+    {"bufferView":0,"byteOffset":12,"componentType":5126,"count":4,"type":"VEC3"},
+    {"bufferView":0,"byteOffset":24,"componentType":5126,"count":4,"type":"VEC2"},
+    {"bufferView":0,"byteOffset":32,"componentType":5126,"count":4,"type":"VEC2"},
+    {"bufferView":1,"componentType":5123,"count":6,"type":"SCALAR"},
+    {"bufferView":2,"byteOffset":0,"componentType":5126,"count":4,"type":"VEC3","min":[-0.7,0,0],"max":[-0.05,0.55,0]},
+    {"bufferView":2,"byteOffset":12,"componentType":5126,"count":4,"type":"VEC3"},
+    {"bufferView":2,"byteOffset":24,"componentType":5126,"count":4,"type":"VEC2"},
+    {"bufferView":2,"byteOffset":32,"componentType":5126,"count":4,"type":"VEC2"},
+    {"bufferView":3,"componentType":5123,"count":6,"type":"SCALAR"},
+    {"bufferView":4,"byteOffset":0,"componentType":5126,"count":4,"type":"VEC3","min":[-0.25,-0.45,0.12],"max":[0.65,0.35,0.12]},
+    {"bufferView":4,"byteOffset":12,"componentType":5126,"count":4,"type":"VEC3"},
+    {"bufferView":4,"byteOffset":24,"componentType":5126,"count":4,"type":"VEC2"},
+    {"bufferView":4,"byteOffset":32,"componentType":5126,"count":4,"type":"VEC2"},
+    {"bufferView":5,"componentType":5123,"count":6,"type":"SCALAR"},
+    {"bufferView":6,"byteOffset":0,"componentType":5126,"count":3,"type":"VEC3","min":[0.15,0.2,0.18],"max":[0.7,0.65,0.18]},
+    {"bufferView":6,"byteOffset":12,"componentType":5126,"count":3,"type":"VEC3"},
+    {"bufferView":6,"byteOffset":24,"componentType":5126,"count":3,"type":"VEC2"},
+    {"bufferView":6,"byteOffset":32,"componentType":5126,"count":3,"type":"VEC2"},
+    {"bufferView":7,"componentType":5123,"count":3,"type":"SCALAR"}
+  ],
+  "images": [
+    {"name":"mask-checker","uri":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAG0lEQVR42mP4f0fj/383OQYYzYDMAdEMBFUAALs0IymYFTDCAAAAAElFTkSuQmCC"},
+    {"name":"blend-gradient","uri":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAQ0lEQVR42gXBoQEAQAQFUOOYRJYVQyg3hKL8XRST2MW9R6wnpuup/UZRxHFusS+jawJCjHuGrUTLAE7cV9Yr2e3TeB9siCLZ396+cQAAAABJRU5ErkJggg=="},
+    {"name":"metallic-roughness-stripes","uri":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAMklEQVR42hXIMQEAMAgEMWzgAFfMFcaCtRfxPYYsCVfaDwulw9UEFuqLIbDQXIjAQvIHA8IwmRCJ254AAAAASUVORK5CYII="},
+    {"name":"occlusion-checker","uri":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAGUlEQVR42mNQZmD4D8L/oZgBxgiAYgaCKgBYTRm1dDuO9AAAAABJRU5ErkJggg=="},
+    {"name":"emissive-asymmetric-l","uri":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAH0lEQVR42mP4L7LlPwwzMDD8Z4AzYBhDAJkj8j/lPwDmghpLFYuaHwAAAABJRU5ErkJggg=="}
+  ],
+  "samplers": [{"magFilter":9728,"minFilter":9728,"wrapS":10497,"wrapT":10497}],
+  "textures": [
+    {"sampler":0,"source":0},
+    {"sampler":0,"source":1},
+    {"sampler":0,"source":2},
+    {"sampler":0,"source":3},
+    {"sampler":0,"source":4}
+  ],
+  "materials": [
+    {
+      "name":"opaque-independent-mr-ao-emissive",
+      "pbrMetallicRoughness":{
+        "baseColorFactor":[0.62,0.68,0.78,1],
+        "metallicFactor":0.9,
+        "roughnessFactor":0.85,
+        "metallicRoughnessTexture":{"index":2,"texCoord":1,"extensions":{"KHR_texture_transform":{"offset":[0.1,0.05],"scale":[1.4,0.8],"rotation":0.35,"texCoord":1}}}
+      },
+      "occlusionTexture":{"index":3,"texCoord":0,"strength":0.9,"extensions":{"KHR_texture_transform":{"offset":[0.15,0],"scale":[0.55,1.5],"rotation":-0.15,"texCoord":0}}},
+      "emissiveFactor":[0.9,0.9,0.9],
+      "emissiveTexture":{"index":4,"texCoord":1,"extensions":{"KHR_texture_transform":{"offset":[0.12,0.18],"scale":[0.8,1.2],"rotation":-0.25,"texCoord":1}}}
+    },
+    {"name":"mask-checker-cutout","alphaMode":"MASK","alphaCutoff":0.5,"pbrMetallicRoughness":{"baseColorTexture":{"index":0},"metallicFactor":0,"roughnessFactor":0.8}},
+    {"name":"blend-over-opaque","alphaMode":"BLEND","pbrMetallicRoughness":{"baseColorTexture":{"index":1},"metallicFactor":0,"roughnessFactor":0.45}},
+    {"name":"double-sided-back-visible-cyan","doubleSided":true,"emissiveFactor":[0.05,0.35,0.45],"pbrMetallicRoughness":{"baseColorFactor":[0.04,0.9,1,1],"metallicFactor":0,"roughnessFactor":0.6}}
+  ],
+  "meshes": [{"name":"shared-semantic-card","primitives":[
+    {"attributes":{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2,"TEXCOORD_1":3},"indices":4,"material":0},
+    {"attributes":{"POSITION":5,"NORMAL":6,"TEXCOORD_0":7,"TEXCOORD_1":8},"indices":9,"material":1},
+    {"attributes":{"POSITION":10,"NORMAL":11,"TEXCOORD_0":12,"TEXCOORD_1":13},"indices":14,"material":2},
+    {"attributes":{"POSITION":15,"NORMAL":16,"TEXCOORD_0":17,"TEXCOORD_1":18},"indices":19,"material":3}
+  ]}],
+  "nodes": [{"mesh":0}],
+  "scenes": [{"nodes":[0]}],
+  "scene": 0
+}

@@ -1,6 +1,6 @@
 # KuEngine 产品需求
 
-更新日期：2026-09-14。本文是产品目标与功能范围的维护入口，不表示这些能力已经全部实现。当前实现见 [宏观架构](current-architecture.md)，开发顺序见 [roadmap](roadmap.md)，架构取舍见 [目标架构](target-architecture.md)。
+更新日期：2026-10-07。本文是产品目标与功能范围的维护入口，不表示这些能力已经全部实现。当前实现见 [宏观架构](current-architecture.md)，开发顺序见 [roadmap](roadmap.md)，架构取舍见 [目标架构](target-architecture.md)。
 
 ## 1. 产品定位
 
@@ -56,19 +56,19 @@ P0 表示首个完整产品闭环必需，不表示所有 P0 都必须先于所�
 
 | 编号 | 功能与目标 | 优先级 | 当前状态与缺口 | 阶段 |
 |---|---|---|---|---|
-| REQ-01 | 公共 Runtime 与可复用 Vulkan 封装 | P0 | 部分实现：四示例已共用 Runtime；通用材质/环境装配仍有示例耦合 | M2、M3 |
-| REQ-02 | 模型导入 | P0 | 部分实现：已有 glTF/GLB 加载；缺通用查看器导入入口和完整实例/材质语义 | M2 |
-| REQ-03 | 天空盒/HDR 导入 | P0 | 部分实现：Mclaren 已加载 HDR 并绘制天空背景；缺公共环境管理和交互替换 | M2 |
-| REQ-04 | 多 ShadingModel：PBR、Unlit | P0 | 部分实现：已有 PBR；没有统一 ShadingModel 数据与分派，彩色示例不等于通用 Unlit 材质 | M2、M4 |
-| REQ-05 | 公共前向渲染路径 | P0 | 部分实现：已有直接绘制的 PBR 路径；尚未形成公共 Forward Renderer | M2、M3 |
+| REQ-01 | 公共 Runtime 与可复用 Vulkan 封装 | P0 | 部分实现：示例共用 Runtime，公共 SceneData/GPU 资源与 Graph-owned Forward target/display 已验收；Deferred、逐帧并行与更通用的 Renderer 装配仍未实现 | M2、M3、M4 |
+| REQ-02 | 模型导入 | P0 | 已验收 M2：glTF/GLB、规范路径、MeshHandle/实例 TRS/material override、公共 GPU mesh 与 Mclaren 同步替换/失败保留。缺通用导入 UI、异步/多帧回收与跨场景缓存 | M2、M5 |
+| REQ-03 | 天空盒/HDR 导入 | P0 | 部分实现：严格 HDR CPU loader、基础 lat-long 环境、Mclaren 替换/失败保留已验收；完整 IBL、像素 readback 与色度正确 HDR 输出仍未实现 | M2、M4 |
+| REQ-04 | 多 ShadingModel：PBR、Unlit | P0 | 部分实现：Forward PBR/Unlit 与材质语义已验收；Deferred 的等价分派/GBuffer 仍待 M4 | M2、M4 |
+| REQ-05 | 公共前向渲染路径 | P0 | 部分实现：公共 ForwardProgram/ForwardRenderer、Graph-owned SceneColor/Depth、Display 与 UI/Present 交接已验收并由 Mclaren/ForwardReuse 复用；线性 HDR 统一输出与 Deferred 仍待 M4 | M2、M3、M4 |
 | REQ-06 | 延迟渲染路径 | P0 | 未实现：缺 GBuffer、延迟光照和与前向共用的输出链路 | M4 |
 | REQ-07 | 实时性能参数预览 | P0 | 已验收：FPS/Frame 为当前主循环样本；CPU/GPU/Draw/Vertices 为同一 completed submit，并明确 GPU 等待/不支持状态；已迁入可收展右侧栏 | M0 完成、M1 集成 |
-| REQ-08 | 可折叠侧边 UI 与参数检查 | P0 | 部分实现：唯一右侧栏已验收，含 Performance、Parameters / Scene、Render Graph 以及收起/紧凑/重开；现有 Pass 参数已迁入。缺实例选择及公共材质/相机/灯光数据接入 | M1 框架完成、M2 数据接入 |
+| REQ-08 | 可折叠侧边 UI 与参数检查 | P0 | 部分实现：唯一右侧栏及 Mclaren 模型/HDR、材质、相机、灯光、环境调参已验收；ForwardReuse 提供受控语义/零光/背面预设。仍缺通用实例选择与逐实例编辑工作流 | M1、M2 后续 UI |
 | REQ-09 | 鼠标长按拖动查看 | P0 | 已验收：Mclaren OrbitInspect 保留模型旋转与缩放；输入仅在逻辑场景区域、未被 UI 捕获且窗口活动时生效，失焦/恢复以 epoch 清除陈旧拖动 | M1 完成 |
 | REQ-10 | WASDQE 自由摄像机 | P0 | 已验收：Mclaren 提供 FreeFly，右键场景焦点后 WASDQE 六向移动、速度、yaw/pitch、双向模式交接与 reset；UI 键盘/文本捕获、失焦、epoch 和 held 输入受隔离。当前仍是 Mclaren 示例层，Cube 未接入 | M1 完成 |
-| REQ-11 | RDG 风格的资源声明与执行 | P0 | 部分实现：已有依赖图和附件执行；缺图内资源分配、完整状态描述、Buffer/Compute 链路 | M3 |
-| REQ-12 | Vulkan 原生扩展入口 | P0 | 部分实现：已有原生句柄/命令访问；缺与 Graph 生命周期及状态协同的明确契约 | M3 |
-| REQ-13 | 小型引擎上的特性开发闭环 | P0 | 部分实现：已有四示例；需证明新特性可复用查看器、资源与调度，无需复制 Runtime | M3、M4 |
+| REQ-11 | RDG 风格的资源声明与执行 | P0 | 部分实现：typed resource、allocation/resize/export、synchronization2、Compute callback、Graph-owned Forward SceneColor/Depth/display 已验收；仍缺资源别名与多 Queue | M3 |
+| REQ-12 | Vulkan 原生扩展入口 | P0 | 部分实现：native scope 已以 capability/side-effect/use 子集和执行生命周期约束接入；旧对象仅 TrustedLegacyObject，不自动检测任意裸 Vulkan 命令 | M3 |
+| REQ-13 | 小型引擎上的特性开发闭环 | P0 | 部分实现：示例与 Probe 复用 Runtime、资源与调度验证 Graphics/Compute/native callback/Forward display；Deferred 与最终产品闭环仍待 M4 | M3、M4 |
 | REQ-14 | 正确性、可复现与扩展性能观测 | P1 | 部分实现：M0 已有 CPU/Debug GPU Smoke、Validation/初始化负例、有限 resize 和统计基线；仍缺像素回归、逐帧资源隔离、逐 Pass 观测及不支持 Timestamp 的实机覆盖 | M0 完成、M5 强化 |
 
 REQ-14 中影响 P0 功能正确性的测试随对应阶段完成，不能以 P1 为由延后必要的同步和生命周期验证。

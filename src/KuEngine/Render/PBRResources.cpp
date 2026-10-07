@@ -17,7 +17,9 @@ PBRMaterialBuildPlan buildPBRMaterialPlan(const asset::MeshData& mesh)
 {
     PBRMaterialBuildPlan plan{};
     const size_t sourceCount = mesh.materials.size();
-    if (sourceCount > std::numeric_limits<uint32_t>::max() / 4u) {
+    if (sourceCount
+        > std::numeric_limits<uint32_t>::max()
+            / pbr_material_binding::count) {
         throw std::overflow_error("PBR material count exceeds uint32_t");
     }
     plan.materialCount = std::max(
@@ -33,6 +35,116 @@ PBRMaterialBuildPlan buildPBRMaterialPlan(const asset::MeshData& mesh)
     return plan;
 }
 
+PBROptionalTexturePayload classifyOptionalTexturePayload(
+    const asset::TextureData& data) noexcept
+{
+    if (data.valid()) {
+        return PBROptionalTexturePayload::Ready;
+    }
+    return data.width == 0 && data.height == 0 && data.rgba8.empty()
+        ? PBROptionalTexturePayload::Missing
+        : PBROptionalTexturePayload::Invalid;
+}
+
+bool hasTextureSourceOverride(
+    const asset::MaterialConfig::TextureBindingConfig& binding) noexcept
+{
+    return binding.hasSource;
+}
+
+PBRMaterialTextureSourcePlan buildPBRMaterialTextureSourcePlan(
+    const asset::MaterialData& material,
+    const asset::MaterialConfig* config)
+{
+    PBRMaterialTextureSourcePlan plan{};
+    plan.baseColor = &material.baseColorTexture;
+    plan.normal = &material.normalTexture;
+    plan.metallicRoughness = &material.metallicRoughnessTexture;
+    plan.occlusion = &material.occlusionTexture;
+    plan.emissive = &material.emissiveTexture;
+    if (config == nullptr) {
+        return plan;
+    }
+
+    const auto resolve =
+        [&](const asset::MaterialConfig::TextureBindingConfig* binding,
+            const asset::TextureData* embedded,
+            MaterialTextureSemantic semantic,
+            bool legacyCombined,
+            uint32_t bindingIndex) {
+            if (binding == nullptr || !hasTextureSourceOverride(*binding)) {
+                return embedded;
+            }
+            const std::string source = toLower(binding->source);
+            if (isDisabledSource(source)) {
+                return static_cast<const asset::TextureData*>(nullptr);
+            }
+            const asset::TextureData* resolved =
+                resolveGltfTexture(binding->source, material, semantic);
+            if (legacyCombined
+                && (resolved == nullptr
+                    || classifyOptionalTexturePayload(*resolved)
+                        != PBROptionalTexturePayload::Ready)) {
+                const asset::TextureData* combined =
+                    resolveGltfTexture(binding->source, material);
+                if (combined != nullptr && combined->valid()) {
+                    resolved = combined;
+                }
+            }
+            if (resolved == nullptr) {
+                plan.unsupportedOverrides[bindingIndex] = true;
+            }
+            return resolved;
+        };
+
+    plan.baseColor = resolve(
+        &config->baseColorBinding,
+        plan.baseColor,
+        MaterialTextureSemantic::BaseColor,
+        false,
+        pbr_material_binding::baseColor);
+    plan.normal = resolve(
+        &config->normalBinding,
+        plan.normal,
+        MaterialTextureSemantic::Normal,
+        false,
+        pbr_material_binding::normal);
+
+    const bool hasCombinedOrm = isCombinedOrmBinding(config->ormBinding);
+    const auto sourceBinding =
+        [&](const asset::MaterialConfig::TextureBindingConfig& preferred) {
+            if (hasTextureSourceOverride(preferred)) {
+                return &preferred;
+            }
+            if (hasCombinedOrm && hasTextureSourceOverride(config->ormBinding)) {
+                return &config->ormBinding;
+            }
+            return static_cast<
+                const asset::MaterialConfig::TextureBindingConfig*>(nullptr);
+        };
+    const auto* mrBinding = sourceBinding(config->metallicRoughnessBinding);
+    const auto* aoBinding = sourceBinding(config->occlusionBinding);
+    plan.metallicRoughness = resolve(
+        mrBinding,
+        plan.metallicRoughness,
+        MaterialTextureSemantic::MetallicRoughness,
+        mrBinding == &config->ormBinding,
+        pbr_material_binding::metallicRoughness);
+    plan.occlusion = resolve(
+        aoBinding,
+        plan.occlusion,
+        MaterialTextureSemantic::Occlusion,
+        aoBinding == &config->ormBinding,
+        pbr_material_binding::occlusion);
+    plan.emissive = resolve(
+        &config->emissiveBinding,
+        plan.emissive,
+        MaterialTextureSemantic::Emissive,
+        false,
+        pbr_material_binding::emissive);
+    return plan;
+}
+
 PBRMaterialResources::PBRMaterialResources() = default;
 
 PBRMaterialResources::~PBRMaterialResources()
@@ -45,7 +157,8 @@ bool PBRMaterialResources::initialize(
     TextureFactory& textureFactory,
     const asset::MeshData& mesh,
     const asset::MaterialConfig* config,
-    std::string& errorMessage)
+    std::string& errorMessage,
+    VkDescriptorSetLayout externalLayout)
 {
     reset();
     errorMessage.clear();
@@ -54,29 +167,34 @@ bool PBRMaterialResources::initialize(
     try {
         const PBRMaterialBuildPlan plan = buildPBRMaterialPlan(mesh);
 
-        std::array<VkDescriptorSetLayoutBinding, 4> layoutBindings{};
-        for (uint32_t i = 0; i < layoutBindings.size(); ++i) {
-            layoutBindings[i].binding = i;
-            layoutBindings[i].descriptorType =
-                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            layoutBindings[i].descriptorCount = 1;
-            layoutBindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        if (externalLayout != VK_NULL_HANDLE) {
+            m_descriptorSetLayout = externalLayout;
+            m_ownsDescriptorSetLayout = false;
+        } else {
+            std::array<VkDescriptorSetLayoutBinding,
+                pbr_material_binding::count> layoutBindings{};
+            for (uint32_t i = 0; i < layoutBindings.size(); ++i) {
+                layoutBindings[i].binding = i;
+                layoutBindings[i].descriptorType =
+                    VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                layoutBindings[i].descriptorCount = 1;
+                layoutBindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+            }
+            VkDescriptorSetLayoutCreateInfo layoutInfo{};
+            layoutInfo.sType =
+                VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+            layoutInfo.bindingCount =
+                static_cast<uint32_t>(layoutBindings.size());
+            layoutInfo.pBindings = layoutBindings.data();
+            VK_CHECK(vkCreateDescriptorSetLayout(
+                m_device, &layoutInfo, nullptr, &m_descriptorSetLayout));
+            m_ownsDescriptorSetLayout = true;
         }
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType =
-            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount =
-            static_cast<uint32_t>(layoutBindings.size());
-        layoutInfo.pBindings = layoutBindings.data();
-        VK_CHECK(vkCreateDescriptorSetLayout(
-            m_device,
-            &layoutInfo,
-            nullptr,
-            &m_descriptorSetLayout));
 
         VkDescriptorPoolSize poolSize{};
         poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSize.descriptorCount = plan.materialCount * 4u;
+        poolSize.descriptorCount =
+            plan.materialCount * pbr_material_binding::count;
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.maxSets = plan.materialCount;
@@ -117,12 +235,21 @@ bool PBRMaterialResources::initialize(
         m_fallbackNormal = textureFactory.createSolidColor(
             {128, 128, 255, 255},
             VK_FORMAT_R8G8B8A8_UNORM);
-        m_fallbackOrm = textureFactory.createSolidColor(
+        m_fallbackMetallicRoughness = textureFactory.createSolidColor(
             {255, 255, 0, 255},
+            VK_FORMAT_R8G8B8A8_UNORM);
+        m_fallbackOcclusion = textureFactory.createSolidColor(
+            {255, 255, 255, 255},
             VK_FORMAT_R8G8B8A8_UNORM);
         m_fallbackEmissive = textureFactory.createSolidColor(
             {0, 0, 0, 255},
             VK_FORMAT_R8G8B8A8_UNORM);
+        if (!m_fallbackWhite || !m_fallbackNormal
+            || !m_fallbackMetallicRoughness || !m_fallbackOcclusion
+            || !m_fallbackEmissive) {
+            throw std::runtime_error(
+                "PBR fallback texture creation returned no texture");
+        }
 
         std::vector<VkDescriptorSetLayout> layouts(
             plan.materialCount,
@@ -143,63 +270,49 @@ bool PBRMaterialResources::initialize(
 
         m_bindings.reserve(plan.materialCount);
         m_materialTextures.reserve(
-            static_cast<size_t>(plan.materialCount) * 4u);
-        const bool useConfig = config != nullptr;
+            static_cast<size_t>(plan.materialCount)
+                * pbr_material_binding::count);
+        const asset::MaterialData fallbackMaterial{};
 
         for (uint32_t i = 0; i < plan.materialCount; ++i) {
-            asset::MaterialData material{};
-            if (i < mesh.materials.size()) {
-                material = mesh.materials[i];
-            }
+            const asset::MaterialData& material = i < mesh.materials.size()
+                ? mesh.materials[i]
+                : fallbackMaterial;
 
-            const asset::TextureData* baseSource =
-                &material.baseColorTexture;
-            const asset::TextureData* normalSource =
-                &material.normalTexture;
-            const asset::TextureData* ormSource = &material.ormTexture;
+            const PBRMaterialTextureSourcePlan textureSourcePlan =
+                buildPBRMaterialTextureSourcePlan(material, config);
+            const asset::TextureData* baseSource = textureSourcePlan.baseColor;
+            const asset::TextureData* normalSource = textureSourcePlan.normal;
+            const asset::TextureData* metallicRoughnessSource =
+                textureSourcePlan.metallicRoughness;
+            const asset::TextureData* occlusionSource =
+                textureSourcePlan.occlusion;
             const asset::TextureData* emissiveSource =
-                &material.emissiveTexture;
-
-            const auto resolveConfiguredSource =
-                [&](const asset::MaterialConfig::TextureBindingConfig& binding,
-                    const asset::TextureData* current,
-                    const char* bindingName) {
-                    if (!useConfig || !binding.hasSource) {
-                        return current;
-                    }
-                    const std::string source = toLower(binding.source);
-                    if (isDisabledSource(source)) {
-                        return static_cast<const asset::TextureData*>(nullptr);
-                    }
-                    const asset::TextureData* resolved =
-                        resolveGltfTexture(binding.source, material);
-                    if (resolved == nullptr) {
-                        KU_WARN(
-                            "PBRMaterialResources: {} source is unsupported: {}",
-                            bindingName,
-                            binding.source);
-                    }
-                    return resolved;
+                textureSourcePlan.emissive;
+            const asset::MaterialConfig::TextureBindingConfig emptyBinding{};
+            constexpr std::array<const char*, pbr_material_binding::count>
+                bindingNames{
+                    "baseColor",
+                    "normal",
+                    "metallicRoughness",
+                    "occlusion",
+                    "emissive",
                 };
-
-            if (config != nullptr) {
-                baseSource = resolveConfiguredSource(
-                    config->baseColorBinding,
-                    baseSource,
-                    "baseColor");
-                normalSource = resolveConfiguredSource(
-                    config->normalBinding,
-                    normalSource,
-                    "normal");
-                ormSource = resolveConfiguredSource(
-                    config->ormBinding,
-                    ormSource,
-                    "orm");
+            for (uint32_t bindingIndex = 0;
+                 bindingIndex < bindingNames.size();
+                 ++bindingIndex) {
+                if (textureSourcePlan.unsupportedOverrides[bindingIndex]) {
+                    KU_WARN(
+                        "PBRMaterialResources: {} source override is unsupported",
+                        bindingNames[bindingIndex]);
+                    ++m_stats.optionalTextureFallbacks;
+                }
             }
 
             std::unique_ptr<RHITexture> baseTexture;
             std::unique_ptr<RHITexture> normalTexture;
-            std::unique_ptr<RHITexture> ormTexture;
+            std::unique_ptr<RHITexture> metallicRoughnessTexture;
+            std::unique_ptr<RHITexture> occlusionTexture;
             std::unique_ptr<RHITexture> emissiveTexture;
             const bool hasBase = baseSource != nullptr
                 && uploadTexture(
@@ -211,6 +324,7 @@ bool PBRMaterialResources::initialize(
                             : asset::MaterialConfig::TextureBindingConfig{},
                         VK_FORMAT_R8G8B8A8_SRGB,
                         "baseColor"),
+                    "baseColor",
                     baseTexture);
             const bool hasNormal = normalSource != nullptr
                 && uploadTexture(
@@ -222,28 +336,58 @@ bool PBRMaterialResources::initialize(
                             : asset::MaterialConfig::TextureBindingConfig{},
                         VK_FORMAT_R8G8B8A8_UNORM,
                         "normal"),
+                    "normal",
                     normalTexture);
-            const bool hasOrm = ormSource != nullptr
+            const auto configuredBinding = [&](const auto& preferred) -> const auto& {
+                if (config == nullptr) {
+                    return emptyBinding;
+                }
+                if (hasTextureSourceOverride(preferred)
+                    || preferred.hasColorSpace) {
+                    return preferred;
+                }
+                return config->ormBinding;
+            };
+            const bool hasMetallicRoughness =
+                metallicRoughnessSource != nullptr
                 && uploadTexture(
                     textureFactory,
-                    *ormSource,
+                    *metallicRoughnessSource,
                     formatForBinding(
-                        config != nullptr
-                            ? config->ormBinding
-                            : asset::MaterialConfig::TextureBindingConfig{},
+                        configuredBinding(
+                            config != nullptr
+                                ? config->metallicRoughnessBinding
+                                : emptyBinding),
                         VK_FORMAT_R8G8B8A8_UNORM,
-                        "orm"),
-                    ormTexture);
+                        "metallicRoughness"),
+                    "metallicRoughness",
+                    metallicRoughnessTexture);
+            const bool hasOcclusion = occlusionSource != nullptr
+                && uploadTexture(
+                    textureFactory,
+                    *occlusionSource,
+                    formatForBinding(
+                        configuredBinding(
+                            config != nullptr
+                                ? config->occlusionBinding
+                                : emptyBinding),
+                        VK_FORMAT_R8G8B8A8_UNORM,
+                        "occlusion"),
+                    "occlusion",
+                    occlusionTexture);
             const bool hasEmissive = emissiveSource != nullptr
                 && uploadTexture(
                     textureFactory,
                     *emissiveSource,
                     VK_FORMAT_R8G8B8A8_SRGB,
+                    "emissive",
                     emissiveTexture);
 
             VkImageView baseView = m_fallbackWhite->imageView();
             VkImageView normalView = m_fallbackNormal->imageView();
-            VkImageView ormView = m_fallbackOrm->imageView();
+            VkImageView metallicRoughnessView =
+                m_fallbackMetallicRoughness->imageView();
+            VkImageView occlusionView = m_fallbackOcclusion->imageView();
             VkImageView emissiveView = m_fallbackEmissive->imageView();
             const auto retain =
                 [this](
@@ -258,19 +402,31 @@ bool PBRMaterialResources::initialize(
                 };
             retain(baseTexture, baseView, m_stats.texturedBase);
             retain(normalTexture, normalView, m_stats.texturedNormal);
-            retain(ormTexture, ormView, m_stats.texturedOrm);
+            retain(
+                metallicRoughnessTexture,
+                metallicRoughnessView,
+                m_stats.texturedMetallicRoughness);
+            retain(
+                occlusionTexture,
+                occlusionView,
+                m_stats.texturedOcclusion);
             retain(
                 emissiveTexture,
                 emissiveView,
                 m_stats.texturedEmissive);
 
-            std::array<VkDescriptorImageInfo, 4> imageInfos{
+            std::array<
+                VkDescriptorImageInfo,
+                pbr_material_binding::count> imageInfos{
                 VkDescriptorImageInfo{m_sampler, baseView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
                 VkDescriptorImageInfo{m_sampler, normalView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-                VkDescriptorImageInfo{m_sampler, ormView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                VkDescriptorImageInfo{m_sampler, metallicRoughnessView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                VkDescriptorImageInfo{m_sampler, occlusionView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
                 VkDescriptorImageInfo{m_sampler, emissiveView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
             };
-            std::array<VkWriteDescriptorSet, 4> writes{};
+            std::array<
+                VkWriteDescriptorSet,
+                pbr_material_binding::count> writes{};
             for (uint32_t bindingIndex = 0;
                  bindingIndex < writes.size();
                  ++bindingIndex) {
@@ -318,23 +474,39 @@ bool PBRMaterialResources::initialize(
                 material.normalTransform.offset.x,
                 material.normalTransform.offset.y,
             };
-            binding.ormUvScaleOffset = {
-                material.ormTransform.scale.x,
-                material.ormTransform.scale.y,
-                material.ormTransform.offset.x,
-                material.ormTransform.offset.y,
+            binding.metallicRoughnessUvScaleOffset = {
+                material.metallicRoughnessTransform.scale.x,
+                material.metallicRoughnessTransform.scale.y,
+                material.metallicRoughnessTransform.offset.x,
+                material.metallicRoughnessTransform.offset.y,
+            };
+            binding.occlusionUvScaleOffset = {
+                material.occlusionTransform.scale.x,
+                material.occlusionTransform.scale.y,
+                material.occlusionTransform.offset.x,
+                material.occlusionTransform.offset.y,
+            };
+            binding.emissiveUvScaleOffset = {
+                material.emissiveTransform.scale.x,
+                material.emissiveTransform.scale.y,
+                material.emissiveTransform.offset.x,
+                material.emissiveTransform.offset.y,
             };
             binding.baseUvRotation = material.baseColorTransform.rotation;
             binding.normalUvRotation = material.normalTransform.rotation;
-            binding.ormUvRotation = material.ormTransform.rotation;
+            binding.metallicRoughnessUvRotation =
+                material.metallicRoughnessTransform.rotation;
+            binding.occlusionUvRotation = material.occlusionTransform.rotation;
             binding.emissiveUvRotation =
                 material.emissiveTransform.rotation;
             binding.baseTexCoord =
                 clampTexCoordSet(material.baseColorTransform.texCoord);
             binding.normalTexCoord =
                 clampTexCoordSet(material.normalTransform.texCoord);
-            binding.ormTexCoord =
-                clampTexCoordSet(material.ormTransform.texCoord);
+            binding.metallicRoughnessTexCoord = clampTexCoordSet(
+                material.metallicRoughnessTransform.texCoord);
+            binding.occlusionTexCoord =
+                clampTexCoordSet(material.occlusionTransform.texCoord);
             binding.emissiveTexCoord =
                 clampTexCoordSet(material.emissiveTransform.texCoord);
             if (config != nullptr && config->baseColorBinding.hasUvSet) {
@@ -345,13 +517,35 @@ bool PBRMaterialResources::initialize(
                 binding.normalTexCoord = clampTexCoordSet(
                     static_cast<uint32_t>(config->normalBinding.uvSet));
             }
-            if (config != nullptr && config->ormBinding.hasUvSet) {
-                binding.ormTexCoord = clampTexCoordSet(
-                    static_cast<uint32_t>(config->ormBinding.uvSet));
+            if (config != nullptr) {
+                const bool useLegacyCombinedUv =
+                    isCombinedOrmBinding(config->ormBinding);
+                const auto applyUvSet = [&](const auto& preferred,
+                                             float& destination) {
+                    if (preferred.hasUvSet) {
+                        destination = clampTexCoordSet(
+                            static_cast<uint32_t>(preferred.uvSet));
+                    } else if (useLegacyCombinedUv
+                        && config->ormBinding.hasUvSet) {
+                        destination = clampTexCoordSet(
+                            static_cast<uint32_t>(config->ormBinding.uvSet));
+                    }
+                };
+                applyUvSet(
+                    config->metallicRoughnessBinding,
+                    binding.metallicRoughnessTexCoord);
+                applyUvSet(
+                    config->occlusionBinding,
+                    binding.occlusionTexCoord);
+                if (config->emissiveBinding.hasUvSet) {
+                    binding.emissiveTexCoord = clampTexCoordSet(
+                        static_cast<uint32_t>(config->emissiveBinding.uvSet));
+                }
             }
             binding.hasBaseColorTexture = hasBase;
             binding.hasNormalTexture = hasNormal;
-            binding.hasOrmTexture = hasOrm;
+            binding.hasMetallicRoughnessTexture = hasMetallicRoughness;
+            binding.hasOcclusionTexture = hasOcclusion;
             binding.hasEmissiveTexture = hasEmissive;
             binding.descriptorSet = descriptorSets[i];
             m_bindings.push_back(binding);
@@ -360,27 +554,43 @@ bool PBRMaterialResources::initialize(
         errorMessage = error.what();
         reset();
         return false;
+    } catch (...) {
+        errorMessage = "Unknown PBR material initialization failure";
+        reset();
+        return false;
     }
-    return ready();
+    if (!ready()) {
+        errorMessage = "PBR material resources did not reach the ready state";
+        reset();
+        return false;
+    }
+    return true;
 }
 
 bool PBRMaterialResources::uploadTexture(
     TextureFactory& textureFactory,
     const asset::TextureData& data,
     VkFormat format,
+    std::string_view bindingName,
     std::unique_ptr<RHITexture>& destination)
 {
-    if (!data.valid()) {
+    const PBROptionalTexturePayload payload =
+        classifyOptionalTexturePayload(data);
+    if (payload != PBROptionalTexturePayload::Ready) {
+        if (payload == PBROptionalTexturePayload::Invalid) {
+            ++m_stats.optionalTextureFallbacks;
+            KU_WARN(
+                "PBR material {} texture payload is invalid; using fallback",
+                bindingName);
+        }
         return false;
     }
-    try {
-        destination = textureFactory.createFromRgba8(data, format);
-        return destination != nullptr;
-    } catch (const std::exception& error) {
-        KU_WARN("PBR material texture upload failed: {}", error.what());
-        destination.reset();
-        return false;
+    destination = textureFactory.createFromRgba8(data, format);
+    if (!destination) {
+        throw std::runtime_error(
+            "PBR material texture upload returned no texture");
     }
+    return true;
 }
 
 bool PBRMaterialResources::ready() const
@@ -408,7 +618,8 @@ void PBRMaterialResources::reset()
     m_materialTextures.clear();
     m_fallbackWhite.reset();
     m_fallbackNormal.reset();
-    m_fallbackOrm.reset();
+    m_fallbackMetallicRoughness.reset();
+    m_fallbackOcclusion.reset();
     m_fallbackEmissive.reset();
     m_stats = {};
 }
@@ -426,13 +637,16 @@ void PBRMaterialResources::destroyVulkanHandles()
         vkDestroySampler(m_device, m_sampler, nullptr);
         m_sampler = VK_NULL_HANDLE;
     }
-    if (m_descriptorSetLayout != VK_NULL_HANDLE) {
+    if (m_descriptorSetLayout != VK_NULL_HANDLE
+        && m_ownsDescriptorSetLayout) {
         vkDestroyDescriptorSetLayout(
             m_device,
             m_descriptorSetLayout,
             nullptr);
         m_descriptorSetLayout = VK_NULL_HANDLE;
     }
+    m_descriptorSetLayout = VK_NULL_HANDLE;
+    m_ownsDescriptorSetLayout = false;
     m_device = VK_NULL_HANDLE;
 }
 
@@ -447,7 +661,8 @@ bool PBREnvironmentResources::initialize(
     RHIDevice& device,
     TextureFactory& textureFactory,
     const asset::HDRImageData& image,
-    std::string& errorMessage)
+    std::string& errorMessage,
+    VkDescriptorSetLayout externalLayout)
 {
     reset();
     errorMessage.clear();
@@ -469,22 +684,25 @@ bool PBREnvironmentResources::initialize(
             image.height,
             VK_FORMAT_R32G32B32A32_SFLOAT);
 
-        VkDescriptorSetLayoutBinding binding{};
-        binding.binding = 0;
-        binding.descriptorType =
-            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        binding.descriptorCount = 1;
-        binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType =
-            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = 1;
-        layoutInfo.pBindings = &binding;
-        VK_CHECK(vkCreateDescriptorSetLayout(
-            m_device,
-            &layoutInfo,
-            nullptr,
-            &m_descriptorSetLayout));
+        if (externalLayout != VK_NULL_HANDLE) {
+            m_descriptorSetLayout = externalLayout;
+            m_ownsDescriptorSetLayout = false;
+        } else {
+            VkDescriptorSetLayoutBinding binding{};
+            binding.binding = pbr_environment_binding::environment;
+            binding.descriptorType =
+                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            binding.descriptorCount = 1;
+            binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+            VkDescriptorSetLayoutCreateInfo layoutInfo{};
+            layoutInfo.sType =
+                VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+            layoutInfo.bindingCount = 1;
+            layoutInfo.pBindings = &binding;
+            VK_CHECK(vkCreateDescriptorSetLayout(
+                m_device, &layoutInfo, nullptr, &m_descriptorSetLayout));
+            m_ownsDescriptorSetLayout = true;
+        }
 
         VkDescriptorPoolSize poolSize{};
         poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -535,7 +753,7 @@ bool PBREnvironmentResources::initialize(
         VkWriteDescriptorSet write{};
         write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         write.dstSet = m_descriptorSet;
-        write.dstBinding = 0;
+        write.dstBinding = pbr_environment_binding::environment;
         write.descriptorType =
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         write.descriptorCount = 1;
@@ -545,8 +763,17 @@ bool PBREnvironmentResources::initialize(
         errorMessage = error.what();
         reset();
         return false;
+    } catch (...) {
+        errorMessage = "Unknown PBR environment initialization failure";
+        reset();
+        return false;
     }
-    return ready();
+    if (!ready()) {
+        errorMessage = "PBR environment resources did not reach the ready state";
+        reset();
+        return false;
+    }
+    return true;
 }
 
 bool PBREnvironmentResources::ready() const
@@ -578,13 +805,16 @@ void PBREnvironmentResources::destroyVulkanHandles()
         vkDestroySampler(m_device, m_sampler, nullptr);
         m_sampler = VK_NULL_HANDLE;
     }
-    if (m_descriptorSetLayout != VK_NULL_HANDLE) {
+    if (m_descriptorSetLayout != VK_NULL_HANDLE
+        && m_ownsDescriptorSetLayout) {
         vkDestroyDescriptorSetLayout(
             m_device,
             m_descriptorSetLayout,
             nullptr);
         m_descriptorSetLayout = VK_NULL_HANDLE;
     }
+    m_descriptorSetLayout = VK_NULL_HANDLE;
+    m_ownsDescriptorSetLayout = false;
     m_descriptorSet = VK_NULL_HANDLE;
     m_device = VK_NULL_HANDLE;
 }

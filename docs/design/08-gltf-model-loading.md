@@ -1,6 +1,6 @@
 # glTF/GLB 模型加载设计
 
-核对日期：2026-09-12。源码：[Model.h](../../src/KuEngine/Asset/Model.h)、[Model.cpp](../../src/KuEngine/Asset/Model.cpp)。
+核对日期：2026-09-16。源码：[Model](../../src/KuEngine/Asset/Model.h)、[Scene](../../src/KuEngine/Asset/Scene.h)、[GpuModelAsset](../../src/KuEngine/Render/GpuModelAsset.h)。
 
 ## 输入与输出
 
@@ -11,7 +11,7 @@ ModelLoader::loadFromFile(path) 按扩展名调用 tinygltf 的二进制 GLB 或
 | MeshVertex | position、normal、uv0、uv1、tangent |
 | SubMeshData | indexStart、indexCount、materialIndex |
 | TextureData | width、height、RGBA8 像素 |
-| MaterialData | baseColor/emissive 因子，metallic/roughness/normalScale/occlusionStrength，四类贴图与变换 |
+| MaterialData | PBR/Unlit、Opaque/Mask/Blend/cutoff/doubleSided、base/emissive 因子，metallic/roughness/normalScale/occlusionStrength，五类贴图及各自变换 |
 | MeshData | vertices、uint32 indices、materials、subMeshes、AABB，兼容用基础颜色/纹理字段 |
 
 ## 场景与几何转换
@@ -28,25 +28,27 @@ uv0/uv1 分别优先读取 TEXCOORD_0/1；缺失时尝试另一通道及第一�
 
 模型解析基础色、Normal、Metallic-Roughness、Occlusion、Emissive 贴图及 KHR_texture_transform。图片解码并转换为 RGBA8。
 
-ORM 当前优先取 Metallic-Roughness 图像；缺失才回退 Occlusion 图像。Shader 按 R=AO、G=roughness、B=metallic 使用，未把独立 AO 和 MR 图像重新打包，因此不能宣称完整兼容所有 glTF 的独立通道布局。
+Metallic-Roughness 与 Occlusion 保持独立图像，shader 分别读取其 glTF 语义；不做图像重打包。每种贴图的 texCoord 与 `KHR_texture_transform` 都保留到 per-draw 数据。`KHR_materials_unlit` 映射为 Unlit；alphaMode、alphaCutoff 与 doubleSided 同样保留。
 
 ## 与运行时连接
 
 ```text
 Scene JSON 模型路径
-→ MclarenSceneAsset
+→ AssetPath / SceneLoader → SceneData (MeshHandle / Instance)
 → ModelLoader → MeshData
-→ MclarenRenderResources
-→ GpuMesh / TextureFactory → ResourceUploader
-→ PBRRenderer
+→ MclarenSceneAsset 合并适配
+→ GpuModelAsset → GpuMesh / ResourceUploader
+→ ForwardRenderer
 ```
 
-MclarenSceneAsset 可合并多个模型，修正顶点/索引/材质偏移；这与在 Scene JSON 中支持逐节点实例化是不同的能力。GPU 上传后释放 CPU Mesh，保留展示和相机需要的场景元数据。
+SceneLoader 对同一规范路径只加载一次 MeshData，并以稳定 MeshHandle 供多个实例引用；MclarenSceneAsset 仍可合并多个模型并修正顶点/索引/材质偏移，这与在 Scene JSON 中支持逐节点实例变换是不同能力。GpuModelAsset 拥有上传后的单个 GpuMesh；Mclaren 上传后释放其合并 CPU Mesh 和 SceneData 中的 CPU Mesh，保留展示、默认和相机所需元数据。
+
+Mclaren 可在单帧 Fence-safe update 点替换单个 GLB/glTF：候选 state 会完整重建 SceneData/默认与 fit 信息、按 handle 的 GpuModelAsset、材质 variant、ForwardRenderer 容量、pipeline 与预期统计，全部成功后才交换。直接模型替换不继承初始 Mclaren Scene JSON 的 MaterialConfig 全局颜色因子，而是使用候选模型的单位因子；该因子随已发布模型 state 一同原子切换。可选纹理缺失/无效使用 fallback；真实上传异常则令候选失败且保留 live state。
 
 ## 当前能力边界
 
 已接入 glTF TANGENT，Shader 优先用切线构造 TBN，缺失时使用导数重建；emissive 因子与贴图已接入。
 
-尚无 skin、animation、morph、完整 sparse accessor、压缩纹理或资源缓存。MaterialData 也没有完整保留 glTF alphaMode/doubleSided；当前 Mclaren 的 alpha 策略主要来自 Material JSON。emissive 变换虽在 CPU 中解析，Shader 当前使用 uvBase 采样，不能视为独立 emissive UV 全链路完成。
+尚无 skin、animation、morph、完整 sparse accessor、压缩纹理或资源缓存。顶点只保留 uv0/uv1；高编号 UV 不构成完整顶点属性链。没有完整 IBL、OIT 或色度正确 HDR 输出。
 
 GPU 布局与材质绑定详见 [PBR 设计](10-pbr-rendering.md)，使用方法见 [Mclaren](../usage/mclaren-example.md)。

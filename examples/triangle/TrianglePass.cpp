@@ -13,13 +13,15 @@ TrianglePass::~TrianglePass() = default;
 
 void TrianglePass::setup(RenderGraphBuilder& builder)
 {
-    const ResourceHandle swapChainColor =
-        builder.importExternal(runtime_resource::swapChainColor);
+    const ImageHandle swapChainColor = builder.importImage(
+        runtime_resource::swapChainColor,
+        m_colorTargetDesc);
     builder.colorAttachment(swapChainColor);
 }
 
 void TrianglePass::initialize(const RenderContext& context)
 {
+    m_colorTargetDesc = runtimeColorImageDesc(context);
     KU_INFO("TrianglePass: initializing...");
     RHIDevice& device = context.device;
 
@@ -30,8 +32,10 @@ void TrianglePass::initialize(const RenderContext& context)
     KU_DEBUG("Loading shaders from: {}", shaderDir.string());
 
     try {
-        m_vertShader = std::make_unique<RHIShader>(device, vertPath);
-        m_fragShader = std::make_unique<RHIShader>(device, fragPath);
+        m_vertShader = std::make_unique<RHIShader>(device, ShaderDesc{
+            vertPath, VK_SHADER_STAGE_VERTEX_BIT, "main"});
+        m_fragShader = std::make_unique<RHIShader>(device, ShaderDesc{
+            fragPath, VK_SHADER_STAGE_FRAGMENT_BIT, "main"});
     } catch (const std::exception& e) {
         KU_ERROR("Failed to load shaders: {}", e.what());
         KU_ERROR("  Expected at: {}", vertPath.string());

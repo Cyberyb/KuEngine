@@ -12,6 +12,13 @@
 
 namespace ku {
 
+bool supportsRequiredVulkan13Features(
+    const VkPhysicalDeviceVulkan13Features& features) noexcept
+{
+    return features.dynamicRendering == VK_TRUE
+        && features.synchronization2 == VK_TRUE;
+}
+
 namespace {
 
 struct DeviceCandidate {
@@ -23,6 +30,7 @@ struct DeviceCandidate {
     uint32_t graphicsQueueFamily = UINT32_MAX;
     uint32_t presentQueueFamily = UINT32_MAX;
     uint32_t graphicsTimestampValidBits = 0;
+    bool graphicsQueueSupportsCompute = false;
     uint64_t score = 0;
 };
 
@@ -92,8 +100,7 @@ std::optional<DeviceCandidate> evaluateDevice(
     features2.pNext = &candidate.features13;
     vkGetPhysicalDeviceFeatures2(device, &features2);
     candidate.features = features2.features;
-    if (candidate.features13.dynamicRendering != VK_TRUE
-        || candidate.features13.synchronization2 != VK_TRUE) {
+    if (!supportsRequiredVulkan13Features(candidate.features13)) {
         rejectionReason = "dynamicRendering and synchronization2 are required";
         return std::nullopt;
     }
@@ -113,19 +120,25 @@ std::optional<DeviceCandidate> evaluateDevice(
 
         const bool supportsGraphics =
             (queueProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
-        if (supportsGraphics && candidate.graphicsQueueFamily == UINT32_MAX) {
+        const bool supportsCompute =
+            (queueProperties[i].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0;
+        if (supportsGraphics
+            && (candidate.graphicsQueueFamily == UINT32_MAX
+                || (!candidate.graphicsQueueSupportsCompute && supportsCompute))) {
             candidate.graphicsQueueFamily = i;
             candidate.graphicsTimestampValidBits =
                 queueProperties[i].timestampValidBits;
+            candidate.graphicsQueueSupportsCompute = supportsCompute;
         }
         if (supportsPresent && candidate.presentQueueFamily == UINT32_MAX) {
             candidate.presentQueueFamily = i;
         }
-        if (supportsGraphics && supportsPresent) {
+        if (supportsGraphics && supportsCompute && supportsPresent) {
             candidate.graphicsQueueFamily = i;
             candidate.presentQueueFamily = i;
             candidate.graphicsTimestampValidBits =
                 queueProperties[i].timestampValidBits;
+            candidate.graphicsQueueSupportsCompute = true;
             break;
         }
     }
@@ -156,6 +169,9 @@ std::optional<DeviceCandidate> evaluateDevice(
         default:
             candidate.score += 1'000;
             break;
+    }
+    if (candidate.graphicsQueueSupportsCompute) {
+        candidate.score += 1'000;
     }
     candidate.score += candidate.properties.limits.maxImageDimension2D;
     return candidate;
@@ -239,13 +255,15 @@ void RHIDevice::pickPhysicalDevice(VkSurfaceKHR surface)
     m_graphicsQueueFamily = selected->graphicsQueueFamily;
     m_presentQueueFamily = selected->presentQueueFamily;
     m_graphicsTimestampValidBits = selected->graphicsTimestampValidBits;
+    m_graphicsQueueSupportsCompute = selected->graphicsQueueSupportsCompute;
     vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &m_memoryProperties);
 
     KU_INFO(
-        "Selected GPU: {} (graphics queue={}, present queue={})",
+        "Selected GPU: {} (graphics queue={}, present queue={}, compute-on-graphics={})",
         m_properties.deviceName,
         m_graphicsQueueFamily,
-        m_presentQueueFamily);
+        m_presentQueueFamily,
+        m_graphicsQueueSupportsCompute);
 }
 
 void RHIDevice::createLogicalDevice()

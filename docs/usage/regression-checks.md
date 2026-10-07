@@ -1,6 +1,6 @@
 # 当前回归检查
 
-本页说明检查方法与已验收的 M0、M1 范围。核对日期：2026-09-14。
+本页说明检查方法与已验收的 M0、M1、M2-WP01～03、M3-WP01～04 范围。核对日期：2026-10-07。
 
 ## 构建与 CPU 测试
 
@@ -12,7 +12,15 @@ cmake --build --preset debug
 ctest --preset debug
 ```
 
-预期 core_tests 和 mclaren_camera_tests 通过。若使用已有 build 目录，则使用 `cmake --build build --config Debug` 和 `ctest --test-dir build -C Debug --output-on-failure`，不要与 preset 的输出目录混用。
+预期 Debug `ctest --preset debug` 为 19/19。M3-WP04 最终验收在独立 Debug/Release 构建中通过 Debug core124/camera32/定向37、完整 CTest19/19；ForwardReuse 二次 compile 为 9/45，Probe 二次 compile 后 resize 为 1/3，Mclaren resize 为 91/9,202,884，均无 Validation error。权威 Release CTest 为 **3 Passed / 16 Skipped / 0 Failed**；direct ForwardReuse/Probe 二次 compile/Mclaren/Triangle 是独立通过记录，不并入 CTest 计数。`--smoke-require-validation` 或缺 Layer 的 77 是预期 skip，不是通过。未运行 RenderDoc/readback pixel baseline/soak/真实 live-format 强制/物理非等比 DPI。若使用已有 build 目录，则使用 `cmake --build build --config Debug` 和 `ctest --test-dir build -C Debug --output-on-failure`，不要与 preset 的输出目录混用。
+
+GraphResourceProbe 的手动 Synchronization Validation 前置命令为：
+
+```powershell
+$env:VK_LAYER_ENABLES='VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT'
+```
+
+启动后先确认 Validation 的 startup 状态，再检查 Probe 的 READY/RESIZE marker、`1 draw / 3 vertices` 和 error 计数；完整命令和 callback/normal Compute/native scope 的开发边界见 [GraphResourceProbe 示例](graph-resource-probe-example.md)。
 
 ## 可选 GPU Smoke
 
@@ -43,6 +51,16 @@ ctest --test-dir build/gpu-smoke -C Debug -L gpu-negative --output-on-failure
 ```
 
 `--smoke-frames 0` 保持无限运行；`--smoke-inject-validation-error` 只用于受控负例，必须与 `--smoke-require-validation` 和正帧数一起使用。未知参数或不安全的 resize/injection 组合返回 2。
+
+Mclaren 还支持专用替换参数，它们不属于 `EngineRunOptions`：
+
+```powershell
+.\MclarenApp.exe --mclaren-replace-model models/props/mclaren_765lt.glb --mclaren-replace-hdr environments/hdr/citrus_orchard_road_puresky_4k.hdr --mclaren-replace-after-updates 1 --smoke-frames 8 --smoke-require-validation
+```
+
+预期每个已完成替换输出 `KUENGINE_ASSET_REPLACE_SUCCESS`，最后的 completed stats 仍应与已发布模型匹配；失败路径输出 `KUENGINE_ASSET_REPLACE_FAIL retained=1`。这不模拟 OOM、上传故障或 device lost。
+
+M2-WP03 的 GPU smoke 还包含 `ForwardReuseApp` 的语义、zero-lights、backface 三个 8/42 检查，以及 Mclaren valid/bad-retain/continuous/resize replacement；最终 Release 记录为 ForwardReuse 三预设各 8/42，Mclaren 90 draws / 9,202,881 vertices，Validation errors=0。Debug 验收还运行了 validation skip/negative 路径。人工抓帧确认 MR/AO/emissive、Mask 孔、Blend 深度、零光 PBR 变暗/Unlit 稳定、仅 double-sided 背面可见，以及 Mclaren 公共 Forward/两实例两 variants/bad retain。未运行 pixel readback 或实际鼠标 UI 自动化（CUA 不可用）；这些不能由受控预设替代。
 
 可额外运行收起侧栏冒烟，确认 Runner 输出的 `KUENGINE_VIEWER_LAYOUT first/final` 合法且场景像素矩形没有溢出：
 

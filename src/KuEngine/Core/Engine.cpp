@@ -8,7 +8,6 @@
 #include "../RHI/SwapChain.h"
 #include "../RHI/SyncManager.h"
 #include "../RHI/CommandList.h"
-#include "../RHI/RHITexture.h"
 #include "../UI/UIOverlay.h"
 #include "../Render/RenderPipeline.h"
 
@@ -55,15 +54,8 @@ Engine::Engine(
     if (m_config.framesInFlight != 1) {
         throw std::invalid_argument(
             "Public Runtime currently supports exactly one frame in flight because command buffers, "
-            "depth attachments, and Pass-owned dynamic resources are not yet replicated per frame");
+            "Graph resources, and Pass-owned dynamic resources are not yet replicated per frame");
     }
-    if (m_config.enableDepth
-        && m_config.depthLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD
-        && m_config.depthStoreOp != VK_ATTACHMENT_STORE_OP_STORE) {
-        throw std::invalid_argument(
-            "Runtime depth LOAD requires depthStoreOp STORE to preserve contents between frames");
-    }
-
     ku::log::init();
     try {
         m_window = std::make_unique<Window>(
@@ -83,15 +75,13 @@ Engine::Engine(
         m_commandList = std::make_unique<CommandList>(*m_device, m_commandPool);
         if (m_config.enableDepth) {
             m_depthFormat = resolveDepthFormat(m_config.depthFormat);
-            createDepthAttachment();
         }
         m_ui = std::make_unique<UIOverlay>(
             *m_device,
             m_window->handle(),
             m_instance->instance(),
             m_swapChain->imageFormat(),
-            static_cast<uint32_t>(m_swapChain->imageCount()),
-            m_depthFormat);
+            static_cast<uint32_t>(m_swapChain->imageCount()));
         m_renderPipeline = std::make_unique<RenderPipeline>();
         m_swapChainImageLayouts.assign(
             m_swapChain->imageCount(),
@@ -103,7 +93,6 @@ Engine::Engine(
         m_lastTime = Clock::now();
     } catch (...) {
         m_ui.reset();
-        m_depthTexture.reset();
         m_commandList.reset();
         m_syncManager.reset();
         m_swapChain.reset();
@@ -135,7 +124,6 @@ Engine::~Engine()
 
     m_renderPipeline.reset();
     m_ui.reset();
-    m_depthTexture.reset();
     m_commandList.reset();
     m_syncManager.reset();
     m_swapChain.reset();
@@ -166,6 +154,7 @@ void Engine::compile()
         throw std::runtime_error("Engine Runtime is not initialized");
     }
 
+    m_pipelineCompiled = false;
     const RenderContext context{
         *m_device,
         m_swapChain->imageFormat(),
@@ -173,12 +162,13 @@ void Engine::compile()
         m_swapChain->extent(),
         m_config.framesInFlight,
         m_config.depthCompareOp,
+        m_config.clearColor,
+        m_config.clearDepthStencil,
         m_device->properties(),
         m_device->features(),
         m_device->features13(),
     };
     m_renderPipeline->compile(context);
-    m_renderPipeline->onResize(m_swapChain->width(), m_swapChain->height());
     m_pipelineCompiled = true;
 }
 
@@ -349,46 +339,33 @@ bool Engine::render()
         [this]() { m_renderPipeline->drawPassUIContent(); },
         [this]() { m_renderPipeline->drawRenderGraphUIContent(); });
 
-    m_commandList->begin();
-
     VkClearValue colorClear{};
     colorClear.color = m_config.clearColor;
     m_renderPipeline->bindExternalImage({
-        runtime_resource::swapChainColor,
-        m_swapChain->images()[imageIndex],
-        m_swapChain->imageViews()[imageIndex],
-        m_swapChain->extent(),
-        m_swapChainImageLayouts[imageIndex],
-        VK_IMAGE_ASPECT_COLOR_BIT,
-        colorClear,
-        VK_ATTACHMENT_LOAD_OP_CLEAR,
-        VK_ATTACHMENT_STORE_OP_STORE,
-        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-        false,
+        .resourceName = runtime_resource::swapChainColor,
+        .image = m_swapChain->images()[imageIndex],
+        .imageView = m_swapChain->imageViews()[imageIndex],
+        .extent = m_swapChain->extent(),
+        .format = m_swapChain->imageFormat(),
+        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .initialState = {
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_ACCESS_2_NONE,
+            m_swapChainImageLayouts[imageIndex]},
+        .aspect = VK_IMAGE_ASPECT_COLOR_BIT,
+        .clearValue = colorClear,
+        .defaultLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .defaultStoreOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .finalState = {
+            VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+            VK_ACCESS_2_NONE,
+            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR},
+        .contentsValid = false,
     });
 
-    if (m_depthTexture) {
-        VkClearValue depthClear{};
-        depthClear.depthStencil = m_config.clearDepthStencil;
-        const VkAttachmentLoadOp effectiveDepthLoad =
-            !m_depthInitialized
-                && m_config.depthLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD
-            ? VK_ATTACHMENT_LOAD_OP_CLEAR
-            : m_config.depthLoadOp;
-        m_renderPipeline->bindExternalImage({
-            runtime_resource::sceneDepth,
-            m_depthTexture->image(),
-            m_depthTexture->imageView(),
-            m_swapChain->extent(),
-            m_depthImageLayout,
-            VK_IMAGE_ASPECT_DEPTH_BIT,
-            depthClear,
-            effectiveDepthLoad,
-            m_config.depthStoreOp,
-            VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-            m_depthInitialized,
-        });
-    }
+    // External resource descriptors are validated before command recording so
+    // a format/extent/aspect mismatch cannot leave a partially recorded frame.
+    m_commandList->begin();
 
     m_renderPipeline->execute(*m_commandList, frameData);
     m_renderPipeline->executeOverlay(
@@ -402,9 +379,6 @@ bool Engine::render()
     m_renderPipeline->finalizeExternalImages(*m_commandList);
 
     m_swapChainImageLayouts[imageIndex] = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    if (m_depthTexture) {
-        m_depthImageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    }
 
     m_commandList->end();
 
@@ -422,11 +396,6 @@ bool Engine::render()
         throw std::logic_error(
             "A submitted frame statistics sample is still pending completion");
     }
-    if (m_depthTexture) {
-        m_depthInitialized = m_renderPipeline->externalContentsValid(
-            runtime_resource::sceneDepth);
-    }
-
     const bool presented = m_syncManager->present(
         frameIndex,
         m_device->presentQueue(),
@@ -473,16 +442,36 @@ void Engine::recreateSwapChain()
     }
 
     m_minimized = false;
+    const VkFormat previousFormat = m_swapChain->imageFormat();
     m_swapChain->recreate(m_window->handle(), m_surface);
-    if (m_config.enableDepth) {
-        createDepthAttachment();
-    }
-    m_ui->onSwapChainRecreated(static_cast<uint32_t>(m_swapChain->imageCount()));
+    const bool formatChanged = swapchainFormatRequiresPipelineRecompile(
+        previousFormat, m_swapChain->imageFormat());
     m_swapChainImageLayouts.assign(
         m_swapChain->imageCount(),
         VK_IMAGE_LAYOUT_UNDEFINED);
     m_renderPipeline->clearExternalResources();
-    m_renderPipeline->onResize(m_swapChain->width(), m_swapChain->height());
+    if (formatChanged) {
+        KU_INFO(
+            "SwapChain format changed from {} to {}; recompiling render and UI pipelines",
+            static_cast<int>(previousFormat),
+            static_cast<int>(m_swapChain->imageFormat()));
+        compile();
+        const bool sidebarExpanded = m_ui->sidebarExpanded();
+        const bool compactStatsVisible = m_ui->compactStatsVisible();
+        m_ui.reset();
+        m_ui = std::make_unique<UIOverlay>(
+            *m_device,
+            m_window->handle(),
+            m_instance->instance(),
+            m_swapChain->imageFormat(),
+            static_cast<uint32_t>(m_swapChain->imageCount()));
+        m_ui->setSidebarExpanded(sidebarExpanded);
+        m_ui->setCompactStatsVisible(compactStatsVisible);
+    } else {
+        m_ui->onSwapChainRecreated(
+            static_cast<uint32_t>(m_swapChain->imageCount()));
+        m_renderPipeline->onResize(m_swapChain->width(), m_swapChain->height());
+    }
 
     m_window->resetResizedFlag();
     m_resizeRequested = false;
@@ -493,37 +482,6 @@ void Engine::recreateSwapChain()
         m_swapChain->width(),
         m_swapChain->height(),
         m_swapChain->imageCount());
-}
-
-void Engine::createDepthAttachment()
-{
-    if (!m_config.enableDepth || m_depthFormat == VK_FORMAT_UNDEFINED) {
-        m_depthTexture.reset();
-        m_depthInitialized = false;
-        m_depthImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        return;
-    }
-    if (!m_device || !m_swapChain || !m_commandList) {
-        throw std::runtime_error(
-            "Depth attachment requires an initialized Runtime device and command list");
-    }
-
-    RHITexture::CreateInfo depthInfo{};
-    depthInfo.width = m_swapChain->width();
-    depthInfo.height = m_swapChain->height();
-    depthInfo.format = m_depthFormat;
-    depthInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    depthInfo.aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
-
-    m_depthTexture = std::make_unique<RHITexture>(*m_device, depthInfo);
-    m_depthInitialized = false;
-    m_depthImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-    KU_INFO(
-        "Engine Runtime created depth attachment: {}x{} format={}",
-        depthInfo.width,
-        depthInfo.height,
-        static_cast<int>(m_depthFormat));
 }
 
 VkFormat Engine::resolveDepthFormat(VkFormat requested) const

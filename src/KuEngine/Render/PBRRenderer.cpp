@@ -28,6 +28,28 @@ void PBRRenderer::execute(CommandList& cmd, const FrameData& /*frame*/)
         return;
     }
 
+    if (m_pipeline->descriptorSetCount() < 3
+        || m_frameDescriptorSet == VK_NULL_HANDLE
+        || m_environmentDescriptorSet == VK_NULL_HANDLE
+        || m_materialBindings.empty()) {
+        KU_WARN("PBRRenderer: descriptor set 0/1/2 contract is not configured");
+        return;
+    }
+    for (const PBRDrawItem& item : m_drawItems) {
+        if (item.indexCount == 0) {
+            continue;
+        }
+        const size_t materialIndex = item.materialIndex
+                < m_materialBindings.size()
+            ? static_cast<size_t>(item.materialIndex)
+            : 0u;
+        if (m_materialBindings[materialIndex].descriptorSet
+            == VK_NULL_HANDLE) {
+            KU_WARN("PBRRenderer: material descriptor set is not configured");
+            return;
+        }
+    }
+
     // 如果存在 per-draw push 常量，则数量需和 draw items 对齐；否则使用单一 m_push。
     const bool havePerDraw = !m_perDrawPush.empty();
     if (havePerDraw && m_perDrawPush.size() != m_drawItems.size()) {
@@ -79,17 +101,15 @@ void PBRRenderer::execute(CommandList& cmd, const FrameData& /*frame*/)
 
     m_pipeline->bind(cmd);
 
-    if (m_environmentDescriptorSet != VK_NULL_HANDLE) {
-        vkCmdBindDescriptorSets(
-            cmd,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_pipeline->layout(),
-            2,
-            1,
-            &m_environmentDescriptorSet,
-            0,
-            nullptr);
-    }
+    vkCmdBindDescriptorSets(
+        cmd,
+        VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_pipeline->layout(),
+        2,
+        1,
+        &m_environmentDescriptorSet,
+        0,
+        nullptr);
 
     VkBuffer vertexBuffers[] = {m_vertexBuffer->buffer()};
     VkDeviceSize offsets[] = {0};
@@ -102,42 +122,35 @@ void PBRRenderer::execute(CommandList& cmd, const FrameData& /*frame*/)
             continue;
         }
 
-        const PBRMaterialBinding* mat = nullptr;
-        if (m_materialBindings != nullptr
-            && !m_materialBindings->empty()) {
-            const size_t materialIndex = item.materialIndex
-                    < m_materialBindings->size()
-                ? static_cast<size_t>(item.materialIndex)
-                : 0u;
-            mat = &(*m_materialBindings)[materialIndex];
-        }
-        if (m_frameDescriptorSet != VK_NULL_HANDLE) {
-            const uint32_t dynamicOffset = havePerDrawFrames
-                ? m_firstDrawUniformOffset
-                    + static_cast<uint32_t>(i) * m_frameUniformStride
-                : 0;
-            vkCmdBindDescriptorSets(
-                cmd,
-                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_pipeline->layout(),
-                1,
-                1,
-                &m_frameDescriptorSet,
-                1,
-                &dynamicOffset);
-        }
+        const size_t materialIndex = item.materialIndex
+                < m_materialBindings.size()
+            ? static_cast<size_t>(item.materialIndex)
+            : 0u;
+        const PBRMaterialBinding& material =
+            m_materialBindings[materialIndex];
+        const uint32_t dynamicOffset = havePerDrawFrames
+            ? m_firstDrawUniformOffset
+                + static_cast<uint32_t>(i) * m_frameUniformStride
+            : 0;
+        vkCmdBindDescriptorSets(
+            cmd,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_pipeline->layout(),
+            1,
+            1,
+            &m_frameDescriptorSet,
+            1,
+            &dynamicOffset);
 
-        if (mat && mat->descriptorSet != VK_NULL_HANDLE) {
-            vkCmdBindDescriptorSets(
-                cmd,
-                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_pipeline->layout(),
-                0,
-                1,
-                &mat->descriptorSet,
-                0,
-                nullptr);
-        }
+        vkCmdBindDescriptorSets(
+            cmd,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_pipeline->layout(),
+            0,
+            1,
+            &material.descriptorSet,
+            0,
+            nullptr);
 
         const PBRPushConstants* pushPtr = nullptr;
         if (havePerDraw) {

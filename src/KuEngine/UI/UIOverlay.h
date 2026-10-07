@@ -14,6 +14,7 @@ struct GLFWwindow;
 namespace ku {
 
 class RHIDevice;
+inline constexpr VkFormat uiOverlayDepthFormat = VK_FORMAT_UNDEFINED;
 
 struct UIFrameStatistics {
     float fps = 0.0f;
@@ -31,8 +32,7 @@ public:
         ::GLFWwindow* window,
         VkInstance instance,
         VkFormat imageFormat,
-        uint32_t imageCount,
-        VkFormat depthFormat = VK_FORMAT_UNDEFINED);
+        uint32_t imageCount);
     ~UIOverlay();
 
     void newFrame();
@@ -49,6 +49,18 @@ public:
             m_sidebarState.collapse();
         }
     }
+    [[nodiscard]] bool sidebarExpanded() const noexcept
+    {
+        return m_sidebarState.expanded();
+    }
+    [[nodiscard]] bool compactStatsVisible() const noexcept
+    {
+        return m_sidebarState.compactStatsVisible();
+    }
+    void setCompactStatsVisible(bool visible) noexcept
+    {
+        m_sidebarState.setCompactStatsVisible(visible);
+    }
     void drawSidebar(
         const SidebarFrameLayout& sidebarFrame,
         const UIFrameStatistics& stats,
@@ -61,8 +73,7 @@ private:
         ::GLFWwindow* window,
         VkInstance instance,
         VkFormat imageFormat,
-        uint32_t imageCount,
-        VkFormat depthFormat);
+        uint32_t imageCount);
     [[nodiscard]] VkDescriptorPool createDescriptorPool() const;
     static void checkVkResult(VkResult result);
     void drawStatisticsContent(

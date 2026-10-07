@@ -8,6 +8,9 @@
 #include <string>
 #include <vector>
 
+#include <glm/mat3x3.hpp>
+#include <glm/mat4x4.hpp>
+
 #include <KuEngine/Asset/AssetConfig.h>
 #include <KuEngine/Asset/Model.h>
 
@@ -26,10 +29,26 @@ struct MeshAsset {
 struct SceneInstance {
     std::string id;
     MeshHandle mesh = invalidMeshHandle;
-
-    // ModelLoader currently bakes glTF node transforms into MeshData. A future
-    // scene-transform field belongs here, but WP01 intentionally has none.
+    SceneTransform transform{};
+    std::filesystem::path materialReference;
+    MaterialConfig materialOverride{};
+    bool hasMaterialOverride = false;
 };
+
+[[nodiscard]] bool validSceneTransform(
+    const SceneTransform& transform) noexcept;
+// Euler order is X then Y then Z for column vectors: T * Rz * Ry * Rx * S.
+[[nodiscard]] glm::mat4 sceneTransformMatrix(
+    const SceneTransform& transform) noexcept;
+[[nodiscard]] glm::mat3 sceneNormalMatrix(const glm::mat4& world) noexcept;
+[[nodiscard]] bool transformBounds(
+    const glm::vec3& localMin,
+    const glm::vec3& localMax,
+    const glm::mat4& world,
+    glm::vec3& outMin,
+    glm::vec3& outMax) noexcept;
+
+void sanitizeSceneLighting(SceneLightingConfig& lighting) noexcept;
 
 struct SceneEnvironmentMetadata {
     std::filesystem::path sourcePath;

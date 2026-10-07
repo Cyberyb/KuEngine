@@ -1,202 +1,44 @@
-﻿#include "RenderPipeline.h"
-#include "RenderPass.h"
-#include "RenderGraph.h"
-#include "../RHI/RHIDevice.h"
-#include "../RHI/CommandList.h"
-#include "../Core/Log.h"
+#include "RenderPipeline.h"
+
+#include "RenderContext.h"
+#include <KuEngine/Core/Log.h>
+#include <KuEngine/RHI/CommandList.h>
+#include <KuEngine/RHI/RHIDevice.h>
 
 #include <imgui.h>
 
 #include <algorithm>
 #include <sstream>
-#include <cstdint>
 #include <stdexcept>
-#include <unordered_set>
 
 namespace ku {
-
 namespace {
-
-const char* toString(ResourceAccessType access)
-{
-    switch (access) {
-        case ResourceAccessType::Read:
-            return "R";
-        case ResourceAccessType::Write:
-            return "W";
-        default:
-            return "?";
-    }
-}
 
 const char* toString(ResourceHazardType hazard)
 {
     switch (hazard) {
-        case ResourceHazardType::ReadAfterWrite:
-            return "RAW";
-        case ResourceHazardType::WriteAfterRead:
-            return "WAR";
-        case ResourceHazardType::WriteAfterWrite:
-            return "WAW";
-        default:
-            return "?";
+        case ResourceHazardType::ReadAfterWrite: return "RAW";
+        case ResourceHazardType::WriteAfterRead: return "WAR";
+        case ResourceHazardType::WriteAfterWrite: return "WAW";
     }
+    return "?";
 }
 
 const char* toString(VkImageLayout layout)
 {
     switch (layout) {
-        case VK_IMAGE_LAYOUT_UNDEFINED:
-            return "UNDEFINED";
-        case VK_IMAGE_LAYOUT_GENERAL:
-            return "GENERAL";
+        case VK_IMAGE_LAYOUT_UNDEFINED: return "UNDEFINED";
+        case VK_IMAGE_LAYOUT_GENERAL: return "GENERAL";
         case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
             return "COLOR_ATTACHMENT_OPTIMAL";
         case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
             return "DEPTH_ATTACHMENT_OPTIMAL";
         case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
             return "SHADER_READ_ONLY_OPTIMAL";
-        case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-            return "TRANSFER_SRC_OPTIMAL";
-        case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-            return "TRANSFER_DST_OPTIMAL";
-        case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-            return "PRESENT_SRC_KHR";
-        default:
-            return "OTHER";
-    }
-}
-
-enum class PassAccessMode : uint8_t {
-    None,
-    Read,
-    Write,
-    ReadWrite,
-};
-
-PassAccessMode getPassAccessMode(const PassNode& node, uint32_t resourceId)
-{
-    bool read = false;
-    bool write = false;
-    for (const PassResourceAccess& access : node.accesses) {
-        if (access.resource.id != resourceId) {
-            continue;
-        }
-
-        if (access.access == ResourceAccessType::Read) {
-            read = true;
-        }
-        if (access.access == ResourceAccessType::Write) {
-            write = true;
-        }
-    }
-
-    if (read && write) {
-        return PassAccessMode::ReadWrite;
-    }
-    if (write) {
-        return PassAccessMode::Write;
-    }
-    if (read) {
-        return PassAccessMode::Read;
-    }
-
-    return PassAccessMode::None;
-}
-
-VkPipelineStageFlags stageForLayout(VkImageLayout layout)
-{
-    switch (layout) {
-        case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-            return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
-        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-            return VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
-                | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-        case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-            return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-        case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-            return VK_PIPELINE_STAGE_TRANSFER_BIT;
-        case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-            return VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-        case VK_IMAGE_LAYOUT_GENERAL:
-            return VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-        case VK_IMAGE_LAYOUT_UNDEFINED:
-        default:
-            return VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    }
-}
-
-const PassAttachment* findAttachment(
-    const PassNode& node,
-    uint32_t resourceId)
-{
-    const auto found = std::find_if(
-        node.attachments.begin(),
-        node.attachments.end(),
-        [resourceId](const PassAttachment& attachment) {
-            return attachment.resource.id == resourceId;
-        });
-    return found == node.attachments.end() ? nullptr : &*found;
-}
-
-VkImageLayout targetLayoutForAccess(
-    const PassNode& node,
-    uint32_t resourceId,
-    VkImageAspectFlags aspect)
-{
-    if (const PassAttachment* attachment =
-            findAttachment(node, resourceId)) {
-        return attachment->type == AttachmentType::Depth
-            ? VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL
-            : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    }
-
-    const PassAccessMode mode = getPassAccessMode(node, resourceId);
-    switch (mode) {
-        case PassAccessMode::Write:
-            if ((aspect & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) != 0) {
-                return VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-            }
-            return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        case PassAccessMode::Read:
-            return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        case PassAccessMode::ReadWrite:
-            return VK_IMAGE_LAYOUT_GENERAL;
-        case PassAccessMode::None:
-        default:
-            return VK_IMAGE_LAYOUT_GENERAL;
-    }
-}
-
-VkPipelineStageFlags targetStageForAccess(
-    const PassNode& node,
-    uint32_t resourceId,
-    VkImageAspectFlags aspect)
-{
-    if (const PassAttachment* attachment =
-            findAttachment(node, resourceId)) {
-        return attachment->type == AttachmentType::Depth
-            ? VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
-                | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
-            : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    }
-
-    const PassAccessMode mode = getPassAccessMode(node, resourceId);
-    switch (mode) {
-        case PassAccessMode::Write:
-            if ((aspect & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) != 0) {
-                return VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
-                    | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-            }
-            return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        case PassAccessMode::Read:
-            return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-        case PassAccessMode::ReadWrite:
-            return VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-        case PassAccessMode::None:
-        default:
-            return VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+        case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL: return "TRANSFER_SRC_OPTIMAL";
+        case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL: return "TRANSFER_DST_OPTIMAL";
+        case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR: return "PRESENT_SRC_KHR";
+        default: return "OTHER";
     }
 }
 
@@ -205,17 +47,12 @@ VkAttachmentLoadOp resolveLoadOp(
     VkAttachmentLoadOp runtimeDefault)
 {
     switch (policy) {
-        case AttachmentLoadPolicy::RuntimeDefault:
-            return runtimeDefault;
-        case AttachmentLoadPolicy::Load:
-            return VK_ATTACHMENT_LOAD_OP_LOAD;
-        case AttachmentLoadPolicy::Clear:
-            return VK_ATTACHMENT_LOAD_OP_CLEAR;
-        case AttachmentLoadPolicy::DontCare:
-            return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        default:
-            return runtimeDefault;
+        case AttachmentLoadPolicy::RuntimeDefault: return runtimeDefault;
+        case AttachmentLoadPolicy::Load: return VK_ATTACHMENT_LOAD_OP_LOAD;
+        case AttachmentLoadPolicy::Clear: return VK_ATTACHMENT_LOAD_OP_CLEAR;
+        case AttachmentLoadPolicy::DontCare: return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     }
+    return runtimeDefault;
 }
 
 VkAttachmentStoreOp resolveStoreOp(
@@ -223,133 +60,128 @@ VkAttachmentStoreOp resolveStoreOp(
     VkAttachmentStoreOp runtimeDefault)
 {
     switch (policy) {
-        case AttachmentStorePolicy::RuntimeDefault:
-            return runtimeDefault;
-        case AttachmentStorePolicy::Store:
-            return VK_ATTACHMENT_STORE_OP_STORE;
-        case AttachmentStorePolicy::DontCare:
-            return VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        default:
-            return runtimeDefault;
+        case AttachmentStorePolicy::RuntimeDefault: return runtimeDefault;
+        case AttachmentStorePolicy::Store: return VK_ATTACHMENT_STORE_OP_STORE;
+        case AttachmentStorePolicy::DontCare: return VK_ATTACHMENT_STORE_OP_DONT_CARE;
     }
+    return runtimeDefault;
 }
 
 } // namespace
 
+RenderPipeline::RenderPipeline()
+    : m_exportLifetime(std::make_shared<ExportLifetimeState>())
+{
+}
+
 RenderPipeline::~RenderPipeline()
 {
+    if (m_exportLifetime) {
+        m_exportLifetime->alive = false;
+        ++m_exportLifetime->epoch;
+    }
     KU_INFO("RenderPipeline destroyed ({} passes)", m_passes.size());
 }
 
 void RenderPipeline::compile(const RenderContext& context)
 {
     m_compiled = false;
-    m_renderGraph.reset();
-    m_compiledExecutionOrder.clear();
-    m_externalImageBindings.clear();
+    invalidateExports();
 
+    RenderGraph candidateGraph;
     for (auto& pass : m_passes) {
         pass->initialize(context);
-
-        const size_t graphIndex = m_renderGraph.registerPass(*pass);
-        auto builder = m_renderGraph.buildPass(graphIndex);
+        const size_t graphIndex = candidateGraph.registerPass(*pass);
+        auto builder = candidateGraph.buildPass(graphIndex);
         pass->setup(builder);
     }
+    candidateGraph.compile();
 
-    m_renderGraph.compile();
+    RHIRenderGraphResourceAllocator allocator(context.device);
+    RenderGraphResourcePool candidatePool = RenderGraphResourcePool::build(
+        candidateGraph,
+        context.initialExtent,
+        m_nextAllocationGeneration,
+        allocator);
 
-    const auto& graphPasses = m_renderGraph.passes();
-    const auto& resources = m_renderGraph.resources();
+    for (auto& pass : m_passes) {
+        pass->prepare(context);
+    }
 
-    const auto& executionOrder = m_renderGraph.executionOrder();
-    for (const size_t passIndex : executionOrder) {
-        if (passIndex >= graphPasses.size()) {
-            continue;
-        }
-
-        const auto& node = graphPasses[passIndex];
-        if (node.pass != nullptr) {
-            m_compiledExecutionOrder.push_back(passIndex);
-        }
-
+    std::vector<size_t> candidateOrder;
+    const auto& graphPasses = candidateGraph.passes();
+    const auto& resources = candidateGraph.resources();
+    for (const size_t passIndex : candidateGraph.executionOrder()) {
+        if (passIndex >= graphPasses.size()) continue;
+        const PassNode& node = graphPasses[passIndex];
+        if (node.pass) candidateOrder.push_back(passIndex);
         std::ostringstream accessSummary;
-        for (size_t i = 0; i < node.accesses.size(); ++i) {
-            const auto& access = node.accesses[i];
-            if (i > 0) {
-                accessSummary << ", ";
-            }
-
-            if (access.resource.id < resources.size()) {
-                accessSummary << toString(access.access) << ":" << resources[access.resource.id].name;
-            } else {
-                accessSummary << toString(access.access) << ":<invalid-resource>";
-            }
+        for (size_t i = 0; i < node.uses.size(); ++i) {
+            if (i) accessSummary << ", ";
+            const auto& use = node.uses[i];
+            accessSummary << (use.reads ? "R" : "")
+                << (use.writes ? "W" : "") << ":"
+                << resources[use.resource.index].name;
         }
-
-        const std::string accessText = accessSummary.str();
         KU_INFO(
             "RenderPass compiled: {} (declared resources: {})",
             node.name,
-            accessText.empty() ? "none" : accessText);
+            accessSummary.str().empty() ? "none" : accessSummary.str());
     }
 
     std::ostringstream orderSummary;
-    for (size_t i = 0; i < executionOrder.size(); ++i) {
-        const size_t passIndex = executionOrder[i];
-        if (passIndex >= graphPasses.size()) {
-            continue;
-        }
-
-        if (i > 0) {
-            orderSummary << " -> ";
-        }
-        orderSummary << graphPasses[passIndex].name;
+    for (size_t i = 0; i < candidateGraph.executionOrder().size(); ++i) {
+        if (i) orderSummary << " -> ";
+        orderSummary << graphPasses[candidateGraph.executionOrder()[i]].name;
     }
-
-    for (const PassDependencyEdge& dependency : m_renderGraph.dependencies()) {
-        if (dependency.fromPass >= graphPasses.size() || dependency.toPass >= graphPasses.size()) {
-            continue;
-        }
-
+    for (const PassDependencyEdge& dependency : candidateGraph.dependencies()) {
         KU_INFO(
             "RenderGraph dependency: {} -> {} ({})",
             graphPasses[dependency.fromPass].name,
             graphPasses[dependency.toPass].name,
             dependency.explicitDependency ? "explicit" : "resource");
     }
-
-    for (const BarrierPlanItem& barrier : m_renderGraph.barrierPlan()) {
-        if (barrier.fromPass >= graphPasses.size() || barrier.toPass >= graphPasses.size()) {
-            continue;
-        }
-
-        const char* resourceName = "<invalid-resource>";
-        if (barrier.resource.id < resources.size()) {
-            resourceName = resources[barrier.resource.id].name.c_str();
-        }
-
+    for (const BarrierPlanItem& barrier : candidateGraph.barrierPlan()) {
         KU_INFO(
             "RenderGraph barrier-plan: {} -> {} | {} ({})",
             graphPasses[barrier.fromPass].name,
             graphPasses[barrier.toPass].name,
-            resourceName,
+            resources[barrier.resource.index].name,
             toString(barrier.hazard));
     }
 
+    CompileDebugInfo candidateDebug{};
+    candidateDebug.passCount = graphPasses.size();
+    candidateDebug.resourceCount = resources.size();
+    candidateDebug.dependencyCount = candidateGraph.dependencies().size();
+    candidateDebug.barrierCount = candidateGraph.barrierPlan().size();
+    candidateDebug.orderSummary = orderSummary.str();
+
+    m_renderGraph = std::move(candidateGraph);
+    m_resourcePool.swap(candidatePool);
+    m_compiledExecutionOrder = std::move(candidateOrder);
+    m_compileDebug = std::move(candidateDebug);
+    m_externalImageBindings.clear();
+    m_externalBufferBindings.clear();
+    m_device = &context.device;
+    ++m_nextAllocationGeneration;
+    m_executeCompleted = false;
+    m_compiled = true;
+
     KU_INFO(
         "RenderGraph executable compile finished (passes={}, resources={}, dependencies={}, barriers={}, order={})",
-        m_renderGraph.passes().size(),
-        m_renderGraph.resources().size(),
-        m_renderGraph.dependencies().size(),
-        m_renderGraph.barrierPlan().size(),
-        orderSummary.str().empty() ? "none" : orderSummary.str());
+        m_compileDebug.passCount,
+        m_compileDebug.resourceCount,
+        m_compileDebug.dependencyCount,
+        m_compileDebug.barrierCount,
+        m_compileDebug.orderSummary.empty() ? "none" : m_compileDebug.orderSummary);
+}
 
-    m_compileDebug.passCount = m_renderGraph.passes().size();
-    m_compileDebug.resourceCount = m_renderGraph.resources().size();
-    m_compileDebug.dependencyCount = m_renderGraph.dependencies().size();
-    m_compileDebug.barrierCount = m_renderGraph.barrierPlan().size();
-    m_compileDebug.orderSummary = orderSummary.str();
-    m_compiled = true;
+void RenderPipeline::beginFrame()
+{
+    ++m_exportLifetime->frameSerial;
+    m_executeCompleted = false;
+    m_resourcePool.invalidateTransientContents();
 }
 
 void RenderPipeline::execute(CommandList& cmd, const FrameData& frame)
@@ -358,132 +190,184 @@ void RenderPipeline::execute(CommandList& cmd, const FrameData& frame)
         throw std::runtime_error(
             "RenderPipeline must be compiled before graph execution");
     }
-
+    beginFrame();
+    m_executeDebug = {};
     m_executeDebug.frameIndex = frame.frameIndex;
-    m_executeDebug.plannedBarriers = 0;
-    m_executeDebug.appliedBarriers = 0;
-    m_executeDebug.resourceTransitions = 0;
-    m_executeDebug.renderingScopes = 0;
-    m_executeDebug.skippedUnbound = 0;
-    m_executeDebug.skippedNoAccess = 0;
     m_barrierDebugEvents.clear();
 
-    if (!m_compiledExecutionOrder.empty()) {
-        const auto& graphPasses = m_renderGraph.passes();
-        const auto& resources = m_renderGraph.resources();
-
-        for (const size_t passIndex : m_compiledExecutionOrder) {
-            if (passIndex >= graphPasses.size()) {
-                continue;
-            }
-
-            const auto& node = graphPasses[passIndex];
-            if (node.pass == nullptr || !node.pass->enabled()) {
-                continue;
-            }
-
-            for (const BarrierPlanItem& barrier : m_renderGraph.barrierPlan()) {
-                if (barrier.toPass != passIndex) {
-                    continue;
-                }
-
-                ++m_executeDebug.plannedBarriers;
-
-                BarrierDebugEvent debugEvent{};
-                debugEvent.hazard = barrier.hazard;
-                if (barrier.fromPass < graphPasses.size()) {
-                    debugEvent.fromPass = graphPasses[barrier.fromPass].name;
-                } else {
-                    debugEvent.fromPass = "<invalid-pass>";
-                }
-                if (barrier.toPass < graphPasses.size()) {
-                    debugEvent.toPass = graphPasses[barrier.toPass].name;
-                } else {
-                    debugEvent.toPass = "<invalid-pass>";
-                }
-                if (barrier.resource.id < resources.size()) {
-                    debugEvent.resourceName = resources[barrier.resource.id].name;
-                } else {
-                    debugEvent.resourceName = "<invalid-resource>";
-                    ++m_executeDebug.skippedNoAccess;
-                    debugEvent.reason = "barrier references an invalid resource";
-                    m_barrierDebugEvents.push_back(std::move(debugEvent));
-                    continue;
-                }
-
-                const std::string& resourceName =
-                    resources[barrier.resource.id].name;
-                auto bindingIt = m_externalImageBindings.find(resourceName);
-                if (bindingIt == m_externalImageBindings.end()) {
-                    ++m_executeDebug.skippedUnbound;
-                    debugEvent.reason = "no external image bound";
-                    m_barrierDebugEvents.push_back(std::move(debugEvent));
-                    if (resources[barrier.resource.id].external) {
-                        throw std::runtime_error(
-                            "RenderGraph external image is not bound: "
-                            + resourceName);
-                    }
-                    continue;
-                }
-
-                ExternalImageBinding& binding = bindingIt->second;
-                if (binding.image == VK_NULL_HANDLE) {
-                    ++m_executeDebug.skippedUnbound;
-                    debugEvent.reason = "external binding has null image";
-                    m_barrierDebugEvents.push_back(std::move(debugEvent));
-                    if (resources[barrier.resource.id].external) {
-                        throw std::runtime_error(
-                            "RenderGraph external image binding is null: "
-                            + resourceName);
-                    }
-                    continue;
-                }
-
-                const PassAccessMode mode = getPassAccessMode(node, barrier.resource.id);
-                if (mode == PassAccessMode::None) {
-                    ++m_executeDebug.skippedNoAccess;
-                    debugEvent.reason = "target pass has no access declaration";
-                    m_barrierDebugEvents.push_back(std::move(debugEvent));
-                    continue;
-                }
-
-                const VkImageLayout targetLayout = targetLayoutForAccess(
-                    node,
-                    barrier.resource.id,
-                    binding.aspect);
-                const VkPipelineStageFlags srcStage = stageForLayout(binding.currentLayout);
-                const VkPipelineStageFlags dstStage = targetStageForAccess(
-                    node,
-                    barrier.resource.id,
-                    binding.aspect);
-
-                debugEvent.oldLayout = binding.currentLayout;
-                debugEvent.newLayout = targetLayout;
-
-                cmd.imageBarrier(
-                    binding.image,
-                    binding.currentLayout,
-                    targetLayout,
-                    srcStage,
-                    dstStage,
-                    binding.aspect);
-
-                binding.currentLayout = targetLayout;
-                ++m_executeDebug.appliedBarriers;
-                debugEvent.applied = true;
-                debugEvent.reason = "applied outside rendering scope";
-                m_barrierDebugEvents.push_back(std::move(debugEvent));
-            }
-
-            executePassNode(cmd, frame, node, resources);
+    const auto& graphPasses = m_renderGraph.passes();
+    const auto& resources = m_renderGraph.resources();
+    std::vector<StatePlannerResource> plannerResources;
+    plannerResources.reserve(resources.size());
+    m_executionResourceStates.clear();
+    m_executionResourceStates.reserve(resources.size());
+    for (uint32_t index = 0; index < resources.size(); ++index) {
+        const ResourceDesc& resource = resources[index];
+        const ResourceHandle handle{
+            index, m_renderGraph.generation(), resource.kind};
+        if (resource.kind == ResourceKind::Image) {
+            const ImageDesc& desc = std::get<ImageDesc>(resource.description);
+            const ResolvedImage image = resolveImagePhysical(
+                ImageHandle{index, m_renderGraph.generation()});
+            plannerResources.push_back({
+                handle, resource.name, image.state, image.contentsValid,
+                RenderGraph::normalizeImageRange(desc, {}), {}});
+            m_executionResourceStates.push_back(
+                {handle, image.state, image.contentsValid});
+        } else {
+            const BufferDesc& desc = std::get<BufferDesc>(resource.description);
+            const ResolvedBuffer buffer = resolveBufferPhysical(
+                BufferHandle{index, m_renderGraph.generation()});
+            plannerResources.push_back({
+                handle, resource.name, buffer.state, buffer.contentsValid,
+                {}, RenderGraph::normalizeBufferRange(desc, {})});
+            m_executionResourceStates.push_back(
+                {handle, buffer.state, buffer.contentsValid});
         }
-        return;
     }
 
-    if (!m_passes.empty()) {
-        throw std::runtime_error(
-            "Compiled RenderGraph has no executable order for registered passes");
+    std::vector<StatePlannerPass> plannerPasses;
+    plannerPasses.reserve(m_compiledExecutionOrder.size());
+    for (const size_t passIndex : m_compiledExecutionOrder) {
+        if (passIndex >= graphPasses.size()) continue;
+        const PassNode& node = graphPasses[passIndex];
+        StatePlannerPass plannedPass{};
+        plannedPass.graphPassIndex = passIndex;
+        plannedPass.name = node.name;
+        plannedPass.enabled = node.pass && node.pass->enabled();
+        plannedPass.uses.reserve(node.uses.size());
+        for (const CompiledResourceUse& declared : node.uses) {
+            StatePlannerUse runtimeUse{declared, false};
+            if (declared.attachment) {
+                const PassAttachment& attachment =
+                    node.attachments.at(declared.attachmentIndex);
+                const ResourceDesc& logical =
+                    resources[attachment.resource.index];
+                VkAttachmentLoadOp defaultLoad = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+                VkAttachmentStoreOp defaultStore = VK_ATTACHMENT_STORE_OP_STORE;
+                if (logical.external()) {
+                    const ExternalImageBinding& binding =
+                        m_externalImageBindings.at(attachment.resource.index);
+                    defaultLoad = binding.defaultLoadOp;
+                    defaultStore = binding.defaultStoreOp;
+                } else if (std::get<ImageDesc>(logical.description).initialContent
+                    == InitialContent::Cleared) {
+                    defaultLoad = VK_ATTACHMENT_LOAD_OP_CLEAR;
+                }
+                const VkAttachmentLoadOp load =
+                    resolveLoadOp(attachment.loadPolicy, defaultLoad);
+                const VkAttachmentStoreOp store =
+                    resolveStoreOp(attachment.storePolicy, defaultStore);
+                runtimeUse.use.reads = load == VK_ATTACHMENT_LOAD_OP_LOAD;
+                runtimeUse.use.writes = true;
+                const VkAccessFlags2 readBit = attachment.type == AttachmentType::Depth
+                    ? VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
+                    : VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
+                if (runtimeUse.use.reads) runtimeUse.use.state.access |= readBit;
+                else runtimeUse.use.state.access &= ~readBit;
+                runtimeUse.discardAfter = store != VK_ATTACHMENT_STORE_OP_STORE;
+            }
+            plannedPass.uses.push_back(runtimeUse);
+        }
+        plannerPasses.push_back(std::move(plannedPass));
     }
+
+    // Complete, side-effect-free preflight before the first graph command.
+    const RenderGraphStatePlan plan =
+        RenderGraphStatePlanner::plan(plannerResources, plannerPasses);
+
+    try {
+        for (size_t planPassIndex = 0;
+             planPassIndex < plannerPasses.size();
+             ++planPassIndex) {
+            const StatePlannerPass& plannedPass = plannerPasses[planPassIndex];
+            const PassNode& node = graphPasses[plannedPass.graphPassIndex];
+            if (!plannedPass.enabled) continue;
+
+            std::vector<VkImageMemoryBarrier2> imageBarriers;
+            std::vector<VkBufferMemoryBarrier2> bufferBarriers;
+            for (const PlannedResourceBarrier& barrier
+                 : plan.barriersBeforePass[planPassIndex]) {
+                ++m_executeDebug.plannedBarriers;
+                if (barrier.resource.kind == ResourceKind::Image) {
+                    const ResolvedImage image = resolveImagePhysical({
+                        barrier.resource.index,
+                        barrier.resource.graphGeneration});
+                    VkImageMemoryBarrier2 native{};
+                    native.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+                    native.srcStageMask = barrier.before.stages;
+                    native.srcAccessMask = barrier.before.access;
+                    native.dstStageMask = barrier.after.stages;
+                    native.dstAccessMask = barrier.after.access;
+                    native.oldLayout = barrier.before.layout;
+                    native.newLayout = barrier.after.layout;
+                    native.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    native.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    native.image = image.image;
+                    native.subresourceRange = {
+                        barrier.imageRange.aspect,
+                        barrier.imageRange.baseMipLevel,
+                        barrier.imageRange.levelCount,
+                        barrier.imageRange.baseArrayLayer,
+                        barrier.imageRange.layerCount};
+                    imageBarriers.push_back(native);
+                } else {
+                    const ResolvedBuffer buffer = resolveBufferPhysical({
+                        barrier.resource.index,
+                        barrier.resource.graphGeneration});
+                    VkBufferMemoryBarrier2 native{};
+                    native.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+                    native.srcStageMask = barrier.before.stages;
+                    native.srcAccessMask = barrier.before.access;
+                    native.dstStageMask = barrier.after.stages;
+                    native.dstAccessMask = barrier.after.access;
+                    native.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    native.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    native.buffer = buffer.buffer;
+                    native.offset = barrier.bufferRange.offset;
+                    native.size = barrier.bufferRange.size;
+                    bufferBarriers.push_back(native);
+                }
+                m_executionResourceStates[barrier.resource.index].state =
+                    barrier.after;
+                ++m_executeDebug.appliedBarriers;
+            }
+            if (!imageBarriers.empty() || !bufferBarriers.empty()) {
+                cmd.pipelineBarrier2(imageBarriers, bufferBarriers);
+            }
+            for (const StatePlannerUse& use : plannedPass.uses) {
+                m_executionResourceStates[use.use.resource.index].state =
+                    use.use.state;
+            }
+            executePassNode(cmd, frame, node, resources);
+            for (const StatePlannerUse& use : plannedPass.uses) {
+                auto& shadow =
+                    m_executionResourceStates[use.use.resource.index];
+                if (use.use.writes) shadow.contentsValid = true;
+                if (use.discardAfter) shadow.contentsValid = false;
+            }
+        }
+    } catch (...) {
+        m_currentPass = nullptr;
+        m_executionResourceStates.clear();
+        throw;
+    }
+
+    for (const PlannedResourceFinalState& final : plan.finalResources) {
+        if (final.resource.kind == ResourceKind::Image) {
+            setResolvedImageState(
+                {final.resource.index, final.resource.graphGeneration},
+                final.state,
+                final.contentsValid);
+        } else {
+            setResolvedBufferState(
+                {final.resource.index, final.resource.graphGeneration},
+                final.state,
+                final.contentsValid);
+        }
+    }
+    m_executionResourceStates.clear();
+    m_executeCompleted = true;
 }
 
 void RenderPipeline::executePassNode(
@@ -492,139 +376,73 @@ void RenderPipeline::executePassNode(
     const PassNode& node,
     const std::vector<ResourceDesc>& resources)
 {
-    for (const PassResourceAccess& access : node.accesses) {
-        if (access.resource.id >= resources.size()) {
-            throw std::runtime_error(
-                "RenderGraph pass access references an invalid resource");
-        }
-
-        const ResourceDesc& resource = resources[access.resource.id];
-        auto bindingIt = m_externalImageBindings.find(resource.name);
-        if (bindingIt == m_externalImageBindings.end()
-            || bindingIt->second.image == VK_NULL_HANDLE) {
-            if (resource.external) {
-                throw std::runtime_error(
-                    "RenderGraph external image is not bound: " + resource.name);
-            }
-            ++m_executeDebug.skippedUnbound;
-            continue;
-        }
-
-        ExternalImageBinding& binding = bindingIt->second;
-        const VkImageLayout targetLayout = targetLayoutForAccess(
-            node,
-            access.resource.id,
-            binding.aspect);
-        if (binding.currentLayout == targetLayout) {
-            continue;
-        }
-
-        cmd.imageBarrier(
-            binding.image,
-            binding.currentLayout,
-            targetLayout,
-            stageForLayout(binding.currentLayout),
-            targetStageForAccess(
-                node,
-                access.resource.id,
-                binding.aspect),
-            binding.aspect);
-        binding.currentLayout = targetLayout;
-        ++m_executeDebug.resourceTransitions;
-    }
-
     if (node.attachments.empty()) {
-        node.pass->execute(cmd, frame);
+        m_currentPass = &node;
+        try { node.pass->execute(cmd, frame, *this); }
+        catch (...) { m_currentPass = nullptr; throw; }
+        m_currentPass = nullptr;
         return;
     }
 
     std::vector<VkRenderingAttachmentInfo> colorAttachments;
-    colorAttachments.reserve(node.attachments.size());
     VkRenderingAttachmentInfo depthAttachment{};
     bool hasDepthAttachment = false;
     VkExtent2D renderExtent{0, 0};
-
-    struct StoredAttachment {
-        ExternalImageBinding* binding = nullptr;
-        VkAttachmentStoreOp storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    };
-    std::vector<StoredAttachment> storedAttachments;
-    storedAttachments.reserve(node.attachments.size());
-
     for (const PassAttachment& attachment : node.attachments) {
-        if (attachment.resource.id >= resources.size()) {
+        const ResourceDesc& logical = resources[attachment.resource.index];
+        ResolvedImage image = resolveImagePhysical(attachment.resource);
+        if (!image.complete()) {
             throw std::runtime_error(
-                "RenderGraph attachment references an invalid resource");
+                "RenderGraph attachment binding is incomplete: " + logical.name);
         }
-
-        const ResourceDesc& resource = resources[attachment.resource.id];
-        auto bindingIt = m_externalImageBindings.find(resource.name);
-        if (bindingIt == m_externalImageBindings.end()) {
-            throw std::runtime_error(
-                "RenderGraph attachment image is not bound: " + resource.name);
-        }
-
-        ExternalImageBinding& binding = bindingIt->second;
-        if (binding.image == VK_NULL_HANDLE
-            || binding.imageView == VK_NULL_HANDLE
-            || binding.extent.width == 0
-            || binding.extent.height == 0) {
-            throw std::runtime_error(
-                "RenderGraph attachment binding is incomplete: " + resource.name);
-        }
-
         const bool depthAspect =
-            (binding.aspect
-                & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT))
-            != 0;
+            (image.aspect
+                & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) != 0;
         if ((attachment.type == AttachmentType::Depth) != depthAspect) {
             throw std::runtime_error(
                 "RenderGraph attachment type does not match image aspect: "
-                + resource.name);
+                + logical.name);
         }
-
         if (renderExtent.width == 0) {
-            renderExtent = binding.extent;
-        } else if (renderExtent.width != binding.extent.width
-            || renderExtent.height != binding.extent.height) {
+            renderExtent = image.extent;
+        } else if (renderExtent.width != image.extent.width
+            || renderExtent.height != image.extent.height) {
             throw std::runtime_error(
                 "RenderGraph pass attachments must have matching extents");
         }
 
-        const VkAttachmentLoadOp loadOp = resolveLoadOp(
-            attachment.loadPolicy,
-            binding.defaultLoadOp);
-        if (loadOp == VK_ATTACHMENT_LOAD_OP_LOAD
-            && !binding.contentsValid) {
-            throw std::runtime_error(
-                "RenderGraph attachment LOAD requested before valid contents exist: "
-                + resource.name);
+        VkAttachmentLoadOp defaultLoad = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        VkAttachmentStoreOp defaultStore = VK_ATTACHMENT_STORE_OP_STORE;
+        if (logical.external()) {
+            const ExternalImageBinding& binding =
+                m_externalImageBindings.at(attachment.resource.index);
+            defaultLoad = binding.defaultLoadOp;
+            defaultStore = binding.defaultStoreOp;
+        } else if (std::get<ImageDesc>(logical.description).initialContent
+            == InitialContent::Cleared) {
+            defaultLoad = VK_ATTACHMENT_LOAD_OP_CLEAR;
         }
-        const VkAttachmentStoreOp storeOp = resolveStoreOp(
-            attachment.storePolicy,
-            binding.defaultStoreOp);
-
-        VkRenderingAttachmentInfo renderingAttachment{};
-        renderingAttachment.sType =
-            VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        renderingAttachment.imageView = binding.imageView;
-        renderingAttachment.imageLayout = binding.currentLayout;
-        renderingAttachment.loadOp = loadOp;
-        renderingAttachment.storeOp = storeOp;
-        renderingAttachment.clearValue = binding.clearValue;
-
+        const VkAttachmentLoadOp loadOp =
+            resolveLoadOp(attachment.loadPolicy, defaultLoad);
+        const VkAttachmentStoreOp storeOp =
+            resolveStoreOp(attachment.storePolicy, defaultStore);
+        VkRenderingAttachmentInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        info.imageView = image.imageView;
+        info.imageLayout = image.currentLayout;
+        info.loadOp = loadOp;
+        info.storeOp = storeOp;
+        info.clearValue = image.clearValue;
         if (attachment.type == AttachmentType::Depth) {
-            depthAttachment = renderingAttachment;
+            depthAttachment = info;
             hasDepthAttachment = true;
         } else {
-            colorAttachments.push_back(renderingAttachment);
+            colorAttachments.push_back(info);
         }
-        storedAttachments.push_back(StoredAttachment{&binding, storeOp});
     }
 
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    renderingInfo.renderArea.offset = {0, 0};
     renderingInfo.renderArea.extent = renderExtent;
     renderingInfo.layerCount = 1;
     renderingInfo.colorAttachmentCount =
@@ -633,13 +451,12 @@ void RenderPipeline::executePassNode(
         colorAttachments.empty() ? nullptr : colorAttachments.data();
     renderingInfo.pDepthAttachment =
         hasDepthAttachment ? &depthAttachment : nullptr;
-
     vkCmdBeginRendering(cmd, &renderingInfo);
     ++m_executeDebug.renderingScopes;
 
     const ViewerPixelRect sceneRect = fitViewerRectToExtent(
         frame.viewerLayout.sceneFramebuffer,
-        ViewerPixelExtent{renderExtent.width, renderExtent.height});
+        {renderExtent.width, renderExtent.height});
     VkViewport viewport{};
     viewport.x = static_cast<float>(sceneRect.x);
     viewport.y = static_cast<float>(sceneRect.y);
@@ -648,80 +465,391 @@ void RenderPipeline::executePassNode(
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(cmd, 0, 1, &viewport);
-
     VkRect2D scissor{};
     scissor.offset = {
         static_cast<int32_t>(sceneRect.x),
-        static_cast<int32_t>(sceneRect.y),
-    };
+        static_cast<int32_t>(sceneRect.y)};
     scissor.extent = {sceneRect.width, sceneRect.height};
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     try {
-        node.pass->execute(cmd, frame);
+        m_currentPass = &node;
+        node.pass->execute(cmd, frame, *this);
     } catch (...) {
+        m_currentPass = nullptr;
         vkCmdEndRendering(cmd);
         throw;
     }
+    m_currentPass = nullptr;
     vkCmdEndRendering(cmd);
-
-    for (const StoredAttachment& stored : storedAttachments) {
-        stored.binding->contentsValid =
-            stored.storeOp == VK_ATTACHMENT_STORE_OP_STORE;
-    }
 }
 
 void RenderPipeline::update(const FrameData& frame)
 {
-    if (!m_compiledExecutionOrder.empty()) {
-        const auto& graphPasses = m_renderGraph.passes();
-        for (const size_t passIndex : m_compiledExecutionOrder) {
-            if (passIndex >= graphPasses.size()) {
-                continue;
-            }
-
-            RenderPass* pass = graphPasses[passIndex].pass;
-            if (pass != nullptr && pass->enabled()) {
-                pass->update(frame);
-            }
-        }
-        return;
-    }
-
-    for (auto& pass : m_passes) {
-        if (pass->enabled()) {
-            pass->update(frame);
-        }
+    for (const auto& pass : m_passes) {
+        if (pass && pass->enabled()) pass->update(frame);
     }
 }
 
 void RenderPipeline::bindExternalImage(
+    ImageHandle handle,
     const ExternalImageBindingInfo& info)
 {
-    if (info.resourceName.empty()) {
-        throw std::invalid_argument(
-            "External image binding requires a resource name");
+    if (!m_compiled) {
+        throw std::runtime_error("External image binding requires a compiled graph");
     }
-    if (info.image == VK_NULL_HANDLE
-        || info.imageView == VK_NULL_HANDLE
-        || info.extent.width == 0
-        || info.extent.height == 0) {
+    const ResourceDesc& logical = m_renderGraph.resource(handle);
+    if (!logical.external() || logical.kind != ResourceKind::Image) {
         throw std::invalid_argument(
-            "External image binding requires an image, view, and non-zero extent");
+            "External image binding handle is not an imported image");
     }
-
-    m_externalImageBindings[std::string(info.resourceName)] =
-        ExternalImageBinding{
+    const ImageDesc& expected = std::get<ImageDesc>(logical.description);
+    validateExternalImageBindingInfo(
+        expected,
+        m_resourcePool.swapchainExtent(),
+        info,
+        logical.name);
+    m_externalImageBindings[handle.index] = ExternalImageBinding{
+        handle,
         info.image,
         info.imageView,
         info.extent,
-        info.currentLayout,
+        info.format,
+        info.usage,
+        info.initialState,
         info.aspect,
         info.clearValue,
         info.defaultLoadOp,
         info.defaultStoreOp,
-        info.finalLayout,
+        info.finalState,
+        m_nextExternalBindingGeneration++,
         info.contentsValid,
+    };
+}
+
+void RenderPipeline::bindExternalImage(const ExternalImageBindingInfo& info)
+{
+    if (info.resourceName.empty()) {
+        throw std::invalid_argument("External image binding requires a name");
+    }
+    const auto handle = m_renderGraph.findImage(info.resourceName);
+    if (!handle) {
+        throw std::invalid_argument(
+            "External image binding name is not declared: "
+            + std::string(info.resourceName));
+    }
+    bindExternalImage(*handle, info);
+}
+
+void RenderPipeline::bindExternalBuffer(
+    BufferHandle handle,
+    const ExternalBufferBindingInfo& info)
+{
+    if (!m_compiled) {
+        throw std::runtime_error("External buffer binding requires a compiled graph");
+    }
+    const ResourceDesc& logical = m_renderGraph.resource(handle);
+    if (!logical.external() || logical.kind != ResourceKind::Buffer) {
+        throw std::invalid_argument(
+            "External buffer binding handle is not an imported buffer");
+    }
+    const BufferDesc& expected = std::get<BufferDesc>(logical.description);
+    validateExternalBufferBindingInfo(expected, info, logical.name);
+    m_externalBufferBindings[handle.index] = ExternalBufferBinding{
+        handle,
+        info.buffer,
+        info.size,
+        info.usage,
+        info.initialState,
+        info.finalState,
+        m_nextExternalBindingGeneration++,
+        info.contentsValid,
+    };
+}
+
+void RenderPipeline::validateExternalImageBindingInfo(
+    const ImageDesc& expected,
+    VkExtent2D swapchainExtent,
+    const ExternalImageBindingInfo& info,
+    std::string_view logicalName)
+{
+    if (info.image == VK_NULL_HANDLE || info.imageView == VK_NULL_HANDLE
+        || info.extent.width == 0 || info.extent.height == 0
+        || info.format == VK_FORMAT_UNDEFINED || info.aspect == 0) {
+        throw std::invalid_argument("External image binding is incomplete");
+    }
+    const VkExtent2D expectedExtent =
+        resolveImageExtent(expected, swapchainExtent);
+    if (info.format != expected.format
+        || info.extent.width != expectedExtent.width
+        || info.extent.height != expectedExtent.height
+        || info.aspect != expected.aspect) {
+        throw std::invalid_argument(
+            "External image binding does not match declared format/extent/aspect");
+    }
+    if (info.usage == 0
+        || (info.usage & expected.usage) != expected.usage) {
+        const std::string_view name = logicalName.empty()
+            ? info.resourceName
+            : logicalName;
+        std::ostringstream message;
+        message << "External image binding usage mismatch for resource '"
+            << (name.empty() ? "<unnamed>" : name)
+            << "': expected=" << expected.usage
+            << " actual=" << info.usage;
+        throw std::invalid_argument(message.str());
+    }
+    if (expected.initialContent == InitialContent::Preserved
+        && !info.contentsValid) {
+        throw std::invalid_argument(
+            "External image declared Preserved requires valid bound contents");
+    }
+}
+
+void RenderPipeline::validateExternalBufferBindingInfo(
+    const BufferDesc& expected,
+    const ExternalBufferBindingInfo& info,
+    std::string_view logicalName)
+{
+    if (info.buffer == VK_NULL_HANDLE || info.size == 0) {
+        throw std::invalid_argument("External buffer binding is incomplete");
+    }
+    if (info.size < expected.size) {
+        throw std::invalid_argument(
+            "External buffer binding does not match declared size");
+    }
+    if (info.usage == 0
+        || (info.usage & expected.usage) != expected.usage) {
+        const std::string_view name = logicalName.empty()
+            ? info.resourceName
+            : logicalName;
+        std::ostringstream message;
+        message << "External buffer binding usage mismatch for resource '"
+            << (name.empty() ? "<unnamed>" : name)
+            << "': expected=" << expected.usage
+            << " actual=" << info.usage;
+        throw std::invalid_argument(message.str());
+    }
+    if (expected.initialContent == InitialContent::Preserved
+        && !info.contentsValid) {
+        throw std::invalid_argument(
+            "External buffer declared Preserved requires valid bound contents");
+    }
+}
+
+void RenderPipeline::bindExternalBuffer(const ExternalBufferBindingInfo& info)
+{
+    if (info.resourceName.empty()) {
+        throw std::invalid_argument("External buffer binding requires a name");
+    }
+    const auto handle = m_renderGraph.findBuffer(info.resourceName);
+    if (!handle) {
+        throw std::invalid_argument(
+            "External buffer binding name is not declared: "
+            + std::string(info.resourceName));
+    }
+    bindExternalBuffer(*handle, info);
+}
+
+bool RenderPipeline::currentPassDeclares(
+    ResourceHandle resource,
+    ImageUse use,
+    ImageSubresourceRange range) const
+{
+    return m_currentPass != nullptr
+        && passDeclaresUse(*m_currentPass, resource, use, range);
+}
+
+bool RenderPipeline::currentPassDeclares(
+    ResourceHandle resource,
+    BufferUse use,
+    BufferRange range) const
+{
+    return m_currentPass != nullptr
+        && passDeclaresUse(*m_currentPass, resource, use, range);
+}
+
+ResolvedImage RenderPipeline::resolveImage(
+    ImageHandle handle,
+    ImageUse declaredUse,
+    ImageSubresourceRange range)
+{
+    const ResourceDesc& logical = m_renderGraph.resource(handle);
+    range = RenderGraph::normalizeImageRange(
+        std::get<ImageDesc>(logical.description), range);
+    if (!currentPassDeclares(resourceHandle(handle), declaredUse, range)) {
+        throw std::runtime_error(
+            "RenderGraph pass attempted undeclared image use or range access");
+    }
+    return resolveImagePhysical(handle);
+}
+
+ResolvedBuffer RenderPipeline::resolveBuffer(
+    BufferHandle handle,
+    BufferUse declaredUse,
+    BufferRange range)
+{
+    const ResourceDesc& logical = m_renderGraph.resource(handle);
+    range = RenderGraph::normalizeBufferRange(
+        std::get<BufferDesc>(logical.description), range);
+    if (!currentPassDeclares(resourceHandle(handle), declaredUse, range)) {
+        throw std::runtime_error(
+            "RenderGraph pass attempted undeclared buffer use or range access");
+    }
+    return resolveBufferPhysical(handle);
+}
+
+ResolvedImage RenderPipeline::resolveImagePhysical(ImageHandle handle)
+{
+    const ResourceDesc& logical = m_renderGraph.resource(handle);
+    ResolvedImage resolved{};
+    if (!logical.external()) {
+        resolved = m_resourcePool.resolveImage(handle);
+    } else {
+    const auto found = m_externalImageBindings.find(handle.index);
+    if (found == m_externalImageBindings.end()) {
+        throw std::runtime_error(
+            "RenderGraph external image is not bound: " + logical.name);
+    }
+    const ExternalImageBinding& binding = found->second;
+    resolved = ResolvedImage{
+        handle,
+        binding.image,
+        binding.imageView,
+        binding.extent,
+        binding.format,
+        binding.usage,
+        binding.aspect,
+        binding.state,
+        binding.state.layout,
+        binding.clearValue,
+        binding.allocationGeneration,
+        binding.contentsValid,
+        true,
+    };
+    }
+    if (handle.index < m_executionResourceStates.size()) {
+        const auto& shadow = m_executionResourceStates[handle.index];
+        if (shadow.resource == resourceHandle(handle)) {
+            resolved.state = shadow.state;
+            resolved.currentLayout = shadow.state.layout;
+            resolved.contentsValid = shadow.contentsValid;
+        }
+    }
+    return resolved;
+}
+
+ResolvedBuffer RenderPipeline::resolveBufferPhysical(BufferHandle handle)
+{
+    const ResourceDesc& logical = m_renderGraph.resource(handle);
+    ResolvedBuffer resolved{};
+    if (!logical.external()) {
+        resolved = m_resourcePool.resolveBuffer(handle);
+    } else {
+    const auto found = m_externalBufferBindings.find(handle.index);
+    if (found == m_externalBufferBindings.end()) {
+        throw std::runtime_error(
+            "RenderGraph external buffer is not bound: " + logical.name);
+    }
+    const ExternalBufferBinding& binding = found->second;
+    resolved = ResolvedBuffer{
+        handle,
+        binding.buffer,
+        binding.size,
+        binding.usage,
+        binding.state,
+        binding.allocationGeneration,
+        binding.contentsValid,
+        true,
+    };
+    }
+    if (handle.index < m_executionResourceStates.size()) {
+        const auto& shadow = m_executionResourceStates[handle.index];
+        if (shadow.resource == resourceHandle(handle)) {
+            resolved.state = shadow.state;
+            resolved.contentsValid = shadow.contentsValid;
+        }
+    }
+    return resolved;
+}
+
+void RenderPipeline::setResolvedImageState(
+    ImageHandle handle,
+    ResourceState2 state,
+    bool contentsValid)
+{
+    const ResourceDesc& logical = m_renderGraph.resource(handle);
+    if (!logical.external()) {
+        m_resourcePool.setImageState(handle, state, contentsValid);
+        return;
+    }
+    ExternalImageBinding& binding = m_externalImageBindings.at(handle.index);
+    binding.state = state;
+    binding.contentsValid = contentsValid;
+}
+
+void RenderPipeline::setResolvedBufferState(
+    BufferHandle handle,
+    ResourceState2 state,
+    bool contentsValid)
+{
+    const ResourceDesc& logical = m_renderGraph.resource(handle);
+    if (!logical.external()) {
+        m_resourcePool.setBufferState(handle, state, contentsValid);
+        return;
+    }
+    ExternalBufferBinding& binding = m_externalBufferBindings.at(handle.index);
+    binding.state = state;
+    binding.contentsValid = contentsValid;
+}
+
+ExportedImage RenderPipeline::exportImage(ImageHandle handle) const
+{
+    if (!m_compiled || !m_executeCompleted) {
+        throw std::runtime_error(
+            "RenderGraph image export requires a completed execute");
+    }
+    const ResourceDesc& logical = m_renderGraph.resource(handle);
+    if (!logical.exported) {
+        throw std::invalid_argument(
+            "RenderGraph image was not declared for export: " + logical.name);
+    }
+    ResolvedImage resolved =
+        const_cast<RenderPipeline*>(this)->resolveImagePhysical(handle);
+    if (!resolved.contentsValid) {
+        throw std::runtime_error(
+            "RenderGraph image export has invalid contents: " + logical.name);
+    }
+    return ExportedImage{
+        resolved,
+        m_exportLifetime->epoch,
+        m_exportLifetime->frameSerial,
+        m_exportLifetime,
+    };
+}
+
+ExportedBuffer RenderPipeline::exportBuffer(BufferHandle handle) const
+{
+    if (!m_compiled || !m_executeCompleted) {
+        throw std::runtime_error(
+            "RenderGraph buffer export requires a completed execute");
+    }
+    const ResourceDesc& logical = m_renderGraph.resource(handle);
+    if (!logical.exported) {
+        throw std::invalid_argument(
+            "RenderGraph buffer was not declared for export: " + logical.name);
+    }
+    ResolvedBuffer resolved =
+        const_cast<RenderPipeline*>(this)->resolveBufferPhysical(handle);
+    if (!resolved.contentsValid) {
+        throw std::runtime_error(
+            "RenderGraph buffer export has invalid contents: " + logical.name);
+    }
+    return ExportedBuffer{
+        resolved,
+        m_exportLifetime->epoch,
+        m_exportLifetime->frameSerial,
+        m_exportLifetime,
     };
 }
 
@@ -729,88 +857,58 @@ void RenderPipeline::executeOverlay(
     CommandList& cmd,
     const std::function<void(VkCommandBuffer)>& draw)
 {
-    if (!draw) {
-        return;
-    }
-
-    const auto colorIt =
-        m_externalImageBindings.find(std::string(runtime_resource::swapChainColor));
-    if (colorIt == m_externalImageBindings.end()) {
+    if (!draw) return;
+    const auto handle = m_renderGraph.findImage(runtime_resource::swapChainColor);
+    if (!handle) {
         throw std::runtime_error(
-            "Runtime overlay requires the SwapChainColor external image");
+            "Runtime overlay requires SwapChainColor in the graph");
     }
+    ResolvedImage color = resolveImagePhysical(*handle);
+    const ResourceState2 overlayState{
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT
+            | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkImageMemoryBarrier2 barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+    barrier.srcStageMask = color.state.stages;
+    barrier.srcAccessMask = color.state.access;
+    barrier.dstStageMask = overlayState.stages;
+    barrier.dstAccessMask = overlayState.access;
+    barrier.oldLayout = color.state.layout;
+    barrier.newLayout = overlayState.layout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = color.image;
+    barrier.subresourceRange = {color.aspect, 0, 1, 0, 1};
+    cmd.pipelineBarrier2(std::span<const VkImageMemoryBarrier2>(&barrier, 1), {});
+    color.state = overlayState;
+    color.currentLayout = overlayState.layout;
+    ++m_executeDebug.resourceTransitions;
 
-    ExternalImageBinding& color = colorIt->second;
-    if (color.currentLayout != VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
-        cmd.imageBarrier(
-            color.image,
-            color.currentLayout,
-            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            stageForLayout(color.currentLayout),
-            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            color.aspect);
-        color.currentLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        ++m_executeDebug.resourceTransitions;
-    }
-
+    const ExternalImageBinding& colorBinding =
+        m_externalImageBindings.at(handle->index);
     VkRenderingAttachmentInfo colorAttachment{};
     colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     colorAttachment.imageView = color.imageView;
     colorAttachment.imageLayout = color.currentLayout;
-    colorAttachment.loadOp =
-        color.contentsValid ? VK_ATTACHMENT_LOAD_OP_LOAD : color.defaultLoadOp;
+    colorAttachment.loadOp = color.contentsValid
+        ? VK_ATTACHMENT_LOAD_OP_LOAD
+        : colorBinding.defaultLoadOp;
     if (colorAttachment.loadOp == VK_ATTACHMENT_LOAD_OP_LOAD
         && !color.contentsValid) {
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     }
-    colorAttachment.storeOp = color.defaultStoreOp;
+    colorAttachment.storeOp = colorBinding.defaultStoreOp;
     colorAttachment.clearValue = color.clearValue;
-
-    VkRenderingAttachmentInfo depthAttachment{};
-    ExternalImageBinding* depth = nullptr;
-    const auto depthIt =
-        m_externalImageBindings.find(std::string(runtime_resource::sceneDepth));
-    if (depthIt != m_externalImageBindings.end()) {
-        depth = &depthIt->second;
-        if (depth->extent.width != color.extent.width
-            || depth->extent.height != color.extent.height) {
-            throw std::runtime_error(
-                "Runtime overlay color and depth extents do not match");
-        }
-        if (depth->currentLayout != VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL) {
-            cmd.imageBarrier(
-                depth->image,
-                depth->currentLayout,
-                VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                stageForLayout(depth->currentLayout),
-                VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
-                    | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-                depth->aspect);
-            depth->currentLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-            ++m_executeDebug.resourceTransitions;
-        }
-
-        depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        depthAttachment.imageView = depth->imageView;
-        depthAttachment.imageLayout = depth->currentLayout;
-        depthAttachment.loadOp = depth->contentsValid
-            ? VK_ATTACHMENT_LOAD_OP_LOAD
-            : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        depthAttachment.storeOp = depth->contentsValid
-            ? depth->defaultStoreOp
-            : VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depthAttachment.clearValue = depth->clearValue;
-    }
 
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    renderingInfo.renderArea.offset = {0, 0};
     renderingInfo.renderArea.extent = color.extent;
     renderingInfo.layerCount = 1;
     renderingInfo.colorAttachmentCount = 1;
     renderingInfo.pColorAttachments = &colorAttachment;
-    renderingInfo.pDepthAttachment = depth ? &depthAttachment : nullptr;
-
+    renderingInfo.pDepthAttachment = nullptr;
     vkCmdBeginRendering(cmd, &renderingInfo);
     ++m_executeDebug.renderingScopes;
     try {
@@ -820,46 +918,68 @@ void RenderPipeline::executeOverlay(
         throw;
     }
     vkCmdEndRendering(cmd);
-
-    color.contentsValid =
-        colorAttachment.storeOp == VK_ATTACHMENT_STORE_OP_STORE;
-    if (depth != nullptr) {
-        depth->contentsValid =
-            depth->contentsValid
-            && depthAttachment.storeOp == VK_ATTACHMENT_STORE_OP_STORE;
-    }
+    setResolvedImageState(
+        *handle,
+        overlayState,
+        colorAttachment.storeOp == VK_ATTACHMENT_STORE_OP_STORE);
 }
 
 void RenderPipeline::finalizeExternalImages(CommandList& cmd)
 {
-    for (auto& [resourceName, binding] : m_externalImageBindings) {
-        (void)resourceName;
-        if (binding.image == VK_NULL_HANDLE
-            || binding.finalLayout == VK_IMAGE_LAYOUT_UNDEFINED
-            || binding.finalLayout == VK_IMAGE_LAYOUT_GENERAL
-            || binding.currentLayout == binding.finalLayout) {
+    for (auto& [index, binding] : m_externalImageBindings) {
+        (void)index;
+        if (binding.finalState.layout == VK_IMAGE_LAYOUT_UNDEFINED
+            || binding.state == binding.finalState) {
             continue;
         }
-
-        cmd.imageBarrier(
-            binding.image,
-            binding.currentLayout,
-            binding.finalLayout,
-            stageForLayout(binding.currentLayout),
-            stageForLayout(binding.finalLayout),
-            binding.aspect);
-        binding.currentLayout = binding.finalLayout;
+        VkImageMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        barrier.srcStageMask = binding.state.stages;
+        barrier.srcAccessMask = binding.state.access;
+        barrier.dstStageMask = binding.finalState.stages;
+        barrier.dstAccessMask = binding.finalState.access;
+        barrier.oldLayout = binding.state.layout;
+        barrier.newLayout = binding.finalState.layout;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = binding.image;
+        barrier.subresourceRange = {binding.aspect, 0, 1, 0, 1};
+        cmd.pipelineBarrier2(
+            std::span<const VkImageMemoryBarrier2>(&barrier, 1), {});
+        binding.state = binding.finalState;
+        ++m_executeDebug.resourceTransitions;
+    }
+    for (auto& [index, binding] : m_externalBufferBindings) {
+        (void)index;
+        if ((binding.finalState.stages == VK_PIPELINE_STAGE_2_NONE
+                && binding.finalState.access == VK_ACCESS_2_NONE)
+            || binding.state == binding.finalState) {
+            continue;
+        }
+        VkBufferMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+        barrier.srcStageMask = binding.state.stages;
+        barrier.srcAccessMask = binding.state.access;
+        barrier.dstStageMask = binding.finalState.stages;
+        barrier.dstAccessMask = binding.finalState.access;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.buffer = binding.buffer;
+        barrier.offset = 0;
+        barrier.size = binding.size;
+        cmd.pipelineBarrier2(
+            {}, std::span<const VkBufferMemoryBarrier2>(&barrier, 1));
+        binding.state = binding.finalState;
         ++m_executeDebug.resourceTransitions;
     }
 }
 
-bool RenderPipeline::externalContentsValid(
-    std::string_view resourceName) const
+bool RenderPipeline::externalContentsValid(std::string_view resourceName) const
 {
-    const auto found =
-        m_externalImageBindings.find(std::string(resourceName));
-    return found != m_externalImageBindings.end()
-        && found->second.contentsValid;
+    const auto handle = m_renderGraph.findImage(resourceName);
+    if (!handle) return false;
+    const auto found = m_externalImageBindings.find(handle->index);
+    return found != m_externalImageBindings.end() && found->second.contentsValid;
 }
 
 std::optional<CommandListStatistics>
@@ -867,15 +987,9 @@ RenderPipeline::expectedFrameStatistics() const
 {
     CommandStatisticsAccumulator total;
     for (const auto& pass : m_passes) {
-        if (!pass->enabled()) {
-            continue;
-        }
-
-        const std::optional<CommandListStatistics> expected =
-            pass->expectedFrameStatistics();
-        if (!expected.has_value()) {
-            return std::nullopt;
-        }
+        if (!pass->enabled()) continue;
+        const auto expected = pass->expectedFrameStatistics();
+        if (!expected) return std::nullopt;
         total.add(*expected);
     }
     return total.statistics();
@@ -884,6 +998,43 @@ RenderPipeline::expectedFrameStatistics() const
 void RenderPipeline::clearExternalResources()
 {
     m_externalImageBindings.clear();
+    m_externalBufferBindings.clear();
+    invalidateExports();
+}
+
+void RenderPipeline::invalidateExports() noexcept
+{
+    if (m_exportLifetime) ++m_exportLifetime->epoch;
+    m_executeCompleted = false;
+}
+
+void RenderPipeline::onResize(uint32_t width, uint32_t height)
+{
+    if (!m_compiled || !m_device) {
+        throw std::runtime_error(
+            "RenderPipeline resize requires a compiled graph and live device");
+    }
+    m_compiled = false;
+    invalidateExports();
+    try {
+        RHIRenderGraphResourceAllocator allocator(*m_device);
+        RenderGraphResourcePool candidate =
+            RenderGraphResourcePool::buildResizeCandidate(
+                m_renderGraph,
+                {width, height},
+                m_nextAllocationGeneration,
+                allocator);
+        for (auto& pass : m_passes) pass->onResize(width, height);
+        candidate.adoptAbsoluteAllocationsFrom(m_resourcePool);
+        m_resourcePool.swap(candidate);
+        m_externalImageBindings.clear();
+        m_externalBufferBindings.clear();
+        ++m_nextAllocationGeneration;
+        m_compiled = true;
+    } catch (...) {
+        m_compiled = false;
+        throw;
+    }
 }
 
 void RenderPipeline::drawRenderGraphUIContent()
@@ -894,103 +1045,67 @@ void RenderPipeline::drawRenderGraphUIContent()
         static_cast<int>(m_compileDebug.resourceCount),
         static_cast<int>(m_compileDebug.dependencyCount),
         static_cast<int>(m_compileDebug.barrierCount));
-
     ImGui::Text(
         "Order: %s",
-        m_compileDebug.orderSummary.empty() ? "none" : m_compileDebug.orderSummary.c_str());
+        m_compileDebug.orderSummary.empty()
+            ? "none"
+            : m_compileDebug.orderSummary.c_str());
 
     if (ImGui::CollapsingHeader("Dependencies", ImGuiTreeNodeFlags_DefaultOpen)) {
-        const auto& passes = m_renderGraph.passes();
         for (const PassDependencyEdge& dependency : m_renderGraph.dependencies()) {
-            if (dependency.fromPass >= passes.size() || dependency.toPass >= passes.size()) {
-                continue;
-            }
-
             ImGui::BulletText(
                 "%s -> %s (%s)",
-                passes[dependency.fromPass].name.c_str(),
-                passes[dependency.toPass].name.c_str(),
+                m_renderGraph.passes()[dependency.fromPass].name.c_str(),
+                m_renderGraph.passes()[dependency.toPass].name.c_str(),
                 dependency.explicitDependency ? "explicit" : "resource");
         }
     }
-
     if (ImGui::CollapsingHeader("Barrier Plan", ImGuiTreeNodeFlags_DefaultOpen)) {
-        const auto& passes = m_renderGraph.passes();
-        const auto& resources = m_renderGraph.resources();
         for (const BarrierPlanItem& barrier : m_renderGraph.barrierPlan()) {
-            if (barrier.fromPass >= passes.size() || barrier.toPass >= passes.size()) {
-                continue;
-            }
-
-            const char* resourceName = "<invalid-resource>";
-            if (barrier.resource.id < resources.size()) {
-                resourceName = resources[barrier.resource.id].name.c_str();
-            }
-
             ImGui::BulletText(
                 "%s -> %s | %s (%s)",
-                passes[barrier.fromPass].name.c_str(),
-                passes[barrier.toPass].name.c_str(),
-                resourceName,
+                m_renderGraph.passes()[barrier.fromPass].name.c_str(),
+                m_renderGraph.passes()[barrier.toPass].name.c_str(),
+                m_renderGraph.resources()[barrier.resource.index].name.c_str(),
                 toString(barrier.hazard));
         }
     }
-
     if (ImGui::CollapsingHeader("Last Execute", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Text(
-            "Frame=%d planned=%d applied=%d transitions=%d scopes=%d skipped-unbound=%d skipped-no-access=%d",
+            "Frame=%d planned=%d applied=%d transitions=%d scopes=%d",
             static_cast<int>(m_executeDebug.frameIndex),
             static_cast<int>(m_executeDebug.plannedBarriers),
             static_cast<int>(m_executeDebug.appliedBarriers),
             static_cast<int>(m_executeDebug.resourceTransitions),
-            static_cast<int>(m_executeDebug.renderingScopes),
-            static_cast<int>(m_executeDebug.skippedUnbound),
-            static_cast<int>(m_executeDebug.skippedNoAccess));
-
+            static_cast<int>(m_executeDebug.renderingScopes));
         for (const BarrierDebugEvent& event : m_barrierDebugEvents) {
             if (event.applied) {
                 ImGui::BulletText(
                     "%s -> %s | %s (%s) | %s -> %s",
-                    event.fromPass.c_str(),
-                    event.toPass.c_str(),
-                    event.resourceName.c_str(),
-                    toString(event.hazard),
-                    toString(event.oldLayout),
-                    toString(event.newLayout));
+                    event.fromPass.c_str(), event.toPass.c_str(),
+                    event.resourceName.c_str(), toString(event.hazard),
+                    toString(event.oldLayout), toString(event.newLayout));
             } else {
                 ImGui::BulletText(
                     "%s -> %s | %s (%s) | skipped: %s",
-                    event.fromPass.c_str(),
-                    event.toPass.c_str(),
-                    event.resourceName.c_str(),
-                    toString(event.hazard),
+                    event.fromPass.c_str(), event.toPass.c_str(),
+                    event.resourceName.c_str(), toString(event.hazard),
                     event.reason.c_str());
             }
         }
     }
-
 }
 
 void RenderPipeline::drawPassUIContent()
 {
     for (size_t passIndex = 0; passIndex < m_passes.size(); ++passIndex) {
         auto& pass = m_passes[passIndex];
-        if (!pass->enabled()) {
-            continue;
-        }
-
+        if (!pass->enabled()) continue;
         const std::string passName(pass->name());
         ImGui::PushID(static_cast<int>(passIndex));
         ImGui::SeparatorText(passName.c_str());
         pass->drawUI();
         ImGui::PopID();
-    }
-}
-
-void RenderPipeline::onResize(uint32_t width, uint32_t height)
-{
-    for (auto& pass : m_passes) {
-        pass->onResize(width, height);
     }
 }
 

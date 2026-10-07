@@ -18,6 +18,7 @@ TEST(ApplicationRunner, DefaultsToUnlimitedInteractiveRun)
     EXPECT_FALSE(options.engine.sidebarExpanded.has_value());
     EXPECT_FALSE(options.requireValidation);
     EXPECT_FALSE(options.injectValidationError);
+    EXPECT_FALSE(options.recompileAfterSetup);
 }
 
 TEST(ApplicationRunner, ParsesCollapsedSidebarSmokeMode)
@@ -65,6 +66,19 @@ TEST(ApplicationRunner, ZeroFrameLimitRetainsUnlimitedMeaning)
         ku::parseApplicationRunOptions(arguments);
     EXPECT_TRUE(options.smokeArgumentsPresent);
     EXPECT_EQ(options.engine.submittedFrameLimit, 0u);
+}
+
+TEST(ApplicationRunner, ParsesControlledPipelineRecompile)
+{
+    constexpr std::array<std::string_view, 3> arguments{
+        "--smoke-frames", "3", "--smoke-recompile-after-setup",
+    };
+
+    const ku::ApplicationRunOptions options =
+        ku::parseApplicationRunOptions(arguments);
+    EXPECT_TRUE(options.recompileAfterSetup);
+    EXPECT_TRUE(options.smokeArgumentsPresent);
+    EXPECT_EQ(options.engine.submittedFrameLimit, 3u);
 }
 
 TEST(ApplicationRunner, RejectsUnsafeInjectionAndInvalidResize)

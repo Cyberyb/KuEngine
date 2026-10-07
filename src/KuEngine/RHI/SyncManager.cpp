@@ -43,7 +43,10 @@ void SyncManager::submit(uint32_t frame, VkQueue queue, std::span<VkCommandBuffe
     vkResetFences(m_device->device(), 1, &m_frames[frame].inFlight);
 
     VkSemaphore waits[] = {m_frames[frame].imageAvailable};
-    VkPipelineStageFlags stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    // The acquired swapchain image is an imported graph resource. Its first use
+    // is selected by the compiled graph, so the semaphore wait must not assume
+    // that the image is first consumed as a color attachment.
+    VkPipelineStageFlags stages[] = {VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
     VkSemaphore signals[] = {m_frames[frame].renderFinished};
 
     VkSubmitInfo info{};

@@ -6,6 +6,8 @@
 - [Cube](cube-example.md)
 - [Alpha3Pass](alpha3pass-example.md)
 - [Mclaren](mclaren-example.md)
+- [ForwardReuse](forward-reuse-example.md)
+- [GraphResourceProbe](graph-resource-probe-example.md)
 - [当前回归检查](regression-checks.md)
 - [Shader 源码调试](shader-debugging.md)
 

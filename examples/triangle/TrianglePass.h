@@ -39,6 +39,7 @@ public:
     }
 
 private:
+    ImageDesc m_colorTargetDesc{};
     std::unique_ptr<RHIShader>   m_vertShader;
     std::unique_ptr<RHIShader>   m_fragShader;
     std::unique_ptr<RHIPipeline> m_pipeline;

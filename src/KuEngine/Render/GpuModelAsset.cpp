@@ -25,6 +25,10 @@ bool GpuModelAsset::initialize(
         errorMessage = error.what();
         reset();
         return false;
+    } catch (...) {
+        errorMessage = "Unknown GPU model initialization failure";
+        reset();
+        return false;
     }
 }
 

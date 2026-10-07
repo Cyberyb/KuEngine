@@ -2,6 +2,7 @@
 #include "RuntimeError.h"
 
 #include "../RHI/RHIInstance.h"
+#include "../RHI/RHIDevice.h"
 #include "../RHI/VulkanValidation.h"
 
 #include <charconv>
@@ -142,6 +143,9 @@ ApplicationRunOptions parseApplicationRunOptions(
         } else if (argument == "--smoke-inject-validation-error") {
             options.injectValidationError = true;
             options.smokeArgumentsPresent = true;
+        } else if (argument == "--smoke-recompile-after-setup") {
+            options.recompileAfterSetup = true;
+            options.smokeArgumentsPresent = true;
         } else if (argument == "--smoke-sidebar-collapsed") {
             options.engine.sidebarExpanded = false;
             options.smokeArgumentsPresent = true;
@@ -229,6 +233,11 @@ int runApplication(
                 }
                 configure(engine);
                 engine.compile();
+                if (options.recompileAfterSetup) {
+                    engine.device().waitIdle();
+                    engine.compile();
+                    std::cout << "KUENGINE_SMOKE_RECOMPILE_OK\n";
+                }
                 phase = ApplicationPhase::Running;
                 result = engine.run(options.engine);
             }
