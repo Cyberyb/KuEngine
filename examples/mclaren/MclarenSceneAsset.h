@@ -16,12 +16,14 @@ namespace ku {
 
 class MclarenSceneAsset {
 public:
-    [[nodiscard]] bool load(std::string& errorMessage);
+    [[nodiscard]] bool load(std::string& errorMessage,
+        const std::filesystem::path& explicitScene = {});
     [[nodiscard]] bool loadModel(
         const std::filesystem::path& modelPath,
         const std::filesystem::path& resourcesRoot,
         std::string& errorMessage);
     void releaseCpuMesh();
+    [[nodiscard]] asset::RenderPath renderPath() const noexcept { return m_renderPath; }
 
     [[nodiscard]] static bool calculateModelFit(
         const glm::vec3& boundsMin,
@@ -78,6 +80,7 @@ private:
     float m_fitScale = 1.0f;
     std::array<float, 4> m_globalBaseColorFactor{1.0f, 1.0f, 1.0f, 1.0f};
     bool m_sceneConfigUsed = false;
+    asset::RenderPath m_renderPath = asset::RenderPath::Forward;
 };
 
 } // namespace ku

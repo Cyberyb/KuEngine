@@ -11,7 +11,11 @@
 
 这里的 Prompt 不会自行创建 Agent。主 Agent 在创建或续派子 Agent 时，应同时传入任务编号、任务包和所需角色；角色 TOML 提供稳定身份，本目录提供可审阅的详细工作方法。
 
+2026-10-08 起，按用户要求，Developer 和 QA 使用 `gpt-6.1-sol` / `high`，Planner 使用 `gpt-6.1-sol` / `medium`。模型设置位于各角色 TOML；已加载旧角色的会话不会仅因文件编辑而自动切换，本轮 Lead 显式创建指定模型的新子 Agent，并传入对应角色规则。
+
 后续 M0～M5 的阶段 Prompt 放在 `docs/prompts/stages/`，任务包模板放在 `docs/prompts/task-packet.md`。在恢复阶段实施计划前不提前创建空文件。
+
+当前阶段任务包：[M4实施任务包](m4-task-packets.md)。2026-10-11 WP01/02/A/B门禁已闭；C最终QA ACCEPTED + DOCUMENTED，REQ-01～13首轮范围已验收，WP03/M4已由Lead最终审计闭环（DONE）。只有Lead可报告DONE；M5未开始，本轮已完成M4并停止。
 
 ## 信息优先级
 

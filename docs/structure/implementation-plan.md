@@ -1,6 +1,6 @@
 # KuEngine 实施工作包
 
-更新日期：2026-10-07。本页将 [开发路线图](roadmap.md) 拆为可独立实现、验收和文档同步的工作包。需求范围以 [产品需求](product-requirements.md) 为准；工作包状态只在 QA 给出结论后变更。`ACCEPTED` 表示该工作包的验收条件通过，不表示所属阶段已经完成。
+更新日期：2026-10-11。本页将 [开发路线图](roadmap.md) 拆为可独立实现、验收和文档同步的工作包。需求范围以 [产品需求](product-requirements.md) 为准；工作包状态只在 QA 给出结论后变更。`ACCEPTED` 表示该工作包的验收条件通过，不表示所属阶段已经完成。
 
 ## 状态与使用方式
 
@@ -49,13 +49,16 @@
 
 ## M4：Deferred 与查看器闭环
 
-阶段状态：未开始。出口：同一场景可切换 Forward/Deferred，PBR/Unlit 语义一致，透明、天空、显示输出和 UI 顺序正确。
+阶段状态：已完成，Lead最终审计通过。WP01/02/A/B既有门禁已闭，C2026-10-11最终QA ACCEPTED + DOCUMENTED，REQ-01～13首轮范围已验收；Lead已核对冻结输入、完整需求证据和文档，报告M4 DONE。
 
 | 工作包 | 状态 | 依赖 | 范围与验收焦点 |
 |---|---|---|---|
-| M4-WP01：最小 GBuffer 与 Deferred Lighting | READY | M3-WP04 | 定义格式与 ShadingModel 编码，完成不透明/Mask 几何及方向光/点光照验证。 |
-| M4-WP02：共享材质、透明与显示输出 | READY | M4-WP01 | 对齐两路径的 PBR/Unlit、天空、透明前向阶段、曝光/色调映射与 UI。 |
-| M4-WP03：路径切换与 GBuffer 检查 | READY | M4-WP02 | Viewer 选择、GBuffer 调试及完整 REQ-01～13 验收。 |
+| M4-WP01：最小 GBuffer 与 Deferred Lighting | ACCEPTED | M3-WP04 | 四 RGBA16F MRT、0/1/2 编码、Opaque/Mask、共享 PBR/Unlit 光照、Graph resize/recompile 与临时 display-ready 输出已验收；独立 QA 两配置 core129/camera32/定向26、Debug SyncVal22/22+窄复验3/3、Release3 pass/19 skip+direct、实际窗口与 GPU readback。Blend/HDR/完整路径切换不在本包。 |
+| M4-WP02：共享材质、透明与显示输出 | ACCEPTED | M4-WP01 | 共享RGBA16F/天空/Blend/独立phase UBO/唯一曝光Reinhard格式感知sRGB/UI已验收并同步；QA两配置build/core132/camera32，DebugSyncVal29/29，Release3pass26skip另26真实GPU22checker+6补充，四live窗口/maximize及固定ROI/HDR/depth/normal/sky-env证据。未覆盖完整camera/minimize、强制live-format/soak/RenderDoc/低能力实机。 |
+| M4-WP03：路径切换与GBuffer及产品闭环 | ACCEPTED | M4-WP02 | A/B既有门禁已闭，C最终QA接受REQ-01～13首轮矩阵/查看器/接入审计并已DOCUMENTED；WP03/M4已由Lead最终审计闭环（DONE）。 |
+| M4-WP03-A：路径与GBuffer | ACCEPTED | M4-WP02 | 两配置build/core137/camera32；Debug显式SyncVal30/30无skip；Release3pass27skip另19真实GPU groups(paths8/200+config,HDR18/22,lights4,replacements7,apps6,extras3)，官方两例GUI24图/实际退出0，71hash冻结；DOCUMENTED。 |
+| M4-WP03-B：最终查看器资产操作 | ACCEPTED | M4-WP03-A | 2026-10-10正式独立qa-fix-01/qa-report.md：严格scene、两实例共享mesh/slot独立TRS与全部标量/Unlit-PBR、真正Clear/旧GPU reset/Load恢复；两配置build0/core137/camera40，Debug SyncVal31/31，Release3pass28skip另20真实GPU组；29samples/16edits/layout×2；同一官方GUI33原图/actual app0/errors0、87hash不变。DOCUMENTED；B已由Lead复核闭环；不含C/REQ整体。 |
+| M4-WP03-C：完整产品闭环 | ACCEPTED | M4-WP03-B Lead闭环 | 2026-10-11最终qa-m4-wp03c-final/qa-report.md ACCEPTED + DOCUMENTED；C无代码修改。A3双实例/八views/统计/true minimize与独立B HDR/model/真实resize正常0/SyncVal0；用户自测WASDQE/right-look/text/focus、重复SKIPPED；专门物理stress NOT RUN。开发者说明/全部REQ矩阵已同步，Lead最终M4审计通过。 |
 
 ## M5：多帧安全与实验效率
 
@@ -75,5 +78,5 @@
 | M1 | 已完成 | WP01～03 已验收；侧栏、主视口输入边界和 Mclaren 双模式相机出口已满足 |
 | M2 | 已完成 | WP01～03 已验收；公共资产、实例材质语义和公共 Forward 出口满足 |
 | M3 | 已完成 | WP01～04 已验收；Graph 资源、同步、Compute、native contract 与 Forward 输出出口满足 |
-| M4 | 未开始 | M4-WP01～03 通过，并完成 REQ-01～13 整体检查 |
+| M4 | 已完成，Lead最终审计通过 | WP01/02/A/B门禁已闭、C ACCEPTED + DOCUMENTED、REQ-01～13首轮已验收；Lead最终审计通过并关闭，本轮不启动M5 |
 | M5 | 未开始 | M5-WP01～03 通过 |

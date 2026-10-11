@@ -1,0 +1,6 @@
+{
+  "renderPath":"forward",
+  "camera":{"position":[0,0,4],"target":[0,0,0],"up":[0,1,0],"fovYDeg":60},
+  "lighting":{"direction":[0,0,1],"color":[1,1,1],"intensity":1},
+  "nodes":[{"id":"Left instance","model":"viewer-multislot.gltf","transform":{"position":[-1.8,0,0]}},{"id":"Right instance","model":"./viewer-multislot.gltf","transform":{"position":[1.8,0,0]}}]
+}

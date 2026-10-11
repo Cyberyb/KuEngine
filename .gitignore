@@ -28,6 +28,10 @@ x86/
 !tests/expect_validation_failure.cmake
 !tests/expect_initialization_failure.cmake
 !tests/run_mclaren_replacement_smoke.cmake
+!tests/run_deferred_light_semantics.cmake
+!tests/run_hdr_semantics.cmake
+!tests/run_viewer_paths.cmake
+!tests/run_mclaren_edits.cmake
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake

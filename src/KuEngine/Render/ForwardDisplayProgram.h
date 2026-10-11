@@ -29,7 +29,8 @@ public:
     void draw(
         CommandList& commands,
         const ResolvedImage& sceneColor,
-        const ForwardDisplayUvTransform& uvTransform);
+        const ForwardDisplayUvTransform& uvTransform,
+        float exposure = 1.0f, bool encodeSrgb = true);
 
     [[nodiscard]] uint64_t descriptorRebindCount() const noexcept
     {
@@ -41,6 +42,7 @@ private:
 
     const RHIDevice* m_device = nullptr;
     VkFormat m_sceneColorFormat = VK_FORMAT_UNDEFINED;
+    VkFormat m_outputFormat = VK_FORMAT_UNDEFINED;
     VkSampler m_sampler = VK_NULL_HANDLE;
     std::unique_ptr<RHIParameterSet> m_parameters;
     std::unique_ptr<RHIShader> m_vertexShader;

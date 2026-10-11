@@ -1,6 +1,6 @@
 # Graph 资源与生命周期
 
-核对日期：2026-10-07。本文描述已验收的 M3-WP01～04 图资源、同步、受约束执行与 Forward 输出。源码：[RenderGraph](../../src/KuEngine/Render/RenderGraph.h)、[资源池](../../src/KuEngine/Render/RenderGraphResourcePool.h)、[Pipeline](../../src/KuEngine/Render/RenderPipeline.h)、[Probe](../../examples/graph_resource_probe/GraphResourceProbePass.cpp)。
+核对日期：2026-10-11。本文描述已实现的图资源、同步、受约束执行、共享线性HDR与直接MRT调试输出。最终C QA已接受首轮范围，C只读审计无新Runtime接口；接入操作见[开发渲染特性](../usage/developing-render-features.md)。源码：[RenderGraph](../../src/KuEngine/Render/RenderGraph.h)、[资源池](../../src/KuEngine/Render/RenderGraphResourcePool.h)、[Pipeline](../../src/KuEngine/Render/RenderPipeline.h)、[Probe](../../examples/graph_resource_probe/GraphResourceProbePass.cpp)。
 
 ## 声明与类型安全
 
@@ -22,13 +22,13 @@ flowchart LR
 
 ## 所有权、解析与失效
 
-`RenderPipeline` 独占 `RenderGraph`、`RenderGraphResourcePool` 与 export lifetime state。pool 只分配/销毁 internal image/buffer；外部 binding 由调用方拥有，Pipeline 仅借用。外部 image/buffer bind 既可按 typed handle，也可按 name；两种路径都核对 kind/name、尺寸/format/aspect（image）、size（buffer）和非零 usage 是 expected usage 的完整超集，拒绝零、部分或错误用途。
+`RenderPipeline`独占Graph/pool/export lifetime state。pool只分配/销毁internal；import调用方拥有并保持到提交完成、负责图外同步，Pipeline仅借用。bind可按typed handle或name，核kind/name、尺寸/format/aspect（image）、size（buffer）及usage完整超集。BindingInfo准确传initialState/finalState/contentsValid；image另传clearValue/defaultLoadOp/defaultStoreOp，layout位于ResourceState2内，不隐式完成图外工作。
 
 执行时 Pass 从 resolver 获取 `ResolvedImage`/`ResolvedBuffer`，包含 Vulkan handle、descriptor-derived metadata、allocation generation、content-valid 和 external 标记。allocation 可跨帧缓存，但 `beginFrame` 使 internal transient content 无效，因此不能将上一帧内容隐式带入下一帧。
 
 compile 和 resize 均先创建 candidate graph/pool；资源分配或 pass resize 失败不发布 candidate。resize 对 swapchain-relative image 重建，对 absolute image 转移既有 allocation；绑定被清除。Probe 可见 relative image allocation generation 从 1 到 2，而 absolute buffer 保持 1，extent 640×480 到 800×600。
 
-`exportImage`/`exportBuffer` 只在成功 execute 后返回，并带 owner weak reference、epoch 与 frame serial。recompile/resize、下一帧开始或 Pipeline 销毁都会使 token 失效；只有完整且 content-valid 的 resolved 资源可被视为有效 export。
+setup显式声明export后，`exportImage/exportBuffer`只在成功execute后返回，带owner weak reference/epoch/frame serial。recompile/resize、下一帧或Pipeline销毁即失效，须检查valid(&error)；完整stored/content-valid view才有效。token只借用，不转移所有权/延长GPU寿命；allocationGeneration用于descriptor重绑，不是跨帧retire。
 
 ## 执行边界与 Probe
 
@@ -40,7 +40,7 @@ compile 和 resize 均先创建 candidate graph/pool；资源分配或 pass resi
 
 资源池继续保存 allocation，Pipeline 将 execution resource state/content 分离为提交 shadow；只有成功录制的 pass 才将 state/content 提交回 shadow。checked resolver 要求调用方按已声明 use 及 range 解析资源；Overlay 只声明交换链 color read/write；acquire 等待以 `ALL_COMMANDS` 作保守 stage mask。
 
-Probe 的完整路径为 ImageClear + Fill → native Copy callback → normal Compute callback → Graphics vertex/index/indirect draw → PostDrawCopy，共六 Pass、六 resource、六 dependency、五 barrier。它不是多队列、长时或视觉正确性验证。
+Probe完整路径ImageClear+固定3vec2/index/indirect Fill→128B native Copy→32uint Compute Copy→sampled蓝三角indexedIndirect→128B PostDrawCopy，共六Pass/六resource/六dependency/五barrier。C实际蓝三角/resize/recompile/1draw3提交索引有正常exit0/SyncVal0证据；没有host whole-buffer数值读回，不是复杂生成几何/多队列/长时验证。
 
 M3-WP03 补上 Compute、受约束 native API 与 resolver range 检查；M3-WP04 已将 Graph-owned Forward SceneColor、Depth/display 交接落地。
 
@@ -48,12 +48,20 @@ M3-WP03 补上 Compute、受约束 native API 与 resolver range 检查；M3-WP0
 
 M3-WP03 提供显式 `ShaderDesc(path, stage, entry)`；graphics pipeline 只接受唯一 vertex/fragment stage。`RHIComputePipeline` 是独立 RAII pipeline，`RHIParameterSet` 检查 UniformBuffer、StorageBuffer、CombinedSampler、StorageImage binding 并在创建/写入失败时回滚。设备选择优先具备 compute 的 graphics queue，不把它提升为全局硬要求。
 
-`CallbackRenderPass` 由 Pipeline 拥有，按 declare/prepare/execute 生命周期运行；参数只读、recompile 后 handle 失效，并只稳定借用 `RHIDevice`。其 `GraphCommandContext` 仅允许已声明 handle/use/range 的 resolve、fill/copy、compute pipeline/parameter binding 和 dispatch。`NativeCommandScope` 还要求已知 capability/side-effect 及声明 use 子集，并受执行生命周期限制；Callback 构造时拒绝 unknown flag，attachment scope 禁止 Compute/Transfer。旧对象标为 `TrustedLegacyObject`；系统不能自动检测任意裸 Vulkan 命令。
+`CallbackRenderPass`由Pipeline拥有，header为RenderGraphCallbackPass.h；declare/prepare接受可变Parameters&，execute才接受const Parameters&，name/declare/execute必需，prepare/nativeContract/expectedStatistics可选。recompile刷新handle，稳定借用RHIDevice。GraphCommandContext只允许已声明handle/use/range的resolve/fill/copy/compute binding/dispatch。native scope move-only，已知capability/side-effect请求子集、checked use，attachment禁止Compute/Transfer；context析构active=false、ensureActive拒绝后续访问。after-execute lifetime为源码核对，无专项已执行永久误用测试，不宣称任意裸Vulkan自动正确。旧对象仍TrustedLegacyObject。
 
-Probe 现为六 pass、六 resource、六 dependency、五 barrier：ImageClear 与 Fill 后依次 native Copy callback、normal Compute callback、Graphics vertex/index/indirect draw、PostDrawCopy；compute shader local size 为 32、group count 为 1。它在 resize 后观察相对 image generation 递增、absolute buffer generation 保持，统计 1 draw/3 vertices。M3-WP04 已在 Forward 路径完成 SceneColor/Depth/display 交接。
+Probe Compute prepare检查graphics queue compute能力，用明确COMPUTE stage/storage layout，先reset旧pipeline/parameters/shader再build，不是transactional live-recompile恢复。Draw initialize完整candidate后发布。local32/group1只复制32uint，resize relative image generation递增、absolute buffer generation保持，统计1draw/3提交索引。M3-WP04已在Forward完成SceneColor/Depth/display交接。
 
 ## Forward 图目标与显示
 
-`ForwardGraphTargets` 从 `RenderContext` 的 color/depth format 与 clear value 声明 swapchain-relative internal `ForwardSceneColor`（COLOR_ATTACHMENT | SAMPLED，CLEAR/STORE）和 `ForwardSceneDepth`（CLEAR/DONT_CARE）。Mclaren 与 ForwardReuse 的 Forward write 先写这对目标；`ForwardDisplayPass` 再以 FragmentSampled 读取 SceneColor，CLEAR/STORE 写借用的 SwapChainColor，RuntimeOverlay LOAD/read-write，最终由 Runtime 交给 Present。pool 负责 target allocation 与 resize；Renderer 不取得 target 所有权。
+`ForwardGraphTargets` 使用固定 RGBA16F SceneColor 与 Runtime depth format/clear value，声明 swapchain-relative internal `ForwardSceneColor`（COLOR_ATTACHMENT | SAMPLED | TRANSFER_SRC）和 `ForwardSceneDepth`（DEPTH_STENCIL_ATTACHMENT | TRANSFER_SRC）。Background CLEAR/STORE，Opaque/Mask 深度 CLEAR/STORE，Blend 颜色/深度 LOAD/STORE、test/no write；`ForwardDisplayPass` FragmentSampled 读取线性 SceneColor，执行唯一曝光/Reinhard/format-aware sRGB，CLEAR/STORE 写外部 SwapChainColor，RuntimeOverlay LOAD/read-write 后交给 Present。pool 负责 allocation/resize，Renderer 不拥有 targets。
 
-Display 对 `sceneFramebuffer` 生成 UV scale/offset 并 nearest pass-through。relative target resize 会使 allocation generation 变化，Display 在 generation 或 ImageView 变化时重绑 descriptor；format 变化会重新 compile 相关 Pass/重建 UI，SidebarState 保留。Probe 的 ParameterSet 初始化使用候选发布，重复 compile 释放顺序已覆盖；`--smoke-recompile-after-setup` 在 deviceWaitIdle 后进行同一 Pipeline 的第二次 compile。没有强制 live format-change、资源别名或多 Queue 实机验收。
+Display 对 `sceneFramebuffer` 生成 UV scale/offset 并 nearest 采样。relative target resize 改变 allocation generation，Display 在 generation/ImageView 变化时重绑。format 变化重新 compile 相关 Pass/重建 UI，SidebarState 保留；Display/Lighting 构建完整 candidate 后发布，ready ScenePrepare 不重复加载资产。`--smoke-recompile-after-setup` 在 deviceWaitIdle 后第二次 compile。全部场景消费者显式依赖 post-UI Prepare，snapshot 借用资产一提交，独立 phase UBO 避免同帧覆盖。真实离屏 UNORM/SRGB 已验证，强制 live format-change 未运行。
+
+## Deferred MRT 接入
+
+WP03-A ScenePathControl只借用静态分支Pass，CPU request下一Fence-safe update一次发布mask，不重新compile/上传资产；复用Graph disabled-mask内容/屏障预检。Deferred debug启用Geometry/Lighting/共享Blend但禁普通Display，GBufferDisplay直接声明四MRT FragmentSampled→输出CLEAR/STORE，正常SwapChain借用、fixed-format probe内部输出Graph pool拥有；自有参数/pipeline/sampler按generation/view重绑，UI后合成。Forward普通branch不采样陈旧MRT；静态四phase UBO与资产均仍Source所有权。
+
+ViewerPathSmoke/Readback为examples/common有限验证，不改Graph API/Runtime调度；bounded transfer→HOST_READ配对actual completedSubmit，late resize保留copy extent到统计推进，exception unmap只helper修复。config-isolated aggregate evidence不代表所有legacy prefix隔离；完整映射/状态与未运行边界见 [回归说明](../usage/regression-checks.md)。
+
+Geometry CLEAR/STORE 写四 RGBA16F MRT 与共享深度；Lighting 四 FragmentSampled 读并 LOAD/STORE 写共享 ForwardSceneColor，Empty discard 保留 Background。Blend 使用 Geometry 保留下来的深度，Display 两路径读取同一 SceneColor；兼容 deferredSource 名称为共享资源名别名。Graph 自动生成 attachment→sample 与写后 LOAD 的同步2屏障；Lighting/GBuffer消费者保持启用而Geometry禁用会被内容预检拒绝，运行中消费者读disabled/stale Prepare会被checked snapshot拒绝。Lighting 按 generation/ImageView 重绑。示例 Readback 在 scope 外声明 TransferSrc/imported TransferDst→HOST_READ；Fence 后 invalidate/读取。HDR RGBA16F、UNORM/SRGB、visibility 与 pre/post Blend D32 深度使用有界 staging，最多2048×2048，不扩展公共 Graph API。布局/所有权见 [Deferred](13-deferred-rendering.md)。

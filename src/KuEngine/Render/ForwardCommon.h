@@ -41,6 +41,9 @@ struct ResolvedMaterial {
 [[nodiscard]] ResolvedMaterial resolveMaterial(
     const asset::MaterialData& base,
     const asset::MaterialConfig* overrides = nullptr);
+[[nodiscard]] ResolvedMaterial resolveInstanceMaterial(
+    const asset::MaterialData& base, const asset::SceneInstance& instance,
+    uint32_t materialSlot);
 
 struct MaterialTextureVariantKey {
     std::string source;
@@ -154,5 +157,7 @@ struct ForwardDraw {
     std::array<float, 4> tint{1.0f, 1.0f, 1.0f, 1.0f};
     std::array<bool, 5> textureEnabled{true, true, true, true, true};
 };
+
+[[nodiscard]] ForwardFrameUniforms makeForwardFrameUniforms(const ForwardView& view);
 
 } // namespace ku

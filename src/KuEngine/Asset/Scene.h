@@ -26,6 +26,17 @@ struct MeshAsset {
     MeshData mesh;
 };
 
+// Scalar-only per-instance slot edits. Texture bindings and GPU variants remain
+// shared; changing one slot affects every primitive referencing that slot.
+struct SceneMaterialSlot {
+    uint32_t slot = 0;
+    ShadingModel shadingModel = ShadingModel::PBR;
+    std::array<float, 4> baseColor{1.f, 1.f, 1.f, 1.f};
+    std::array<float, 3> emissive{0.f, 0.f, 0.f};
+    float metallic = 1.f;
+    float roughness = 1.f;
+};
+
 struct SceneInstance {
     std::string id;
     MeshHandle mesh = invalidMeshHandle;
@@ -33,6 +44,7 @@ struct SceneInstance {
     std::filesystem::path materialReference;
     MaterialConfig materialOverride{};
     bool hasMaterialOverride = false;
+    std::vector<SceneMaterialSlot> materialSlots;
 };
 
 [[nodiscard]] bool validSceneTransform(

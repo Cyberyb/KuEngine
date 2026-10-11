@@ -15,6 +15,7 @@ namespace ku {
 enum class MclarenAssetKind {
     Model,
     Environment,
+    ClearEnvironment,
 };
 
 enum class MclarenReplacementStage {
@@ -109,6 +110,7 @@ struct MclarenStartupReplacement {
 };
 
 struct MclarenCommandLineOptions {
+    std::filesystem::path scenePath;
     std::vector<MclarenStartupReplacement> replacements;
     uint64_t replaceAfterUpdates = 1;
     std::vector<std::string> forwardedArguments;

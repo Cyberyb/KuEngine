@@ -1,6 +1,6 @@
 # Core 与公共 Runtime 设计
 
-核对日期：2026-10-07（M3-WP03 Runtime/RHI 接口核对）。
+核对日期：2026-10-11（C只读验收，A既有completed-statistics getter；同步/调度未重写）。
 
 源码：[Engine.h](../../src/KuEngine/Core/Engine.h)、[Engine.cpp](../../src/KuEngine/Core/Engine.cpp)、[ApplicationRunner](../../src/KuEngine/Core/ApplicationRunner.h)、[Window](../../src/KuEngine/Core/Window.h)、[Input](../../src/KuEngine/Core/Input.h)。
 
@@ -22,7 +22,7 @@ Engine 聚合窗口、Vulkan 对象、渲染管线和 UI，负责创建、运行
 
 `EngineRunOptions` 不属于持久渲染配置：`submittedFrameLimit=0` 保持无限交互循环；正值按成功提交的帧数停止。可选 `EngineResizeRequest` 在指定成功提交帧后调用窗口 resize，并由 `EngineRunResult` 分别记录请求与 Swapchain 重建完成。未 acquire、仅处理 resize 的循环不计入 submitted frame。该接口让自动化运行不依赖计时或强制关闭窗口，普通调用 `run()` 的行为不变。
 
-四个示例通过 `ApplicationRunner` 解析 `--smoke-*` 参数。它在 Engine 作用域外保存 `ValidationMessageTracker`，所以 Engine 先等待 GPU、销毁 RHI/Instance 后，运行器仍可根据已捕获的 Validation error 决定最终退出码。运行器还区分参数错误（2）、普通初始化/运行失败（1）、Validation 失败（3）和已知环境不可用的 smoke skip（77）。
+六个示例通过`ApplicationRunner`解析`--smoke-*`参数。它在Engine作用域外保存ValidationMessageTracker，Engine等待GPU、销毁RHI/Instance后仍可读取已捕获error决定退出码：参数错误2、普通初始化/运行失败1、Validation失败3、已知环境不可用smoke skip77。Mclaren的scene/实例编辑/Clear parser与候选队列留在示例，B不新增Runtime场景/ECS/验证状态机。
 
 ## 一帧时序
 
@@ -36,15 +36,14 @@ flowchart TD
     UI["ImGui NewFrame / Pass update / 控制面板"]
     Begin["CommandList begin：计数清零、Query reset、起始时间戳"]
     Bind["绑定外部 SwapChainColor；Graph 解析 internal targets"]
-    Graph["Graph 节点执行：屏障、Scope、Pass/callback draw/compute"]
-    Stats["填入当前 draw 数及最近 CPU/GPU 时间"]
+    Graph["Graph：post-UI Prepare → 静态分支Background/Surface/Lighting/Blend → Display或MRT Debug；其他callback"]
     Overlay["UI Overlay Scope"]
     Final["收束外部图像布局 / 结束时间戳 / CommandList end"]
     Submit["Queue submit / 结束 CPU 计时"]
     Present["Present"]
     Decision["记录成功提交帧；可请求 resize / 达到帧上限后结束"]
     Events --> Wait --> Query --> Acquire --> CPU --> UI --> Begin
-    Begin --> Bind --> Graph --> Stats --> Overlay --> Final --> Submit --> Present
+    Begin --> Bind --> Graph --> Overlay --> Final --> Submit --> Present
     Present --> Decision
 ```
 
@@ -52,11 +51,13 @@ FrameData 携带 frameIndex、imageIndex、deltaTime、totalTime 和本帧 `View
 
 ## 深度、布局与 resize
 
+既有const `completedFrameStatistics()`返回`const optional<CompletedFrameStatistics>&`，无测试状态机/新调度器。helper使用actual completedSubmit而非frameIndex/FIF/Graph frameSerial；resize waitIdle可能早于统计推进，等待getter推进并保留旧copy extent，异常unmap仅helper修复。Source既有Fence-safe update发布mask。C只读验收未改Runtime；真实输入独立观察/用户自测/重复豁免与专项NOT RUN见[回归](../usage/regression-checks.md)。
+
 Engine 不再 allocation/bind RuntimeDepth；对需要 Forward depth 的示例，`enableDepth` 只触发 depth format 选择，Graph-owned ForwardSceneDepth 由 Pipeline pool 创建。clear value 通过 RenderContext 传给 Graph target；旧 Runtime depth Load/Store 配置已移除。
 
 Engine 记录每个交换链图像的布局，并按 typed handle 绑定实际 Image、View、Extent、Aspect、usage、Layout、Load/Store、Clear 和最终布局。Pipeline 验证外部 descriptor 与 expected usage 的完整超集；Graph internal allocation 是 Pipeline-owned pool 的职责，Engine 不拥有它。Present 前颜色图像转换到 PRESENT_SRC_KHR。
 
-尺寸变化或交换链过期时，Engine 等待设备空闲、重建交换链、清除外部绑定和通知 Pass::onResize；Pipeline pool 随后重建 relative internal targets。自动冒烟 resize 通过 GLFW 请求窗口尺寸变化；只有观察到新的 Swapchain generation 后才将 `resizeCompleted` 置为 true。最小化时暂缓绘制，主循环短暂休眠；Input 以 interaction epoch 切断跳过帧前后的拖动连续性。QA 已人工检查最小化/恢复，但 Win+D 和物理非等比 DPI 尚未覆盖。
+尺寸变化或交换链过期时Engine等待device idle、重建Swapchain、清外部绑定并通知onResize，pool重建relative targets。自动resize由GLFW请求，观察新Swapchain generation才resizeCompleted。最小化暂缓绘制并短休眠，Input epoch切断连续性。最终C有普通true minimize/restore与真实resize证据，专项epoch-held stress未新实机执行；Win+D/物理非等比DPI尚未覆盖。
 
 退出时先等待 GPU，再销毁 Pass、UI 和图像/命令/同步/交换链及命令池，之后依次销毁 Device、Surface、Instance 和 Window，保证依赖对象仍存活。
 

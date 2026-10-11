@@ -5,10 +5,25 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include <optional>
+#include <span>
+#include <string_view>
 
 #include <glm/vec3.hpp>
 
 namespace ku::asset {
+
+enum class RenderPath { Forward, Deferred };
+[[nodiscard]] RenderPath parseRenderPath(std::string_view value);
+[[nodiscard]] const char* toString(RenderPath path) noexcept;
+struct RenderPathCommandLine {
+    std::optional<RenderPath> overridePath;
+    std::vector<std::string> forwarded;
+};
+[[nodiscard]] RenderPathCommandLine parseRenderPathCommandLine(std::span<const std::string_view> arguments);
+[[nodiscard]] inline RenderPath resolveRenderPath(RenderPath configured, std::optional<RenderPath> overridePath) noexcept {
+    return overridePath.value_or(configured);
+}
 
 enum class ShadingModel {
     PBR,
@@ -55,6 +70,7 @@ struct SceneLightingConfig {
 struct SceneNodeConfig;
 
 struct SceneConfig {
+    RenderPath renderPath = RenderPath::Forward;
     SceneCameraConfig camera{};
     SceneLightingConfig lighting{};
     std::string environment;

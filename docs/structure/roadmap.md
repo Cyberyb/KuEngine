@@ -1,8 +1,8 @@
 # KuEngine 开发路线图
 
-更新日期：2026-10-07。本路线以“小型 Vulkan 渲染引擎，服务渲染特性的快速开发与验证”为目标。不预设发布日期，M0～M5 是工作阶段，不是软件发布版本。
+更新日期：2026-10-11。本路线以“小型 Vulkan 渲染引擎，服务渲染特性的快速开发与验证”为目标。不预设发布日期，M0～M5 是工作阶段，不是软件发布版本。
 
-需求范围和状态统一维护在 [产品需求](product-requirements.md)，架构边界见 [目标架构](target-architecture.md)，当前已实现内容见 [宏观架构](current-architecture.md)。M0～M3 已完成；M4～M5 未开始。用户要求在 M3 后停止本轮实现。
+需求见 [产品需求](product-requirements.md)，边界见 [目标架构](target-architecture.md)，实现见 [宏观架构](current-architecture.md)。M0～M3完成；M4已完成（WP01/02/A/B/C门禁已闭，最终QA ACCEPTED、Planner DOCUMENTED、Lead审计通过，REQ-01～13首轮已验收）；M5未开始。
 
 ## 1. 最终交付形态
 
@@ -31,7 +31,7 @@ flowchart LR
 | M1 | 查看器交互框架（已完成） | REQ-07～10 | 侧栏收展、双模式相机、输入焦点与现有参数/统计均已验收 |
 | M2 | 公共资产、材质、环境和前向路径（已完成） | REQ-01～05、08 | 公共 Scene/GPU 资源、替换、实例材质语义和公共 Forward/ForwardReuse 均已验收；不包含 M3 图资源或 M4 Deferred |
 | M3 | Graph 管理资源、同步与执行（已完成） | REQ-01、05、11～13 | WP01～04 已验收 typed allocation/lifecycle、synchronization2、Compute/callback/native contract 与 Graph-owned Forward output/display |
-| M4 | 延迟路径与首个完整产品闭环 | REQ-04、06、13 | 同场景切换路径，材质语义一致，透明/输出/UI 完整 |
+| M4 | 延迟路径与首个完整产品闭环（已完成） | REQ-04、06、13 | 同场景切换路径，材质语义一致，透明/输出/UI 完整 |
 | M5 | 资源并行与实验效率强化 | REQ-14 | 按帧资源安全，性能观测与结果复现更完整 |
 
 M4 完成后按 REQ-01～13 的验收口径进行整体检查，形成首个功能完整基线；M5 不应阻塞此前的可用版本。
@@ -96,6 +96,8 @@ M4 完成后按 REQ-01～13 的验收口径进行整体检查，形成首个功�
 
 ### M4：延迟渲染与完整查看器闭环
 
+状态：已完成，Lead最终审计通过（2026-10-11）。WP01/02/A/B门禁已闭；C最终QA ACCEPTED、完整REQ-01～13矩阵与[开发者接入说明](../usage/developing-render-features.md)已同步。人工输入按用户明确修订的自测/重复豁免程序验收，不删减功能需求；独立观察、自测和专项NOT RUN见[回归](../usage/regression-checks.md)。
+
 范围：公共 Renderer、Material/Shader、Graph Pass、Viewer 渲染路径选择。
 
 - 设计最小 GBuffer 格式与 ShadingModel 编码，建立 GBuffer Pass、Deferred Lighting Pass；复用 Forward 的材质与灯光语义。
@@ -106,6 +108,8 @@ M4 完成后按 REQ-01～13 的验收口径进行整体检查，形成首个功�
 验收：同一包含 PBR、Unlit、Opaque、Mask、Blend 的场景可切换路径，保留相机、灯光和材质状态；受支持部分画面近似一致。GBuffer 随视口正确重建，Unlit 不受光照污染，透明与 UI 合成顺序正确。逐项检查 REQ-01～13，补齐开发者接入示例与使用说明。
 
 ### M5：多帧安全与实验效率
+
+状态：未开始；本轮已完成M4并停止，不自动启动M5。
 
 范围：Runtime、动态资源、Uploader、统计、Graph 调试与测试。
 
@@ -118,9 +122,9 @@ M4 完成后按 REQ-01～13 的验收口径进行整体检查，形成首个功�
 
 ## 4. 下一轮建议执行的范围
 
-M0～M3 已完成，本轮按用户要求在 M3 停止。若继续，下一阶段为 M4-WP01 的最小 GBuffer 与 Deferred Lighting；其范围、依赖和验收保持 [实施工作包](implementation-plan.md) 所列定义。
+WP01/02/A/B门禁已闭；2026-10-11 C最终QA `build/qa-m4-wp03c-final/qa-report.md` ACCEPTED + DOCUMENTED，REQ-01～13首轮已验收。Lead已核对冻结输入、完整REQ-01～13证据、文档与阶段出口，M4 DONE；不派新实现或重复豁免的人工作业。范围与依赖遵守 [实施工作包](implementation-plan.md) 和 [M4任务包](../prompts/m4-task-packets.md)，M4已闭环并停止，不进入M5。
 
-这轮不开始改 GBuffer，也不放开多帧并行。若 M0 发现现有正确性问题，先修复影响当前工作包的部分，不把所有底层技术债都设成 UI 的前置阻塞项。
+WP01过去的临时display-ready/透明排除已由WP02共享线性HDR/天空/Blend替代。完整IBL/OIT/HDR显示器/alias/multiQueue/多帧不是首轮完成条件，未实现或未运行边界不会随QA ACCEPTED消失。
 
 ## 5. 后续候选池
 

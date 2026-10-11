@@ -17,6 +17,7 @@
 #include <KuEngine/Render/TextureFactory.h>
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
 #include <imgui.h>
 
 #include <algorithm>
@@ -40,9 +41,13 @@ std::filesystem::path assetDirectory()
 }
 } // namespace
 
-ForwardReusePass::ForwardReusePass(bool zeroLights, bool backFacePreset)
+ForwardReusePass::ForwardReusePass(bool zeroLights, bool backFacePreset, bool deferred, int lightPreset, int fixture, float normalScale, float exposure, bool sky, bool environment, std::optional<asset::RenderPath> pathOverride)
     : m_zeroLights(zeroLights)
+    , m_deferred(deferred)
+    , m_pathOverride(pathOverride ? pathOverride : deferred ? std::optional(asset::RenderPath::Deferred) : std::nullopt)
+    , m_lightPreset(lightPreset)
     , m_viewPreset(backFacePreset ? 1 : 0)
+    , m_fixture(fixture), m_normalScale(normalScale), m_exposure(exposure), m_sky(sky), m_environmentEnabled(environment)
 {
 }
 ForwardReusePass::~ForwardReusePass()
@@ -50,44 +55,27 @@ ForwardReusePass::~ForwardReusePass()
     // Descriptor sets go first; borrowed environment/material/model assets
     // remain alive until the renderer has released its pools.
     m_renderer.reset();
+    m_geometryRenderer.reset();
+    m_blendRenderer.reset();
+    m_backgroundRenderer.reset();
     m_environment.reset();
     m_materialVariants.clear();
     m_model.reset();
     m_program.reset();
+    m_geometryProgram.reset();
 }
 
-void ForwardReusePass::setup(RenderGraphBuilder& builder)
-{
-    builder.colorAttachment(
-        builder.createImage(
-            forward_graph_resource::sceneColor,
-            m_colorTargetDesc),
-        AttachmentLoadPolicy::Clear,
-        AttachmentStorePolicy::Store);
-    builder.depthAttachment(
-        builder.createImage(
-            forward_graph_resource::sceneDepth,
-            m_depthTargetDesc),
-        AttachmentLoadPolicy::Clear,
-        AttachmentStorePolicy::DontCare);
+void ForwardReusePass::setup(RenderGraphBuilder&) {}
+
+ForwardRenderer& ForwardReusePass::sceneRenderer(SceneDrawPhase phase) {
+    return phase == SceneDrawPhase::Background ? *m_backgroundRenderer
+        : phase == SceneDrawPhase::Blend ? *m_blendRenderer : phase == SceneDrawPhase::Geometry ? *m_geometryRenderer : *m_renderer;
 }
+void ForwardReusePass::update(const FrameData&) { pathControl().publishPending(); }
 
 void ForwardReusePass::initialize(const RenderContext& context)
 {
-    const ForwardGraphTargets targets = makeForwardGraphTargets(context);
-    validateForwardGraphTargetFormats(
-        context.device, targets.color.format, targets.depth.format);
-    m_colorTargetDesc = targets.color;
-    m_depthTargetDesc = targets.depth;
-
-    // Recompilation (including a swapchain format change) rebuilds the
-    // format-dependent program. Release dependent descriptor sets and buffers
-    // before their layouts, then repopulate a single live fixture state.
-    m_renderer.reset();
-    m_environment.reset();
-    m_materialVariants.clear();
-    m_model.reset();
-    m_program.reset();
+    if (m_renderer && m_renderer->ready()) return; // fixed HDR program; keep scene on recompile
     const std::filesystem::path root = assetDirectory();
     asset::SceneConfig config{};
     std::string error;
@@ -96,6 +84,13 @@ void ForwardReusePass::initialize(const RenderContext& context)
         throw std::runtime_error(error);
     }
     asset::SceneLoadDescription description{};
+    if (m_fixture) {
+        for (auto& node : config.nodes) { node.model = "hdr-normal-quad.gltf"; node.transform = {}; }
+        config.nodes[0].transform.position = {-0.65f,0,0};
+        config.nodes[1].transform.position = {0.65f,0,0};
+        for (auto& node : config.nodes) node.transform.scale = {1.1f,1.4f,1};
+        config.lighting.pointLights.clear();
+    }
     description.resourcesRoot = root;
     description.config = config;
     if (!asset::SceneLoader::load(description, m_scene, &error)) {
@@ -106,16 +101,52 @@ void ForwardReusePass::initialize(const RenderContext& context)
         throw std::runtime_error(
             "ForwardReuse fixture must contain two instances sharing one MeshHandle");
     }
+    if (m_fixture == 1 || m_fixture == 3) {
+        // Stable, independently transformed shared mesh instances. Near Blend is
+        // deliberately inserted before far Blend to exercise object sorting.
+        m_scene.instances.clear();
+        const auto add = [&](float x,float y,float z,std::array<float,3> color,float alpha,bool blend) {
+            asset::SceneInstance instance{};
+            instance.id = "hdr-"+std::to_string(m_scene.instances.size());
+            instance.mesh = m_scene.meshes.front().handle;
+            instance.transform.position = {x,y,z}; instance.transform.scale = {1.8f,1.3f,1};
+            instance.hasMaterialOverride = true;
+            auto& m = instance.materialOverride;
+            m.hasShadingModel = true; m.shadingModel = asset::ShadingModel::Unlit;
+            m.hasBaseColorFactor = true; m.baseColorFactor = {0,0,0,alpha};
+            m.hasEmissiveFactor = true; m.emissiveFactor = color;
+            m.hasAlphaMode = true; m.alphaMode = blend ? "BLEND" : "OPAQUE";
+            m_scene.instances.push_back(instance);
+        };
+        add(-1,.75f,0,{.25f,.5f,1},1,false);
+        add(-1,.75f,.2f,{4,2,.5f},.25f,true);
+        add(1,.75f,0,{.25f,.5f,1},1,false);
+        add(1,.75f,.3f,{0,2,0},.5f,true);
+        add(1,.75f,.1f,{2,0,0},.5f,true);
+        add(-1,-.75f,0,{.25f,.5f,1},1,false);
+        add(-1,-.75f,.4f,{.1f,.2f,.3f},1,false);
+        add(-1,-.75f,.2f,{4,2,.5f},.25f,true);
+        add(1,-.75f,0,{4,2,.5f},1,false);
+        m_scene.lighting.intensity = 0;
+        if (m_fixture == 3) for(auto& instance:m_scene.instances) instance.transform.position.z -= 4.f;
+    }
+    if (m_fixture == 2) for (auto& instance : m_scene.instances) {
+        instance.materialOverride.hasNormalScale = true;
+        instance.materialOverride.normalScale = m_normalScale;
+    }
     if (m_zeroLights) {
         m_scene.lighting.intensity = 0.0f;
         for (auto& point : m_scene.lighting.pointLights) point.intensity = 0.0f;
     }
+    if (m_lightPreset == 1)
+        for (auto& point : m_scene.lighting.pointLights) point.intensity = 0.0f;
+    if (m_lightPreset == 2) m_scene.lighting.intensity = 0.0f;
 
     ResourceUploader uploader(context.device);
     TextureFactory textureFactory(context.device, uploader);
     m_program = std::make_unique<ForwardProgram>();
-    if (!m_program->initialize(context.device, context.colorFormat,
-            context.depthFormat, context.depthCompareOp, error)) {
+    if (!m_program->initialize(context.device, sceneHdrFormat,
+                context.depthFormat, context.depthCompareOp, error)) {
         throw std::runtime_error(error);
     }
     m_model = std::make_unique<GpuModelAsset>();
@@ -142,7 +173,7 @@ void ForwardReusePass::initialize(const RenderContext& context)
     asset::HDRImageData controlledEnvironment{};
     controlledEnvironment.width = 1;
     controlledEnvironment.height = 1;
-    controlledEnvironment.rgba32f = {0.04f, 0.05f, 0.08f, 1.0f};
+    controlledEnvironment.rgba32f = m_fixture ? std::vector<float>{2,1,.5f,1} : std::vector<float>{.04f,.05f,.08f,1};
     m_environment = std::make_unique<PBREnvironmentResources>();
     if (!m_environment->initialize(
             context.device, textureFactory, controlledEnvironment, error,
@@ -162,6 +193,13 @@ void ForwardReusePass::initialize(const RenderContext& context)
         }
     }
     if (!m_program->ensurePipelines(keys, error)) throw std::runtime_error(error);
+    if (pathControl().deferredAvailable()) {
+        m_geometryProgram = std::make_unique<ForwardProgram>();
+        if (!m_geometryProgram->initializeGeometry(context.device, context.depthFormat, context.depthCompareOp, error))
+            throw std::runtime_error(error);
+        std::erase_if(keys, [](const auto& key) { return key.alphaMode == asset::AlphaMode::Blend; });
+        if (!m_geometryProgram->ensurePipelines(keys, error)) throw std::runtime_error(error);
+    }
     m_renderer = std::make_unique<ForwardRenderer>();
     const size_t drawCapacity =
         m_scene.instances.size() * mesh.subMeshes.size();
@@ -169,27 +207,43 @@ void ForwardReusePass::initialize(const RenderContext& context)
             context.device, *m_program, drawCapacity, error)) {
         throw std::runtime_error(error);
     }
-    KU_INFO(
+    if (pathControl().deferredAvailable()) {
+        m_geometryRenderer = std::make_unique<ForwardRenderer>();
+        if (!m_geometryRenderer->initialize(context.device,*m_geometryProgram,drawCapacity,error)) throw std::runtime_error(error);
+    }
+    m_blendRenderer = std::make_unique<ForwardRenderer>();
+    m_backgroundRenderer = std::make_unique<ForwardRenderer>();
+    if (!m_blendRenderer->initialize(context.device, *m_program, drawCapacity, error)
+        || !m_backgroundRenderer->initialize(context.device, *m_program, 1, error))
+        throw std::runtime_error(error);
+    pathControl().initialize(asset::resolveRenderPath(config.renderPath,m_pathOverride));
+    m_deferred = pathControl().path() == asset::RenderPath::Deferred;
+    if (!m_fixture) KU_INFO(
         "KUENGINE_FORWARD_REUSE_FIXTURE preset={} lights={} uniqueMeshes=1 instances=2 variants={} forwardDraws=8 forwardVertices=42 graphDraws=9 graphVertices=45 sharedMesh=1 semantics=mr-ao-emissive-mask-blend-double-sided",
         m_viewPreset == 1 ? "backface" : "semantics",
         m_zeroLights ? "zero" : "scene",
         m_materialVariants.size());
+    if (m_deferred && !m_fixture)
+        KU_INFO("KUENGINE_DEFERRED_FIXTURE geometryDraws=6 geometryVertices=30 blendDraws=2 graphDraws=10 graphVertices=48 lights={} modelCodes=empty:0,pbr:1,unlit:2", m_zeroLights ? "zero" : m_lightPreset == 1 ? "directional" : m_lightPreset == 2 ? "point" : "scene");
+    if (m_fixture) KU_INFO("KUENGINE_HDR_FIXTURE kind={} path={} sharedMesh=1 instances={} normalScale={} exposure={} sky={} environment={}",m_fixture==1 ? "analytic" : "normal",m_deferred ? "deferred" : "forward",m_scene.instances.size(),m_normalScale,m_exposure,m_sky,m_environmentEnabled);
 }
 
 void ForwardReusePass::execute(CommandList& commandList, const FrameData& frame)
 {
+    (void)commandList;
     if (!m_renderer || !m_renderer->ready()) return;
     const float aspect = frame.viewerLayout.sceneFramebuffer.height > 0
         ? static_cast<float>(frame.viewerLayout.sceneFramebuffer.width)
             / static_cast<float>(frame.viewerLayout.sceneFramebuffer.height)
         : 16.0f / 9.0f;
-    const glm::vec3 cameraPosition = m_viewPreset == 1
+    const glm::vec3 offset = m_fixture == 3 ? glm::vec3(0,0,-4) : glm::vec3(0);
+    const glm::vec3 cameraPosition = (m_viewPreset == 1
         ? glm::vec3(0.0f, 0.0f, -3.2f)
-        : glm::vec3(0.0f, 0.0f, 3.2f);
+        : glm::vec3(0.0f, 0.0f, 3.2f)) + offset;
     const glm::mat4 view = glm::lookAt(cameraPosition,
-        glm::vec3(0.0f), glm::vec3(0.0f,1.0f,0.0f));
-    glm::mat4 projection = glm::perspective(glm::radians(55.0f),
-        std::max(aspect,0.01f), 0.1f, 20.0f);
+        offset, glm::vec3(0.0f,1.0f,0.0f));
+    glm::mat4 projection = m_fixture ? glm::orthoRH_ZO(-2.0f,2.0f,-1.5f,1.5f,.1f,20.0f)
+        : glm::perspective(glm::radians(55.0f), std::max(aspect,0.01f), 0.1f, 20.0f);
     projection[1][1] *= -1.0f;
     ForwardView forwardView{};
     forwardView.viewProjection = projection * view;
@@ -197,8 +251,9 @@ void ForwardReusePass::execute(CommandList& commandList, const FrameData& frame)
     forwardView.cameraPosition = cameraPosition;
     forwardView.lighting = m_scene.lighting;
     forwardView.environment = m_environment.get();
-    forwardView.environmentEnabled = false;
-    forwardView.skyboxEnabled = false;
+    forwardView.environmentEnabled = m_environmentEnabled;
+    forwardView.skyboxEnabled = m_sky;
+    forwardView.environmentExposure = m_exposure * (m_pathSmokeVariant ? 2.f : 1.f);
     forwardView.outputGamma = true;
 
     std::vector<ForwardDraw> draws;
@@ -227,17 +282,19 @@ void ForwardReusePass::execute(CommandList& commandList, const FrameData& frame)
                 0.5f * (mesh.boundsMin + mesh.boundsMax), 1.0f));
             draw.material = resolveMaterial(mesh.materials[materialIndex],
                 instance.hasMaterialOverride ? &instance.materialOverride : nullptr);
+            if (m_pathSmokeVariant && draw.material.alphaMode == asset::AlphaMode::Blend)
+                draw.material.baseColorFactor[3] = 0.f;
             draws.push_back(draw);
         }
     }
-    std::string error;
-    if (!m_renderer->render(commandList, forwardView, draws, error)) {
-        KU_WARN("ForwardReuse render skipped: {}", error);
-    }
+    m_snapshot = {forwardView, std::move(draws), frame.totalTime};
 }
 
 void ForwardReusePass::drawUI()
 {
+    pathControl().drawUI();
+    if (m_fixture) { ImGui::Text("Controlled HDR/normal fixture %d",m_fixture); return; }
+    if (pathControl().path() == asset::RenderPath::Deferred) ImGui::TextWrapped("Deferred: four RGBA16F MRT, shared linear HDR / Forward Blend / Display.");
     const char* presets[] = {"Semantic front", "Double-sided back"};
     ImGui::Combo("View Preset", &m_viewPreset, presets, 2);
     ImGui::Text("Shared MeshHandle: yes | Material GPU variants: %u",
@@ -281,13 +338,6 @@ void ForwardReusePass::drawUI()
 
 std::optional<CommandListStatistics> ForwardReusePass::expectedFrameStatistics() const
 {
-    if (m_scene.meshes.empty()) return std::nullopt;
-    CommandStatisticsAccumulator stats;
-    for (size_t instance = 0; instance < m_scene.instances.size(); ++instance) {
-        for (const auto& subMesh : m_scene.meshes.front().mesh.subMeshes) {
-            if (subMesh.indexCount > 0) stats.recordIndexedDraw(subMesh.indexCount, 1);
-        }
-    }
-    return stats.statistics();
+    return CommandListStatistics{0,0}; // scene preparation records no GPU draw
 }
 } // namespace ku

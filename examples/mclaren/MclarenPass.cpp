@@ -31,9 +31,24 @@
 
 namespace ku {
 
+struct MclarenEnvironmentLifetime {
+    std::vector<bool> released;
+    uint64_t allocate() { released.push_back(false); return released.size(); }
+};
+
 struct MclarenEnvironmentState {
     std::filesystem::path path;
     PBREnvironmentResources resources;
+    std::shared_ptr<MclarenEnvironmentLifetime> lifetime;
+    uint64_t token = 0;
+    ~MclarenEnvironmentState() {
+        // Record only AFTER all descriptor/texture/sampler ownership is reset.
+        resources.reset();
+        if (lifetime && token) {
+            lifetime->released[static_cast<size_t>(token-1)] = true;
+            KU_INFO("KUENGINE_ENVIRONMENT_RELEASED token={} gpu_reset=1", token);
+        }
+    }
 };
 
 struct MclarenModelState {
@@ -46,6 +61,7 @@ struct MclarenModelState {
         MaterialGpuResources resources;
     };
     struct DrawRecord {
+        size_t instanceIndex = 0;
         asset::MeshHandle mesh = asset::invalidMeshHandle;
         uint32_t materialVariantIndex = 0;
         uint32_t subMeshIndex = 0;
@@ -180,15 +196,14 @@ bool buildModelGpuState(
             const asset::MaterialData& base = source->mesh.materials.empty()
                 ? defaultMaterial : source->mesh.materials[materialIndex];
             state.draws.push_back(MclarenModelState::DrawRecord{
+                instanceIndex,
                 instance.mesh,
                 variantPlan.instanceVariantIndices[instanceIndex],
                 static_cast<uint32_t>(subMeshIndex),
                 materialIndex,
                 world,
                 center,
-                resolveMaterial(base,
-                    instance.hasMaterialOverride
-                        ? &instance.materialOverride : nullptr)});
+                resolveInstanceMaterial(base, instance, materialIndex)});
         }
     }
     return true;
@@ -207,9 +222,14 @@ std::vector<ForwardPipelineKey> modelPipelineKeys(
 
 MclarenPass::MclarenPass(
     std::vector<MclarenStartupReplacement> startupReplacements,
-    uint64_t replaceAfterUpdates)
+    uint64_t replaceAfterUpdates, bool deferred, std::optional<asset::RenderPath> pathOverride,
+    std::filesystem::path scenePath)
     : m_startupReplacements(std::move(startupReplacements))
     , m_replaceAfterUpdates(replaceAfterUpdates)
+    , m_deferred(deferred)
+    , m_pathOverride(pathOverride ? pathOverride : deferred ? std::optional(asset::RenderPath::Deferred) : std::nullopt)
+    , m_explicitScene(std::move(scenePath))
+    , m_environmentLifetime(std::make_shared<MclarenEnvironmentLifetime>())
 {
 }
 
@@ -220,32 +240,27 @@ MclarenPass::~MclarenPass()
 
 void MclarenPass::resetAssetStates() noexcept
 {
+    m_blendRenderer.reset();
+    m_backgroundRenderer.reset();
     m_forwardRenderer.reset();
+    m_geometryRenderer.reset();
     m_modelState.reset();
     m_environmentState.reset();
     m_forwardProgram.reset();
+    m_geometryProgram.reset();
 }
 
-void MclarenPass::setup(RenderGraphBuilder& builder)
-{
-    const ImageHandle sceneColor = builder.createImage(
-        forward_graph_resource::sceneColor,
-        m_colorTargetDesc);
-    const ImageHandle sceneDepth = builder.createImage(
-        forward_graph_resource::sceneDepth,
-        m_depthTargetDesc);
-    builder.colorAttachment(
-        sceneColor,
-        AttachmentLoadPolicy::Clear,
-        AttachmentStorePolicy::Store);
-    builder.depthAttachment(
-        sceneDepth,
-        AttachmentLoadPolicy::Clear,
-        AttachmentStorePolicy::DontCare);
+void MclarenPass::setup(RenderGraphBuilder&) {}
+
+ForwardRenderer& MclarenPass::sceneRenderer(SceneDrawPhase phase) {
+    return phase == SceneDrawPhase::Background ? *m_backgroundRenderer
+        : phase == SceneDrawPhase::Blend ? *m_blendRenderer : phase == SceneDrawPhase::Geometry ? *m_geometryRenderer : *m_forwardRenderer;
 }
 
 void MclarenPass::initialize(const RenderContext& context)
 {
+    m_outputAttachmentSrgb = isSrgbAttachmentFormat(context.colorFormat);
+    if (m_forwardRenderer && m_forwardRenderer->ready()) return;
     KU_INFO("MclarenPass: initializing...");
     RHIDevice& device = context.device;
     m_device = &device;
@@ -262,7 +277,7 @@ void MclarenPass::initialize(const RenderContext& context)
 
     MclarenSceneAsset initialScene;
     std::string loadError;
-    if (!initialScene.load(loadError)) {
+    if (!initialScene.load(loadError, m_explicitScene)) {
         KU_ERROR("MclarenPass: {}", loadError);
         throw std::runtime_error(loadError);
     }
@@ -283,8 +298,8 @@ void MclarenPass::initialize(const RenderContext& context)
     m_enableTextureSampling = true;
     m_enableNormalMap = true;
     m_enableOrmMap = true;
-    m_enableEnvironmentMap = true;
-    m_enableSkybox = true;
+    m_enableEnvironmentMap = !initialScene.environmentPath().empty();
+    m_enableSkybox = !initialScene.environmentPath().empty();
     m_flipUvY = true;
     m_enableOutputGamma = true;
     m_environmentIntensity = 0.7f;
@@ -296,7 +311,7 @@ void MclarenPass::initialize(const RenderContext& context)
     auto program = std::make_unique<ForwardProgram>();
     if (!program->initialize(
             device,
-            context.colorFormat,
+            sceneHdrFormat,
             context.depthFormat,
             context.depthCompareOp,
             loadError)) {
@@ -313,6 +328,9 @@ void MclarenPass::initialize(const RenderContext& context)
             program->setLayout(forward_set::environment))) {
         throw std::runtime_error(loadError);
     }
+    environment->lifetime = m_environmentLifetime;
+    environment->token = m_environmentLifetime->allocate();
+    KU_INFO("KUENGINE_ENVIRONMENT_CREATED token={} fallback={}", environment->token, environment->path.empty());
 
     auto model = std::make_unique<MclarenModelState>();
     model->scene = std::move(initialScene);
@@ -326,6 +344,14 @@ void MclarenPass::initialize(const RenderContext& context)
         throw std::runtime_error(loadError);
     }
     auto renderer = std::make_unique<ForwardRenderer>();
+    auto geometryProgram = std::make_unique<ForwardProgram>();
+    if (pathControl().deferredAvailable()) {
+        if (!geometryProgram->initializeGeometry(device, context.depthFormat, context.depthCompareOp, loadError))
+            throw std::runtime_error(loadError);
+        auto geometryKeys = keys;
+        std::erase_if(geometryKeys, [](const auto& k) { return k.alphaMode == asset::AlphaMode::Blend; });
+        if (!geometryProgram->ensurePipelines(geometryKeys, loadError)) throw std::runtime_error(loadError);
+    }
     if (!renderer->initialize(device, *program, model->draws.size(), loadError)) {
         throw std::runtime_error(loadError);
     }
@@ -333,8 +359,20 @@ void MclarenPass::initialize(const RenderContext& context)
 
     m_forwardProgram = std::move(program);
     m_forwardRenderer = std::move(renderer);
+    m_geometryProgram = std::move(geometryProgram);
+    if (pathControl().deferredAvailable()) {
+        m_geometryRenderer = std::make_unique<ForwardRenderer>();
+        if (!m_geometryRenderer->initialize(device,*m_geometryProgram,model->draws.size(),loadError)) throw std::runtime_error(loadError);
+    }
+    m_blendRenderer = std::make_unique<ForwardRenderer>();
+    m_backgroundRenderer = std::make_unique<ForwardRenderer>();
+    if (!m_blendRenderer->initialize(device, *m_forwardProgram, model->draws.size(), loadError)
+        || !m_backgroundRenderer->initialize(device, *m_forwardProgram, 1, loadError))
+        throw std::runtime_error(loadError);
     m_environmentState = std::move(environment);
     m_modelState = std::move(model);
+    pathControl().initialize(asset::resolveRenderPath(m_modelState->scene.renderPath(),m_pathOverride));
+    m_deferred = pathControl().path() == asset::RenderPath::Deferred;
     const CommandListStatistics expected = modelStatistics(*m_modelState, true);
     m_replacement.initialize(MclarenPublishedAssetState{
         .modelPath = m_modelState->scene.sceneData().meshes.empty()
@@ -351,6 +389,17 @@ void MclarenPass::initialize(const RenderContext& context)
         .modelGlobalBaseColorFactor =
             m_modelState->scene.globalBaseColorFactor(),
     });
+    if (m_seedPathSmoke) {
+        m_camera.addRotation(0.17f,-0.11f);
+        m_camera.setProjection(47.f,.2f,300.f);
+        m_camera.setMoveSpeed(5.3f);
+        m_camera.setMode(ViewerCameraMode::FreeFly);
+        m_lightIntensity=.73f;m_lightColor={.7f,.8f,.9f};
+        m_environmentIntensity=.6f;m_environmentExposure=1.7f;
+        m_enableSkybox=false;m_enableEnvironmentMap=true;
+        m_replacement.modelGlobalBaseColorFactor()={.8f,.65f,.9f,1.f};
+        KU_INFO("KUENGINE_PATH_NONDEFAULT_STATE mode=FreeFly fov=47 speed=5.3 light=.73 exposure=1.7 sky=0 environment=1 tint=.8,.65,.9");
+    }
     copyDraft(m_modelDraft, m_replacement.live().modelPath);
     copyDraft(m_environmentDraft, m_replacement.live().environmentPath);
 
@@ -362,12 +411,14 @@ void MclarenPass::initialize(const RenderContext& context)
 
 void MclarenPass::update(const FrameData& frame)
 {
+    pathControl().publishPending();
     // Engine calls update only after waitForFrame() has completed. With the
     // configured single frame in flight this is the fence-safe publication
     // point, before command recording. Resize-skipped frames never enter here,
     // so a pending request naturally survives until the next normal update.
     queueStartupReplacement();
     processPendingReplacement();
+    processPendingEdit();
     ++m_completedNormalUpdates;
 
     m_viewerLayout = frame.viewerLayout;
@@ -413,7 +464,10 @@ MclarenPass::buildEnvironmentCandidate(
     failedCategory =
         MclarenReplacementCategory::CpuDecodeCompatibility;
     asset::HDRImageData image;
-    if (!asset::HDRImageLoader::loadFromFile(path, image, &errorMessage)) {
+    if (path.empty()) {
+        image.width = image.height = 1;
+        image.rgba32f = {0.f, 0.f, 0.f, 1.f};
+    } else if (!asset::HDRImageLoader::loadFromFile(path, image, &errorMessage)) {
         return nullptr;
     }
 
@@ -429,6 +483,9 @@ MclarenPass::buildEnvironmentCandidate(
             m_forwardProgram->setLayout(forward_set::environment))) {
         return nullptr;
     }
+    candidate->lifetime = m_environmentLifetime;
+    candidate->token = m_environmentLifetime->allocate();
+    KU_INFO("KUENGINE_ENVIRONMENT_CREATED token={} fallback={}", candidate->token, path.empty());
     return candidate;
 }
 
@@ -461,12 +518,19 @@ std::unique_ptr<MclarenModelState> MclarenPass::buildModelCandidate(
         return nullptr;
     }
     if (!m_forwardRenderer->ensureCapacity(
-            candidate->draws.size(), errorMessage)) {
+            candidate->draws.size(), errorMessage)
+        || !m_blendRenderer->ensureCapacity(candidate->draws.size(), errorMessage)) {
         return nullptr;
     }
+    if (m_geometryRenderer && !m_geometryRenderer->ensureCapacity(candidate->draws.size(),errorMessage)) return nullptr;
     const std::vector<ForwardPipelineKey> keys = modelPipelineKeys(*candidate);
     if (!m_forwardProgram->ensurePipelines(keys, errorMessage)) {
         return nullptr;
+    }
+    if (pathControl().deferredAvailable()) {
+        auto geometryKeys = keys;
+        std::erase_if(geometryKeys, [](const auto& k) { return k.alphaMode == asset::AlphaMode::Blend; });
+        if (!m_geometryProgram->ensurePipelines(geometryKeys, errorMessage)) return nullptr;
     }
     candidate->scene.releaseCpuMesh();
     return candidate;
@@ -504,7 +568,7 @@ void MclarenPass::processPendingReplacement()
 
     std::filesystem::path resolvedPath;
     std::string errorMessage;
-    if (!resolveMclarenAssetPath(
+    if (request.kind != MclarenAssetKind::ClearEnvironment && !resolveMclarenAssetPath(
             request.kind,
             request.path,
             m_modelState->scene.resourcesRoot(),
@@ -569,6 +633,7 @@ void MclarenPass::processPendingReplacement()
                 candidate->scene.globalBaseColorFactor());
             m_modelState.swap(candidate);
             m_replacement.swap(published);
+            m_selectedInstance = 0; m_selectedSlot = 0;
             committed = true;
             KU_INFO(
                 "KUENGINE_ASSET_REPLACE_SUCCESS kind={} request={} active={}",
@@ -610,6 +675,7 @@ void MclarenPass::processPendingReplacement()
             }
 
             MclarenReplacementController published = m_replacement;
+            const bool wasEmpty = m_replacement.live().environmentPath.empty();
             published.publishSuccess(
                 request,
                 resolvedPath,
@@ -620,6 +686,10 @@ void MclarenPass::processPendingReplacement()
                 m_replacement.live().modelGlobalBaseColorFactor);
             m_environmentState.swap(candidate);
             m_replacement.swap(published);
+            if (request.kind == MclarenAssetKind::ClearEnvironment) {
+                m_enableSkybox = false; m_enableEnvironmentMap = false;
+            } else if (wasEmpty) { m_enableSkybox = true; m_enableEnvironmentMap = true; }
+            candidate.reset(); // old GPU ownership is destroyed at this fence-safe point
             committed = true;
             KU_INFO(
                 "KUENGINE_ASSET_REPLACE_SUCCESS kind={} request={} active={}",
@@ -643,6 +713,7 @@ void MclarenPass::queueStartupReplacement()
 {
     if (m_completedNormalUpdates < m_replaceAfterUpdates
         || m_replacement.pending()
+        || m_editor.pending()
         || m_nextStartupReplacement >= m_startupReplacements.size()) {
         return;
     }
@@ -653,11 +724,56 @@ void MclarenPass::queueStartupReplacement()
     }
 }
 
+const asset::SceneData& MclarenPass::editableScene() const { return m_modelState->scene.sceneData(); }
+uint64_t MclarenPass::environmentToken() const { return m_environmentState ? m_environmentState->token : 0; }
+bool MclarenPass::environmentTokenReleased(uint64_t token) const {
+    return token>0 && token<=m_environmentLifetime->released.size()
+        && m_environmentLifetime->released[static_cast<size_t>(token-1)];
+}
+bool MclarenPass::requestAsset(MclarenAssetKind kind, std::string path) {
+    if (m_editor.pending()) { m_queueError = "An instance edit is pending"; return false; }
+    return m_replacement.queue(kind, std::move(path), &m_queueError);
+}
+bool MclarenPass::requestEdit(MclarenSceneEdit edit) {
+    if (m_replacement.pending()) { m_queueError = "An asset operation is pending"; return false; }
+    return m_editor.queue(std::move(edit), m_queueError);
+}
+void MclarenPass::processPendingEdit() {
+    if (!m_editor.pending() || !m_modelState) return;
+    std::vector<MclarenModelState::DrawRecord> candidateDraws;
+    const bool published = m_editor.publish(m_modelState->scene.sceneData(),
+        [&](const std::vector<asset::SceneInstance>& instances, std::string& error) {
+            candidateDraws = m_modelState->draws;
+            std::vector<ForwardPipelineKey> keys;
+            for (auto& draw : candidateDraws) {
+                const auto& instance = instances.at(draw.instanceIndex);
+                const auto* mesh = m_modelState->scene.sceneData().findMesh(draw.mesh);
+                const asset::MaterialData fallback{};
+                draw.instanceWorld = asset::sceneTransformMatrix(instance.transform);
+                draw.material = resolveInstanceMaterial(mesh->mesh.materials.empty() ? fallback
+                    : mesh->mesh.materials.at(draw.materialIndex), instance, draw.materialIndex);
+                keys.push_back(pipelineKeyFor(draw.material));
+            }
+            if (!m_forwardProgram->ensurePipelines(keys, error)) return false;
+            std::erase_if(keys, [](const auto& key) { return key.alphaMode == asset::AlphaMode::Blend; });
+            if (m_geometryRenderer && !m_geometryProgram->ensurePipelines(keys, error)) return false;
+            return m_forwardRenderer->ensureCapacity(candidateDraws.size(), error)
+                && m_blendRenderer->ensureCapacity(candidateDraws.size(), error)
+                && m_backgroundRenderer->ensureCapacity(1, error)
+                && (!m_geometryRenderer || m_geometryRenderer->ensureCapacity(candidateDraws.size(), error));
+        }, m_queueError);
+    if (published) {
+        m_modelState->draws.swap(candidateDraws);
+        KU_INFO("KUENGINE_INSTANCE_EDIT_PUBLISHED generation={} mesh_upload=0 hdr_upload=0", m_editor.generation());
+    } else KU_WARN("KUENGINE_INSTANCE_EDIT_FAILED retained=1 message={}", m_queueError);
+}
+
 void MclarenPass::execute(
     CommandList& cmd,
     const FrameData& frameData)
 {
     (void)frameData;
+    (void)cmd;
     if (!m_modelState || !m_environmentState || !m_forwardRenderer
         || !m_forwardRenderer->ready()) {
         return;
@@ -681,7 +797,7 @@ void MclarenPass::execute(
     view.skyboxEnabled = m_enableSkybox;
     view.outputGamma = m_enableOutputGamma;
     view.environmentIntensity = m_environmentIntensity;
-    view.environmentExposure = m_environmentExposure;
+    view.environmentExposure = m_environmentExposure * (m_pathSmokeVariant ? 2.f : 1.f);
 
     const std::array<float, 4>& tint =
         m_replacement.live().modelGlobalBaseColorFactor;
@@ -704,6 +820,8 @@ void MclarenPass::execute(
         draw.boundsCenterWorld = glm::vec3(
             draw.modelMatrix * glm::vec4(record.localBoundsCenter, 1.0f));
         draw.material = record.material;
+        if (m_pathSmokeVariant && draw.material.alphaMode == asset::AlphaMode::Blend)
+            draw.material.baseColorFactor[3] = 0.f;
         draw.tint = tint;
         draw.textureEnabled = {
             m_enableTextureSampling,
@@ -720,14 +838,32 @@ void MclarenPass::execute(
         draws.push_back(draw);
     }
 
-    std::string errorMessage;
-    if (!m_forwardRenderer->render(cmd, view, draws, errorMessage)) {
-        KU_WARN("MclarenPass: forward render skipped: {}", errorMessage);
-    }
+    m_snapshot = {view, std::move(draws), frameData.totalTime};
+}
+
+std::vector<uint64_t> MclarenPass::pathSmokeState() const
+{
+    const auto frame=m_camera.frame();
+    const float aspect=float(m_viewerLayout.sceneFramebuffer.width)/std::max(1u,m_viewerLayout.sceneFramebuffer.height);
+    // Projection changes legitimately with resize/sidebar; its row norms must
+    // still agree with the preserved perspective FOV and the current viewport.
+    const float f=1.f/std::tan(glm::radians(m_camera.fovYDegrees())*.5f);
+    const auto rowNorm=[&](int row){return glm::length(glm::vec3(frame.viewProjection[0][row],frame.viewProjection[1][row],frame.viewProjection[2][row]));};
+    if(std::abs(rowNorm(0)-f/aspect)>.0001f || std::abs(rowNorm(1)-f)>.0001f)
+        throw std::runtime_error("Camera projection disagrees with preserved FOV/current viewport");
+    const auto& live=m_replacement.live();
+    std::vector<uint64_t> state{live.modelGeneration,live.environmentGeneration,live.modelIdentity,live.environmentIdentity,static_cast<uint64_t>(m_camera.mode())};
+    const auto scalar=[&](const auto& value) {const auto* bytes=reinterpret_cast<const uint8_t*>(&value);for(size_t i=0;i<sizeof(value);++i)state.push_back(bytes[i]);};
+    scalar(m_camera.fovYDegrees());scalar(m_camera.moveSpeed());scalar(m_camera.nearPlane());scalar(m_camera.farPlane());scalar(m_camera.distance());scalar(m_camera.yaw());scalar(m_camera.pitch());scalar(m_environmentExposure);
+    for(const char c:live.modelPath.string())state.push_back(static_cast<unsigned char>(c));
+    state.push_back(0);
+    for(const char c:live.environmentPath.string())state.push_back(static_cast<unsigned char>(c));
+    return state;
 }
 
 void MclarenPass::drawUI()
 {
+    pathControl().drawUI();
     if (ImGui::CollapsingHeader(
             "Scene",
             ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -738,12 +874,11 @@ void MclarenPass::drawUI()
             "Model Draft",
             m_modelDraft.data(),
             m_modelDraft.size());
-        ImGui::BeginDisabled(m_replacement.pending());
+        ImGui::BeginDisabled(m_replacement.pending() || m_editor.pending());
         if (ImGui::Button("Load Model")) {
-            (void)m_replacement.queue(
+            (void)requestAsset(
                 MclarenAssetKind::Model,
-                std::string(m_modelDraft.data()),
-                &m_queueError);
+                std::string(m_modelDraft.data()));
         }
         ImGui::EndDisabled();
 
@@ -804,6 +939,50 @@ void MclarenPass::drawUI()
     if (ImGui::CollapsingHeader(
             "Material",
             ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (m_modelState && !editableScene().instances.empty()) {
+            const auto& scene = editableScene();
+            ImGui::BeginDisabled(m_editor.pending() || m_replacement.pending());
+            if (ImGui::BeginCombo("Instance", scene.instances[m_selectedInstance].id.c_str())) {
+                for (size_t i = 0; i < scene.instances.size(); ++i)
+                    if (ImGui::Selectable(scene.instances[i].id.c_str(), i == m_selectedInstance)) {
+                        m_selectedInstance = i; m_selectedSlot = 0;
+                    }
+                ImGui::EndCombo();
+            }
+            const auto& instance = scene.instances[m_selectedInstance];
+            auto transform = instance.transform;
+            bool trs = ImGui::DragFloat3("Instance Position", &transform.position.x, .02f);
+            trs |= ImGui::DragFloat3("Instance Rotation (deg)", &transform.rotationEulerDeg.x, .5f);
+            trs |= ImGui::DragFloat3("Instance Scale", &transform.scale.x, .01f, .001f, 100.f);
+            const auto* mesh = scene.findMesh(instance.mesh);
+            int slot = static_cast<int>(m_selectedSlot);
+            const int count = static_cast<int>(std::max(size_t(1), mesh->mesh.materials.size()));
+            if (ImGui::SliderInt("Material Slot", &slot, 0, count - 1)) m_selectedSlot = static_cast<uint32_t>(slot);
+            ImGui::Text("Shared MeshHandle: %u", instance.mesh);
+            ImGui::TextUnformatted("This instance only; every primitive using the slot changes.");
+            for (size_t p = 0; p < mesh->mesh.subMeshes.size(); ++p)
+                if (mesh->mesh.subMeshes[p].materialIndex == m_selectedSlot)
+                    ImGui::Text("Affected primitive: %u", static_cast<unsigned>(p));
+            auto material = editableMaterial(scene, m_selectedInstance, m_selectedSlot);
+            int shading = material.shadingModel == asset::ShadingModel::PBR ? 0 : 1;
+            bool changed = ImGui::Combo("Shading Model", &shading, "PBR\0Unlit\0");
+            material.shadingModel = shading == 0 ? asset::ShadingModel::PBR : asset::ShadingModel::Unlit;
+            changed |= ImGui::ColorEdit4("Slot BaseColor", material.baseColor.data());
+            changed |= ImGui::DragFloat3("Slot Emissive [0,64]", material.emissive.data(), .02f, 0.f, 64.f);
+            ImGui::BeginDisabled(shading == 1);
+            changed |= ImGui::SliderFloat("Slot Metallic", &material.metallic, 0.f, 1.f);
+            changed |= ImGui::SliderFloat("Slot Roughness", &material.roughness, 0.f, 1.f);
+            ImGui::EndDisabled();
+            if (shading == 1) ImGui::TextDisabled("Unlit ignores metallic/roughness; their values are retained.");
+            if (trs || changed) {
+                MclarenSceneEdit edit; edit.instance = m_selectedInstance;
+                if (trs) edit.transform = transform;
+                if (changed) edit.material = material;
+                (void)requestEdit(std::move(edit));
+            }
+            ImGui::EndDisabled();
+            ImGui::Text("Edit generation: %llu", static_cast<unsigned long long>(m_editor.generation()));
+        }
         ImGui::Checkbox(
             "Enable BaseColor Texture",
             &m_enableTextureSampling);
@@ -928,21 +1107,23 @@ void MclarenPass::drawUI()
             "HDR Draft",
             m_environmentDraft.data(),
             m_environmentDraft.size());
-        ImGui::BeginDisabled(m_replacement.pending());
+        ImGui::BeginDisabled(m_replacement.pending() || m_editor.pending());
         if (ImGui::Button("Load HDR")) {
-            (void)m_replacement.queue(
+            (void)requestAsset(
                 MclarenAssetKind::Environment,
-                std::string(m_environmentDraft.data()),
-                &m_queueError);
+                std::string(m_environmentDraft.data()));
         }
+        ImGui::SameLine();
+        if (ImGui::Button("Clear Environment")) (void)requestAsset(MclarenAssetKind::ClearEnvironment);
         ImGui::EndDisabled();
         ImGui::Checkbox("Enable Skybox", &m_enableSkybox);
         ImGui::Checkbox(
             "Enable Environment Reflections",
             &m_enableEnvironmentMap);
-        ImGui::Checkbox(
-            "Encode Output Gamma (Linear->sRGB)",
-            &m_enableOutputGamma);
+        ImGui::BeginDisabled(m_outputAttachmentSrgb);
+        ImGui::Checkbox("Display sRGB encoding (UNORM output)", &m_enableOutputGamma);
+        ImGui::EndDisabled();
+        if (m_outputAttachmentSrgb) ImGui::TextDisabled("sRGB output attachment: hardware encoding is always active.");
         ImGui::SliderFloat(
             "Environment Exposure",
             &m_environmentExposure,
@@ -959,10 +1140,7 @@ void MclarenPass::drawUI()
 std::optional<CommandListStatistics>
 MclarenPass::expectedFrameStatistics() const
 {
-    if (!m_modelState || !m_forwardRenderer || !m_forwardRenderer->ready()) {
-        return std::nullopt;
-    }
-    return modelStatistics(*m_modelState, m_enableSkybox);
+    return CommandListStatistics{0,0};
 }
 
 void MclarenPass::addRotation(

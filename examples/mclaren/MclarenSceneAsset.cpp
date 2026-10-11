@@ -50,13 +50,16 @@ std::filesystem::path defaultResourcesRoot()
 
 } // namespace
 
-bool MclarenSceneAsset::load(std::string& errorMessage)
+bool MclarenSceneAsset::load(std::string& errorMessage,
+    const std::filesystem::path& explicitScene)
 {
     MclarenSceneAsset candidate{};
     errorMessage.clear();
 
     candidate.m_scenePath = sourceOrRuntimePath(
         std::filesystem::path("scenes") / "sandbox" / "mclaren-sandbox.scene.json");
+    const bool strict = !explicitScene.empty();
+    if (strict) candidate.m_scenePath = asset::normalizeAssetPath(explicitScene);
 
     asset::SceneConfig loadConfig{};
     std::filesystem::path resourcesRoot;
@@ -68,16 +71,22 @@ bool MclarenSceneAsset::load(std::string& errorMessage)
             sceneConfig,
             &configError)) {
         candidate.m_sceneConfigUsed = true;
+        candidate.m_renderPath = sceneConfig.renderPath;
         loadConfig.camera = sceneConfig.camera;
         loadConfig.lighting = sceneConfig.lighting;
 
         resourcesRoot = asset::findResourcesRoot(candidate.m_scenePath);
+        if (strict && resourcesRoot.empty()) resourcesRoot = candidate.m_scenePath.parent_path();
         if (resourcesRoot.empty()) {
             KU_WARN(
                 "MclarenSceneAsset: cannot resolve resources root from scene path: {}",
                 candidate.m_scenePath.string());
         } else {
             for (const asset::SceneNodeConfig& node : sceneConfig.nodes) {
+                if (strict && node.model.empty()) {
+                    errorMessage = "Explicit scene node has no model: " + node.id;
+                    return false;
+                }
                 if (!node.model.empty()) {
                     const std::filesystem::path modelPath =
                         asset::resolveAssetPath(resourcesRoot, node.model);
@@ -86,6 +95,7 @@ bool MclarenSceneAsset::load(std::string& errorMessage)
                         resolvedNode.model = modelPath.string();
                         loadConfig.nodes.push_back(std::move(resolvedNode));
                     } else {
+                        if (strict) { errorMessage = "Scene model does not exist: " + modelPath.string(); return false; }
                         KU_WARN(
                             "MclarenSceneAsset: model does not exist: {}",
                             modelPath.string());
@@ -95,6 +105,7 @@ bool MclarenSceneAsset::load(std::string& errorMessage)
             }
         }
     } else {
+        if (strict || std::filesystem::exists(candidate.m_scenePath)) { errorMessage = configError; return false; }
         KU_WARN(
             "MclarenSceneAsset: scene config fallback to defaults: {}",
             configError);
@@ -102,6 +113,7 @@ bool MclarenSceneAsset::load(std::string& errorMessage)
     }
 
     if (loadConfig.nodes.empty()) {
+        if (strict) { errorMessage = "Explicit scene contains no models"; return false; }
         loadConfig.nodes.push_back(asset::SceneNodeConfig{
             "mclaren",
             sourceOrRuntimePath(kDefaultModel).string(),
@@ -113,9 +125,9 @@ bool MclarenSceneAsset::load(std::string& errorMessage)
     }
     candidate.m_resourcesRoot = asset::normalizeAssetPath(resourcesRoot);
     candidate.m_environmentPath = sceneConfig.environment.empty()
-        ? sourceOrRuntimePath(
+        ? (strict ? std::filesystem::path{} : sourceOrRuntimePath(
             std::filesystem::path("environments") / "hdr"
-                / kDefaultEnvironmentHdr)
+                / kDefaultEnvironmentHdr))
         : asset::resolveAssetPath(
             candidate.m_resourcesRoot,
             sceneConfig.environment);
@@ -139,6 +151,7 @@ bool MclarenSceneAsset::load(std::string& errorMessage)
         asset::MaterialConfig referenced{};
         if (!asset::loadMaterialConfigFromFile(
                 instance.materialReference, referenced, &configError)) {
+            if (strict) { errorMessage = configError; return false; }
             KU_WARN(
                 "MclarenSceneAsset: material config fallback to glTF defaults: {}",
                 configError);
@@ -158,7 +171,10 @@ bool MclarenSceneAsset::load(std::string& errorMessage)
         return false;
     }
 
-    if (!asset::HDRImageLoader::loadFromFile(
+    if (candidate.m_environmentPath.empty()) {
+        candidate.m_environmentImage.width = candidate.m_environmentImage.height = 1;
+        candidate.m_environmentImage.rgba32f = {0.f, 0.f, 0.f, 1.f};
+    } else if (!asset::HDRImageLoader::loadFromFile(
             candidate.m_sceneData.environment.sourcePath,
             candidate.m_environmentImage,
             &errorMessage)) {
@@ -284,7 +300,18 @@ void MclarenSceneAsset::releaseCpuMesh()
 {
     m_environmentImage = asset::HDRImageData{};
     for (asset::MeshAsset& meshAsset : m_sceneData.meshes) {
-        meshAsset.mesh = asset::MeshData{};
+        auto& mesh = meshAsset.mesh;
+        std::vector<asset::MeshVertex>{}.swap(mesh.vertices);
+        std::vector<uint32_t>{}.swap(mesh.indices);
+        const auto release = [](asset::TextureData& texture) {
+            std::vector<uint8_t>{}.swap(texture.rgba8);
+        };
+        release(mesh.baseColorTexture);
+        for (auto& material : mesh.materials) {
+            release(material.baseColorTexture); release(material.normalTexture);
+            release(material.metallicRoughnessTexture); release(material.occlusionTexture);
+            release(material.emissiveTexture);
+        }
     }
 }
 

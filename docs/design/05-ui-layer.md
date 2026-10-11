@@ -1,6 +1,6 @@
 # UI 与性能统计设计
 
-核对日期：2026-10-07。
+核对日期：2026-10-10（B实例/slot编辑与Clear；统计口径不变）。
 
 源码：[UIOverlay](../../src/KuEngine/UI/UIOverlay.h)、[Engine::render](../../src/KuEngine/Core/Engine.cpp)、[CommandList](../../src/KuEngine/RHI/CommandList.cpp)。
 
@@ -12,7 +12,9 @@ Pass::drawUI 只构建业务参数内容；RenderPipeline 分别提供 Pass 内�
 
 Mclaren 的 Parameters / Scene 内另有 Model 与 HDR 区块：各自显示 Draft 路径、Load 按钮、Active 路径、generation、状态/分类和错误。Load 只将路径复制为不可变请求并禁用并发请求；它不在 ImGui 回调中读取文件、上传或销毁 GPU 对象。请求会在下一次可用的 Pass update 安全点处理，成功后刷新 Active/generation，失败时 Draft/状态可见而已发布的画面、统计和相机保持。
 
-Mclaren 当前还显示共享 mesh 数、材质 GPU variant 数、draw 和各语义贴图数量，并提供材质采样、相机、方向/首个点光、环境和替换控件。ForwardReuse 显示语义/背面视图预设、零光状态、共享 MeshHandle、variant 数和实例选择信息。它们是示例调试 UI，不是通用实例编辑器；没有完成产品需求中的实例选择/逐实例编辑工作流。
+Mclaren显示共享mesh/variant/draw/贴图数量；Material区提供Instance与Material Slot选择、所选实例Position/Rotation(deg)/Scale、所选slot的BaseColor/Metallic/Roughness/Emissive/PBR-Unlit。UI列出该slot影响的primitive：同实例同槽联动，其他实例/槽不变。base RGBA/metallic/roughness范围[0,1]，emissive RGB[0,64]；Unlit禁用metallic/roughness但保留值，返回PBR恢复。Global tint仍影响全场景，不是独立slot编辑。ForwardReuse的预设/实例信息不替代最终Mclaren操作。
+
+编辑仅排队CPU请求，pending期间禁用并发编辑/资产操作；下一Fence-safe update完成candidate校验、管线与全phase容量准备后发布。路径/resize/recompile保留编辑和选中实例/slot，成功模型替换才重置选择。它是示例编辑UI，公共SceneMaterialSlot不依赖ImGui，不是通用编辑器。HDR区独立Clear Environment按钮不等于空路径Load或关闭贡献；完整黑GPU候选成功后Active HDR清空、generation增长、sky/env关闭，Load可再次恢复。错误Draft/status仍可见，失败保留已发布状态。
 
 UIOverlay::render 调用 ImGui::Render 和 Vulkan Backend。UI depth format 为 `VK_FORMAT_UNDEFINED`；Overlay 在 Display CLEAR/STORE 后对 SwapChainColor 使用 LOAD/read-write，实际附件由 RenderPipeline::executeOverlay 管理。
 
@@ -22,15 +24,16 @@ UIOverlay::render 调用 ImGui::Render 和 Vulkan Backend。UI depth format 为 
 UIOverlay::newFrame
 → RenderPipeline::update
 → UIOverlay::drawSidebar（Pass / Graph 内容）
-→ RenderPipeline::execute（业务命令）
-→ UIOverlay::drawSidebar（构建统计与内容控件）
+→ RenderPipeline::execute（post-UI ScenePrepare snapshot → HDR场景 → 唯一Display）
 → RenderPipeline::executeOverlay
 → UIOverlay::render（生成 DrawData 并记录 ImGui 命令）
 ```
 
-`describeSidebarFrame` 在帧初捕获布局、区段与保留宽度；该快照同时决定 `ViewerLayout`、输入排除区域和本帧侧栏，控件引发的收展只在下一帧生效。展开模式将右侧逻辑宽度留给侧栏；收起后为紧凑统计条，主动隐藏紧凑统计后只保留重开控件。小窗口仍允许滚动；过窄时场景保持完整并由侧栏覆盖。ImGui 最终 Render 前仍可增加统计控件。
+`describeSidebarFrame`在帧初捕获布局、区段和宽度，同时决定ViewerLayout/输入排除/本帧侧栏，收展下一帧生效。展开保留侧栏宽度，收起为紧凑统计，隐藏后保留重开控件；小窗可滚动、过窄回退覆盖。当前Engine只在Graph前drawSidebar一次，显示最近completed-submit统计；Graph后executeOverlay调用UI render，不再重建侧栏。
 
 ## UIFrameStatistics 数据契约
+
+UI在普通Display或直接MRT GBufferDisplay编码之后，参数先进入post-UI snapshot。Rendering的Render Path/GBuffer View只请求CPU状态，下一Fence-safe Source update发布mask；Forward禁用GBuffer并解释，debug→Forward恢复Scene，无Deferred能力提示原因。八视图见 [Deferred](13-deferred-rendering.md)。普通SRGB硬件恒编码/gamma禁用，debug固定单次编码、不受曝光/tone/Blend变化。B的实例编辑/真实Clear同样排队安全发布。普通ForwardReuse9/45或10/48、默认Mclaren91/9202884或92/9202887；debug替换一个Display，计数不变，多实例fixture/Clear/test probes按实际构成计数。
 
 `drawSidebar` 内部的统计内容接收 `UIFrameStatistics`，UI 只显示传入数据，不自行计算帧时间。
 

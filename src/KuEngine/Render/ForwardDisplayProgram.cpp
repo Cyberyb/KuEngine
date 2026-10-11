@@ -10,6 +10,7 @@
 #include <array>
 #include <filesystem>
 #include <stdexcept>
+#include <algorithm>
 
 namespace ku {
 namespace {
@@ -17,6 +18,7 @@ namespace {
 struct DisplayPushConstants {
     std::array<float, 2> uvScale{};
     std::array<float, 2> uvOffset{};
+    std::array<float, 4> params{};
 };
 
 } // namespace
@@ -105,6 +107,7 @@ void ForwardDisplayProgram::initialize(
         reset();
         m_device = &device;
         m_sceneColorFormat = sceneColorFormat;
+        m_outputFormat = outputFormat;
         m_sampler = candidateSampler;
         candidateSampler = VK_NULL_HANDLE;
         m_parameters = std::move(candidateParameters);
@@ -122,7 +125,7 @@ void ForwardDisplayProgram::initialize(
 void ForwardDisplayProgram::draw(
     CommandList& commands,
     const ResolvedImage& sceneColor,
-    const ForwardDisplayUvTransform& uvTransform)
+    const ForwardDisplayUvTransform& uvTransform, float exposure, bool encodeSrgb)
 {
     if (!m_pipeline || !m_parameters || m_sampler == VK_NULL_HANDLE) {
         throw std::runtime_error("Forward display program is not initialized");
@@ -170,6 +173,7 @@ void ForwardDisplayProgram::draw(
     const DisplayPushConstants push{
         uvTransform.scale,
         uvTransform.offset,
+        {std::max(0.0f, exposure), needsManualDisplayEncoding(m_outputFormat, encodeSrgb) ? 1.0f : 0.0f, 0.0f, 0.0f},
     };
     vkCmdPushConstants(
         commands.cmd(),

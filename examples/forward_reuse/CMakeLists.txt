@@ -1,6 +1,8 @@
 add_executable(ForwardReuseApp
     main.cpp
-    ForwardReusePass.cpp)
+    ForwardReusePass.cpp
+    ../common/ViewerPathSmoke.cpp
+    DeferredReadbackPass.cpp)
 target_include_directories(ForwardReuseApp PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(ForwardReuseApp PRIVATE
     KUENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
@@ -14,6 +16,7 @@ add_custom_command(TARGET ForwardReuseApp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/assets/shared-triangle.gltf
         ${CMAKE_CURRENT_SOURCE_DIR}/assets/semantic-card.gltf
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets/hdr-normal-quad.gltf
         ${CMAKE_CURRENT_SOURCE_DIR}/assets/forward-reuse.scene.json
         $<TARGET_FILE_DIR:ForwardReuseApp>/resources/forward_reuse
     COMMENT "Copying ForwardReuse fixtures")

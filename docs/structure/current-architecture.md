@@ -1,6 +1,6 @@
 # KuEngine 当前宏观架构
 
-核对日期：2026-10-07。基于已验收的 M0、M1、M2、M3-WP01～04：typed Graph 资源、内部池、生命周期、synchronization2、Compute/callback/native access 与 Forward Graph output/display。
+核对2026-10-11：WP01/02/A/B既有门禁已闭；最终C QA ACCEPTED + DOCUMENTED、REQ-01～13首轮范围已验收，WP03/M4已由Lead最终审计闭环（DONE），M5未开始。C只读审计/验收无新增Runtime接口或实现。
 
 ## 定位与当前能力
 
@@ -20,9 +20,9 @@ flowchart TB
     Frames["CommandList / SwapChain external binding"]
     Pipeline["RenderPipeline：图执行器"]
     Graph["RenderGraph：依赖、排序、附件与屏障计划"]
-    Pass["RenderPass / CallbackRenderPass：算法、Forward/Display/Compute"]
-    Targets["Graph pool：Forward SceneColor / SceneDepth"]
-    Display["ForwardDisplay：sample → SwapChain"]
+    Pass["RenderPass / CallbackRenderPass：Forward / Deferred Geometry+Lighting / Compute"]
+    Targets["Graph pool：共享RGBA16F SceneColor / Depth / 4 MRT"]
+    Display["Scene Display曝光/Reinhard或直接MRT八Debug固定映射 → 单次sRGB → SwapChain"]
     UI["UIOverlay：SidebarState / 参数 / 统计 / Graph"]
     App --> Runner --> Runtime
     Runtime --> Platform
@@ -40,7 +40,7 @@ flowchart TB
     UI --> Frames
 ```
 
-Runtime 拥有公共生命周期；RenderPipeline 拥有 Pass、Graph 与 internal resource pool 并执行 Graph。Engine 只绑定外部 SwapChainColor；ForwardSceneColor/ForwardSceneDepth 是 Pipeline pool 的内部目标，Engine 不拥有 RuntimeDepth。每个有附件的 Pass 使用独立 Dynamic Rendering Scope，屏障在 Scope 外记录。Engine 每帧将侧栏快照转成 `ViewerLayout`：展开侧栏保留右侧宽度，紧凑/重开模式覆盖场景；逻辑输入矩形和 framebuffer viewport 一同传给 Pass。业务 Scope 的 renderArea 覆盖完整附件、viewport/scissor 限制为场景，尾部 UI Scope 则绘制完整附件。
+Runtime拥有公共生命周期；Pipeline拥有Pass/Graph/internal pool。Engine只绑定外部SwapChainColor，共享ForwardSceneColor/Depth与四MRT由pool拥有（DeferredSceneColor兼容名为共享Color别名），无RuntimeDepth。每个attachment Pass独立Dynamic Rendering Scope，屏障在Scope外。ViewerLayout统一逻辑输入与framebuffer viewport；业务renderArea完整、viewport/scissor限场景，尾部UI绘制完整附件。
 
 ## 数据与资源流
 
@@ -51,13 +51,28 @@ flowchart LR
     Scene["SceneData：MeshHandle / MeshAsset / Instance"]
     GPU["GpuModelAsset / MaterialGpuResources / PBREnvironmentResources"]
     Resource["实例 variant plan / MclarenSceneAsset 适配"]
-    PBR["ForwardProgram / ForwardRenderer / shader"]
-    Disk --> CPU --> Scene --> GPU --> Resource --> PBR
+    PBR["ForwardProgram / ForwardRenderer / 共享材质与光照 shader"]
+    Deferred["post-UI Prepare → 静态Background/Forward或Geometry-Lighting/Blend → Scene Display或直接MRT Debug"]
+    Disk --> CPU --> Scene
+    Scene --> Resource
+    Scene --> GPU
+    Resource --> GPU --> PBR
+    PBR --> Deferred
+    Edit["Mclaren UI：实例/slot请求"] --> Candidate["示例CPU editor：元数据候选校验"]
+    Candidate --> Safe["Source Fence-safe：keys/四phase容量准备"]
+    Safe --> Data["SceneData实例/DrawRecord发布；共享Mesh/Texture/Descriptor不上传"]
+    Data --> PBR
 ```
 
-AssetPath 将相对资产引用解析为规范路径；SceneLoader 将去重 MeshAsset 和含 TRS/material override 的 SceneInstance 以稳定 MeshHandle 连接，完整候选校验成功后才发布。HDRImageLoader 提供严格校验的 CPU RGBA float 环境输入。公共 Forward 按 handle 上传 mesh，按真实 descriptor 差异建立材质 variant；`ForwardProgram` 拥有固定 set layout、shader 和有限 pipeline cache，`ForwardRenderer` 拥有 frame/draw UBO 和 descriptor。Mclaren 与 ForwardReuse 都使用它；旧 Mclaren renderer 文件未构建/运行。Mclaren UI/CLI 可入队模型或 HDR 替换；单帧 Fence-safe update 点同步构建候选，成功交换并递增相应 generation，失败保留 live state、相机和统计。Skybox 与 PBR 仍在一个 Graph 节点中。`OrbitCameraController` 输出统一 `CameraFrame`：OrbitInspect 保留模型旋转/滚轮查看，FreeFly 通过右键场景焦点驱动 WASDQE；切换时以当前帧双向交接并要求中性输入。
+AssetPath规范路径，SceneLoader以稳定MeshHandle连接去重Mesh与TRS/material override实例，完整候选才发布。HDR loader给出严格CPU RGBA float。两例共享公共GPU mesh/material/environment，Program拥有layout/shader/cache，coordinator拥有各phase Renderer独立frame/draw UBO/descriptor。post-UI Prepare只一次构建snapshot，Renderer在各phase执行时写自己的UBO；Background、Opaque或Geometry/Lighting、Blend、Display分开Graph节点。模型/HDR替换在单帧Fence-safe update完整候选成功后发布，失败保留state/相机/统计；首次初始化加载，ready recompile不重置状态。snapshot借用资产一提交，非多帧retire。OrbitInspect/FreeFly仍属Mclaren示例相机，交接要求中性输入。
+
+B的公共SceneMaterialSlot仅标量无ImGui，MclarenSceneEditor是CPU queue/candidate；DrawRecord保留实例/primitive/slot身份，Source准备成功才发布，另一实例/槽保持，共享mesh/纹理/descriptor不重复上传。releaseCpuMesh只释放capacity-zero顶点/索引/texture/HDR像素，保留bounds/primitive/material/instance；SceneData.valid仍完整导入语义。导入fit缓存保持相机，SceneData没有聚合bounds。
+
+严格`--scene`根为祖先resources，否则显式scene父目录；缺值/重复2，错误scene/model/material/HDR初始化1，显式不退默认车/HDR。无环境为有效黑fallback；无参数旧默认scene缺失才回退，已有无效scene失败。真正Clear独立请求→同layout完整1×1黑GPU候选→Fence-safe发布空active path/gen++/sky-env false→旧GPU reset；失败保留，Load恢复。初始SceneData.environment与activepublishedHDR不同，寿命token只是示例局部证据。
 
 ## 查看器与可观测性
+
+成功侧栏Model Load不是资产保持操作：MclarenSceneAsset构建单节点replacement-model新SceneData，发布后instance/slot归0，之前双实例编辑被替换；失败保留当前模型。普通path/HDR/resize/recompile保持编辑。最终C分别记录A3双实例gen19与fresh-default SessionB模型导入，不宣称跨进程保持。Clear完整黑环境也不意味全viewport黑，直接光照/灰清屏仍有效。
 
 UIOverlay 是唯一顶层右侧栏，展开态包含 Performance、Parameters / Scene、Render Graph；收起后可显示紧凑 Performance，隐藏后仍有重开控件。Pass 只输出内容，Pipeline 用 Pass 索引隔离 ImGui ID。侧栏状态变更在下一帧快照生效，避免单帧中 UI、渲染和输入看到不同布局。`SceneInteractionGate` 以活动窗口、ImGui 捕获、场景逻辑矩形、覆盖 UI 排除和 Input epoch 控制拖动/滚轮；Cube 和 Mclaren 共享它，比例也取同一场景 viewport。Mclaren 已移除第二套局部视口；FreeFly 进一步以 UI 键盘/文本捕获、场景右键焦点与 held-input neutral 规则隔离 WASDQE，Cube 不接入该模式。
 
@@ -72,9 +87,9 @@ FPS/Frame 来自当前主循环；CPU、GPU、Draw Calls、Vertices 来自同一
 | Runtime | 六示例统一帧循环、深度 format 选择、按提交帧数停止、自动 resize/recompile、completed-submit 统计 | 单帧并行；重建使用 deviceWaitIdle，最小化/恢复未纳入自动 smoke |
 | Graph | typed Image/Buffer descriptor/handle、internal pool、candidate compile/resize、first-use/LOAD/export、显式 use、CPU state planner、synchronization2 image/buffer barrier、Compute callback/checked resolver/受约束 native scope、Forward SceneColor/Depth/display | 无别名/多 Queue；内部内容不跨帧保留；不自动检测任意裸 Vulkan 命令 |
 | RHI | Vulkan/VMA 薄封装、同步上传、动态渲染、显式 ShaderDesc、Compute Pipeline/ParameterSet、可用性检测后的 Validation/Debug Utils 消息记录 | 旧式 Barrier 仍有兼容入口，上传 queueWaitIdle，无 Async Compute；部分同步 wait 返回值尚未统一检查 |
-| Forward/资产 | glTF、五类材质贴图/UV、TBN、PBR/Unlit、Opaque/Mask/Blend、最多四点光、基础环境；公共 Forward 写 Graph-owned SceneColor/Depth，Display sampled→SwapChain→Overlay→Present | 无完整 IBL/OIT/线性 HDR 统一输出/Deferred；无异步/跨场景缓存或多帧 retire |
+| Forward/Deferred/资产 | 共享HDR/透明/天空；strict配置/scene/CLI优先、Fence-safe静态mask、四phase UBO、直接MRT八views；Mclaren实例/slot编辑与完整黑GPU Clear安全发布/旧GPU释放 | 首轮C QA已验收，非通用ECS/编辑器；对象中心排序非OIT；完整IBL/多帧retire非首轮 |
 | UI / 查看器 | 唯一右侧栏、参数/Graph/统计、逻辑输入矩形和 framebuffer 场景 viewport；Mclaren OrbitInspect/FreeFly | 单 Context；UI 非普通 Graph Pass；FreeFly 仍为示例层，Cube 未接入，尚无多窗口 |
-| 测试 | CPU 单测；可选 CTest GPU Smoke：四示例有限帧、Triangle resize、Validation/初始化负例与预期业务计数比较 | 不是截图/像素回归；依赖 Vulkan、窗口、Debug Layer/Debug Utils 的环境检查 |
+| 测试 | CPU/六app/有界HDR与八rawMRT/实例编辑/资源保留；A3完整双实例与独立B HDR/model/真实resize；普通true minimize/restore | 非公共验证状态机/历史像素平台；用户自测与重复豁免分列、专项held stress NOT RUN；aggregate配置隔离，部分legacy prefix共享 |
 
 ## 源码和测试组织
 
@@ -82,6 +97,16 @@ FPS/Frame 来自当前主循环；CPU、GPU、Draw Calls、Vertices 来自同一
 
 CTest 的 core_tests 覆盖 Engine/FrameStatistics/Graph/AssetConfig/ApplicationRunner/PBR/Validation、SidebarState、ViewerLayout、SceneInteraction、Scene/AssetPath/HDR/PBR 资产计划、Mclaren replacement、Graph state/Callback 与 Forward Graph targets CPU 语义；mclaren_camera_tests 覆盖双模式 `OrbitCameraController`。M3-WP04 QA 在独立 Debug/Release 构建中通过 Debug core124/camera32/定向37、完整 CTest19/19，以及 SyncVal 下 ForwardReuse 二次 compile 9/45、Probe 二次 compile 后 resize 1/3、Mclaren resize 91/9,202,884，均 errors=0；权威 Release CTest 为 3 Passed / 16 Skipped / 0 Failed。Release direct 的 ForwardReuse、Probe 二次 compile、Mclaren、Triangle 另行通过；require-validation/缺 Layer 的 77 是预期 skip。没有 RenderDoc、readback pixel baseline、soak、真实 live-format 强制或物理非等比 DPI 证据。
 
-GPU Smoke 是启动、提交、退出、有限 resize 和诊断结果的自动化检查；它不验证人工画面、交互、最小化/恢复或像素正确性。未来目标单独维护在 [路线图](roadmap.md)。
+M4-WP01 独立 QA 最终 ACCEPTED（2026-10-08）：fresh Debug/Release build、两配置 core129/camera32/定向26、Debug SyncVal CTest22/22，必要脚本 ignore 例外修复后窄复验3/3；Release CTest3 pass/19 expected skip，另行 direct Deferred/Forward/Mclaren/Probe 通过。实际 RTX 4060 Ti 窗口和独立 GPU readback 检查编码/Mask/深度/零光/方向光/点光/Unlit 稳定/背面/resize/recompile；Deferred8/36、Forward9/45。未运行专用 Deferred normal-map GPU fixture、低能力实机、强制 live-format、soak、RenderDoc、历史精确像素比对或可靠 held 手势；共享法线源码与 Mclaren Forward 回归不代替专用证据。操作与可定位证据见 [回归说明](../usage/regression-checks.md)。
 
-Release 并行构建仍存在同名 Shader 复制竞态；该风险及未统一检查的同步 wait 返回值未在 M0 修复。
+一般 GPU Smoke 只检查启动、提交、退出、有限 resize 和诊断；Deferred 专用测试额外检查实际 GPU readback，不把它推广成通用画面/交互/最小化验收。未来目标单独维护在 [路线图](roadmap.md)。
+
+最终C（2026-10-11）`build/qa-m4-wp03c-final/qa-report.md` ACCEPTED首轮REQ-01～13；C无代码变更，无新Runtime API。新独立Debug build/core137/composite40，五可视示例13原图、A3同PID63840（Q6+recovery72+final001–037）normal0/SMOKE3562615/error0；fresh-default SessionB PID80472（final038–079）HDR Clear/Load、实际2560×1369→1280×720、model request5成功/reset selection0与bad request6保留，normal0/SMOKE401459/error0。原A49/A2异常0xC000013A保留历史，不作pass。B两配置core137/composite40/DebugSyncVal31与20真实ReleaseGPU组继承冻结同输入，ReleaseCTest3pass28skip77不是GPU通过，不称C全部重跑。
+
+C独立持续Orbit/释放/UI-origin/W/S、普通true minimize/restore与真实resize有证据；WASDQE/right-held look/UI文本capture/失焦USER-SELFTESTED、重复人工SKIPPED为用户明确程序修订，不称全部独立实机。18controller tests包含在composite40；新diagonal/startup/mode/reset/epoch-held stress/exact physical rates NOT RUN。低caps/OOM/device-loss/live-format/soak/RenderDoc未运行。Probe固定fill/native128B/compute32uint/sampledraw/postcopy，无host wholebuffer数值读回，Compute prepare非transactional恢复，native-afterexecute仅源码核对且无专项永久误用测试。完整证据/限制见[回归](../usage/regression-checks.md)，现有接入见[开发渲染特性](../usage/developing-render-features.md)。C DOCUMENTED、最终M4 Lead闭环完成，M5未开始。
+
+上述WP01计数/临时输出和当时未运行法线fixture是历史验收差异，不是当前限制。WP02正式QA`build/qa-m4-wp02/qa-report.md`：独立Debug/Releasebuild，各core132/camera32；DebugSyncVal29/29，Release3Passed26Skipped（非GPU通过），另26真实GPU22checker+6补充。四真实app/path窗口与maximize、固定ROI/阈值、线性Blend/HDR>1/深度不写/曝光不影响HDR、真实UNORM/SRGB、normal/UV与sky-env四组合通过。普通ForwardReuse9/45或10/48，Mclaren91/9202884或92/9202887；probe另2/6。最终Debug per-case为hdr-debug-final；强制live-format/soak/RenderDoc/低能力GPU/完整手动camera-minimize未运行，后者归WP03。
+
+WP03-A正式`build/qa-m4-wp03a/qa-report.md`：fresh Debug/Release全build0，各core137/camera32；Debug显式SyncVal30/30无skip，Release3pass27skip另19真实GPU groups(paths8/200+config、HDR18/22、lights4、replacements7、apps6、extras3)。官方两例GUI24图操作路径/八views/sidebar resize，exit0/errors0；手动FreeFly/FOV45.926/exposure1.747不混同smoke值。71input hashes冻结。Core只新增const completed-statistics getter，不改调度。Shader bin/$<CONFIG>与aggregate evidence隔离已验，部分legacy prefix仍共享。此为A历史局部证据。
+
+历史B局部依据（2026-10-10；段末C未运行/未验收仅为当时状态，最新最终C见前述段落）：最新B正式独立`build/qa-m4-wp03b/qa-fix-01/qa-report.md` ACCEPTED(2026-10-10)：两配置fresh build0，各core137/camera40；Debug显式SyncVal31pass/0skip/0fail actual0 190.13s，Release3pass28skip/0fail actual0 12.17s(77非GPU通过)，另20真实GPU组actual0。B每layout29samples/16edits，两layout每配置58；两实例全部TRS/scalar/Unlit-PBR与独立geometry/model/world-pos/1px ROI参考、非空Unlit10263RGB、原阈值通过。viewport导入非黑/Clear黑/failed bytes保留和旧GPU reset1通过。最终同一官方GUI33原图actual app0/SyncVal errors0，87inputs不变；warning1是系统EOSOverlay重复loader。早先QAB-01 REJECTED、原fullGUI退出unknown、partialGUI后来0、final02 locked blocked保留为历史，不拼接为最终通过。C持续held/text/focus/minimize、低caps/物理OOM/device-loss/forced live-format/soak/RenderDoc未运行；C/REQ整体/WP03/M4未验收，M5未开始，部分同步wait返回值检查仍未统一。

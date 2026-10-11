@@ -62,7 +62,7 @@ TEST(ForwardGraphTargetsTest, DeclaresOwnedRelativeColorAndDepthContracts)
     EXPECT_EQ(targets.color.format, VK_FORMAT_B8G8R8A8_UNORM);
     EXPECT_EQ(
         targets.color.usage,
-        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
     EXPECT_EQ(targets.color.aspect, VK_IMAGE_ASPECT_COLOR_BIT);
     EXPECT_EQ(targets.color.initialContent, ku::InitialContent::Cleared);
     EXPECT_FLOAT_EQ(targets.color.clearValue.color.float32[1], 0.2f);
@@ -71,7 +71,7 @@ TEST(ForwardGraphTargetsTest, DeclaresOwnedRelativeColorAndDepthContracts)
     EXPECT_EQ(targets.depth.format, VK_FORMAT_D32_SFLOAT);
     EXPECT_EQ(
         targets.depth.usage,
-        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
     EXPECT_EQ(targets.depth.aspect, VK_IMAGE_ASPECT_DEPTH_BIT);
     EXPECT_EQ(targets.depth.initialContent, ku::InitialContent::Cleared);
     EXPECT_FLOAT_EQ(targets.depth.clearValue.depthStencil.depth, 0.75f);

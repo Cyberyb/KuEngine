@@ -5,6 +5,7 @@
 #include <KuEngine/RHI/RHIPipeline.h>
 #include <KuEngine/RHI/RHIShader.h>
 #include <KuEngine/Render/PBRResources.h>
+#include <KuEngine/Render/DeferredCommon.h>
 
 #include <array>
 #include <cstddef>
@@ -19,6 +20,32 @@ ForwardProgram::ForwardProgram() = default;
 ForwardProgram::~ForwardProgram()
 {
     reset();
+}
+
+bool ForwardProgram::initializeGeometry(RHIDevice& device, VkFormat depthFormat,
+    VkCompareOp depthCompareOp, std::string& errorMessage)
+{
+    reset();
+    errorMessage.clear();
+    m_device = &device;
+    m_deviceHandle = device.device();
+    m_geometryMode = true;
+    m_depthFormat = depthFormat;
+    m_depthCompareOp = depthCompareOp;
+    try {
+        validateGBufferFormats(device, depthFormat);
+        const auto directory = std::filesystem::current_path() / "shaders";
+        m_vertexShader = std::make_unique<RHIShader>(device,
+            ShaderDesc{directory / "forward/forward.vert.spv", VK_SHADER_STAGE_VERTEX_BIT, "main"});
+        m_pbrShader = std::make_unique<RHIShader>(device,
+            ShaderDesc{directory / "deferred/geometry.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT, "main"});
+        createLayouts();
+    } catch (const std::exception& error) {
+        errorMessage = error.what();
+        reset();
+        return false;
+    }
+    return ready();
 }
 
 bool ForwardProgram::initialize(
@@ -159,9 +186,10 @@ std::unique_ptr<RHIPipeline> ForwardProgram::createPipeline(
     };
     GraphicsPipelineDesc desc{};
     desc.shaders = {*m_vertexShader,
-        key.shadingModel == asset::ShadingModel::Unlit
+        !m_geometryMode && key.shadingModel == asset::ShadingModel::Unlit
             ? *m_unlitShader : *m_pbrShader};
     desc.colorFormats = {m_colorFormat};
+    if (m_geometryMode) desc.colorFormats.assign(gbufferAttachmentCount, gbufferFormat);
     desc.vertexBindings = {vertexBinding};
     desc.vertexAttributes.assign(attributes.begin(), attributes.end());
     desc.descriptorSetLayouts.assign(
@@ -183,6 +211,8 @@ bool ForwardProgram::ensurePipelines(
     try {
         std::map<ForwardPipelineKey, std::unique_ptr<RHIPipeline>> candidates;
         for (const ForwardPipelineKey& key : keys) {
+            if (m_geometryMode && !supportsDeferredGeometry(key))
+                throw std::invalid_argument("Deferred Geometry does not support Blend or unknown material models");
             const bool validShading =
                 key.shadingModel == asset::ShadingModel::PBR
                 || key.shadingModel == asset::ShadingModel::Unlit;
@@ -222,7 +252,7 @@ VkDescriptorSetLayout ForwardProgram::setLayout(uint32_t set) const
 bool ForwardProgram::ready() const
 {
     if (m_device == nullptr || m_deviceHandle == VK_NULL_HANDLE
-        || m_skyboxPipeline == nullptr) {
+        || (!m_geometryMode && m_skyboxPipeline == nullptr)) {
         return false;
     }
     for (VkDescriptorSetLayout layout : m_setLayouts) {
@@ -246,6 +276,7 @@ void ForwardProgram::reset()
     m_device = nullptr;
     m_colorFormat = VK_FORMAT_UNDEFINED;
     m_depthFormat = VK_FORMAT_UNDEFINED;
+    m_geometryMode = false;
 }
 
 void ForwardProgram::destroyLayouts()

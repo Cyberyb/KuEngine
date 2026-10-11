@@ -6,11 +6,18 @@
 #include <stdexcept>
 
 namespace ku {
+bool isSrgbAttachmentFormat(VkFormat format) noexcept {
+    return format == VK_FORMAT_R8G8B8A8_SRGB || format == VK_FORMAT_B8G8R8A8_SRGB
+        || format == VK_FORMAT_A8B8G8R8_SRGB_PACK32;
+}
+bool needsManualDisplayEncoding(VkFormat format, bool encodeSrgb) noexcept {
+    return encodeSrgb && !isSrgbAttachmentFormat(format);
+}
 
 ForwardGraphTargets makeForwardGraphTargets(const RenderContext& context)
 {
     return makeForwardGraphTargets(
-        context.colorFormat,
+        sceneHdrFormat,
         context.depthFormat,
         context.clearColor,
         context.clearDepthStencil);
@@ -32,14 +39,14 @@ ForwardGraphTargets makeForwardGraphTargets(
     targets.color.extent = ImageExtentDesc::swapchainRelative();
     targets.color.format = colorFormat;
     targets.color.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-        | VK_IMAGE_USAGE_SAMPLED_BIT;
+        | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     targets.color.aspect = VK_IMAGE_ASPECT_COLOR_BIT;
     targets.color.clearValue.color = clearColor;
     targets.color.initialContent = InitialContent::Cleared;
 
     targets.depth.extent = ImageExtentDesc::swapchainRelative();
     targets.depth.format = depthFormat;
-    targets.depth.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    targets.depth.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     targets.depth.aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
     targets.depth.clearValue.depthStencil = clearDepthStencil;
     targets.depth.initialContent = InitialContent::Cleared;
@@ -54,23 +61,27 @@ void validateForwardGraphTargetFormats(
     VkFormatProperties colorProperties{};
     vkGetPhysicalDeviceFormatProperties(
         device.physicalDevice(), colorFormat, &colorProperties);
-    constexpr VkFormatFeatureFlags requiredColor =
-        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT
-        | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
-    if ((colorProperties.optimalTilingFeatures & requiredColor)
-        != requiredColor) {
-        throw std::runtime_error(
-            "Forward SceneColor format does not support color attachment and sampling");
-    }
+    validateSceneHdrCapabilities(colorProperties.optimalTilingFeatures);
 
     VkFormatProperties depthProperties{};
     vkGetPhysicalDeviceFormatProperties(
         device.physicalDevice(), depthFormat, &depthProperties);
-    if ((depthProperties.optimalTilingFeatures
-            & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) == 0) {
-        throw std::runtime_error(
-            "Forward SceneDepth format does not support depth attachments");
+    constexpr auto requiredDepth = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
+    if ((depthProperties.optimalTilingFeatures & requiredDepth) != requiredDepth) {
+        throw std::runtime_error("Forward SceneDepth format does not support attachment/transfer");
     }
+}
+void validateSceneHdrCapabilities(VkFormatFeatureFlags features) {
+    constexpr VkFormatFeatureFlags requiredColor =
+        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT
+        | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT
+        | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
+    if ((features & requiredColor)
+        != requiredColor) {
+        throw std::runtime_error(
+            "SceneColor RGBA16F requires attachment/blend/sampled/transfer support");
+    }
+
 }
 
 ForwardDisplayUvTransform calculateForwardDisplayUvTransform(

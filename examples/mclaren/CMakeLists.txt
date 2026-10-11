@@ -1,7 +1,10 @@
 add_executable(MclarenApp
     main.cpp
     MclarenAssetReplacement.cpp
+    MclarenSceneEditing.cpp
+    MclarenEditSmoke.cpp
     MclarenPass.cpp
+    ../common/ViewerPathSmoke.cpp
     MclarenSceneAsset.cpp
     OrbitCameraController.cpp
 )

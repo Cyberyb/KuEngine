@@ -28,6 +28,17 @@ if(Vulkan_GLSLC_EXECUTABLE)
         COMMAND ${Vulkan_GLSLC_EXECUTABLE}
             ${KUENGINE_FORWARD_SHADER_SOURCE_DIR}/display.frag
             -o ${KUENGINE_FORWARD_SHADER_OUTPUT_DIR}/display.frag.spv
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/shaders/deferred
+        COMMAND ${Vulkan_GLSLC_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/resources/shaders/deferred/geometry.frag
+            -o ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/shaders/deferred/geometry.frag.spv
+        COMMAND ${Vulkan_GLSLC_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/resources/shaders/deferred/lighting.frag
+            -o ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/shaders/deferred/lighting.frag.spv
+        COMMAND ${Vulkan_GLSLC_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/resources/shaders/deferred/debug.frag
+            -o ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/shaders/deferred/debug.frag.spv
         SOURCES
             ${KUENGINE_FORWARD_SHADER_SOURCE_DIR}/forward.vert
             ${KUENGINE_FORWARD_SHADER_SOURCE_DIR}/pbr.frag

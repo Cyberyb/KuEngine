@@ -7,6 +7,29 @@
 #include <nlohmann/json.hpp>
 
 namespace ku::asset {
+RenderPath parseRenderPath(std::string_view value) {
+    if (value == "forward") return RenderPath::Forward;
+    if (value == "deferred") return RenderPath::Deferred;
+    throw std::invalid_argument("RenderPath must be 'forward' or 'deferred': " + std::string(value));
+}
+const char* toString(RenderPath path) noexcept { return path == RenderPath::Deferred ? "deferred" : "forward"; }
+RenderPathCommandLine parseRenderPathCommandLine(std::span<const std::string_view> arguments) {
+    RenderPathCommandLine result;
+    for (size_t i = 0; i < arguments.size(); ++i) {
+        std::optional<RenderPath> requested;
+        if (arguments[i] == "--deferred") requested = RenderPath::Deferred;
+        else if (arguments[i] == "--render-path") {
+            if (++i == arguments.size()) throw std::invalid_argument("--render-path requires forward|deferred");
+            requested = parseRenderPath(arguments[i]);
+        } else result.forwarded.emplace_back(arguments[i]);
+        if (requested) {
+            if (result.overridePath && result.overridePath != requested)
+                throw std::invalid_argument("Conflicting --render-path/--deferred options");
+            result.overridePath = requested;
+        }
+    }
+    return result;
+}
 
 namespace {
 
@@ -233,6 +256,11 @@ bool loadSceneConfigFromFile(
 
         Json sceneJson;
         file >> sceneJson;
+
+        if (sceneJson.contains("renderPath")) {
+            if (!sceneJson["renderPath"].is_string()) throw std::invalid_argument("Scene renderPath must be a string");
+            outConfig.renderPath = parseRenderPath(sceneJson["renderPath"].get<std::string>());
+        }
 
         if (sceneJson.contains("environment")
             && sceneJson["environment"].is_string()) {

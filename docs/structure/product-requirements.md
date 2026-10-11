@@ -1,6 +1,6 @@
 # KuEngine 产品需求
 
-更新日期：2026-10-07。本文是产品目标与功能范围的维护入口，不表示这些能力已经全部实现。当前实现见 [宏观架构](current-architecture.md)，开发顺序见 [roadmap](roadmap.md)，架构取舍见 [目标架构](target-architecture.md)。
+更新日期：2026-10-11。本文是产品目标与功能范围的维护入口；REQ-01～13首个产品范围已获最终C QA ACCEPTED，C文档已同步，M4已由Lead最终审计闭环（DONE），M5未开始。当前实现见 [宏观架构](current-architecture.md)，开发顺序见 [roadmap](roadmap.md)，架构取舍见 [目标架构](target-architecture.md)。
 
 ## 1. 产品定位
 
@@ -56,22 +56,24 @@ P0 表示首个完整产品闭环必需，不表示所有 P0 都必须先于所�
 
 | 编号 | 功能与目标 | 优先级 | 当前状态与缺口 | 阶段 |
 |---|---|---|---|---|
-| REQ-01 | 公共 Runtime 与可复用 Vulkan 封装 | P0 | 部分实现：示例共用 Runtime，公共 SceneData/GPU 资源与 Graph-owned Forward target/display 已验收；Deferred、逐帧并行与更通用的 Renderer 装配仍未实现 | M2、M3、M4 |
-| REQ-02 | 模型导入 | P0 | 已验收 M2：glTF/GLB、规范路径、MeshHandle/实例 TRS/material override、公共 GPU mesh 与 Mclaren 同步替换/失败保留。缺通用导入 UI、异步/多帧回收与跨场景缓存 | M2、M5 |
-| REQ-03 | 天空盒/HDR 导入 | P0 | 部分实现：严格 HDR CPU loader、基础 lat-long 环境、Mclaren 替换/失败保留已验收；完整 IBL、像素 readback 与色度正确 HDR 输出仍未实现 | M2、M4 |
-| REQ-04 | 多 ShadingModel：PBR、Unlit | P0 | 部分实现：Forward PBR/Unlit 与材质语义已验收；Deferred 的等价分派/GBuffer 仍待 M4 | M2、M4 |
-| REQ-05 | 公共前向渲染路径 | P0 | 部分实现：公共 ForwardProgram/ForwardRenderer、Graph-owned SceneColor/Depth、Display 与 UI/Present 交接已验收并由 Mclaren/ForwardReuse 复用；线性 HDR 统一输出与 Deferred 仍待 M4 | M2、M3、M4 |
-| REQ-06 | 延迟渲染路径 | P0 | 未实现：缺 GBuffer、延迟光照和与前向共用的输出链路 | M4 |
-| REQ-07 | 实时性能参数预览 | P0 | 已验收：FPS/Frame 为当前主循环样本；CPU/GPU/Draw/Vertices 为同一 completed submit，并明确 GPU 等待/不支持状态；已迁入可收展右侧栏 | M0 完成、M1 集成 |
-| REQ-08 | 可折叠侧边 UI 与参数检查 | P0 | 部分实现：唯一右侧栏及 Mclaren 模型/HDR、材质、相机、灯光、环境调参已验收；ForwardReuse 提供受控语义/零光/背面预设。仍缺通用实例选择与逐实例编辑工作流 | M1、M2 后续 UI |
-| REQ-09 | 鼠标长按拖动查看 | P0 | 已验收：Mclaren OrbitInspect 保留模型旋转与缩放；输入仅在逻辑场景区域、未被 UI 捕获且窗口活动时生效，失焦/恢复以 epoch 清除陈旧拖动 | M1 完成 |
-| REQ-10 | WASDQE 自由摄像机 | P0 | 已验收：Mclaren 提供 FreeFly，右键场景焦点后 WASDQE 六向移动、速度、yaw/pitch、双向模式交接与 reset；UI 键盘/文本捕获、失焦、epoch 和 held 输入受隔离。当前仍是 Mclaren 示例层，Cube 未接入 | M1 完成 |
-| REQ-11 | RDG 风格的资源声明与执行 | P0 | 部分实现：typed resource、allocation/resize/export、synchronization2、Compute callback、Graph-owned Forward SceneColor/Depth/display 已验收；仍缺资源别名与多 Queue | M3 |
-| REQ-12 | Vulkan 原生扩展入口 | P0 | 部分实现：native scope 已以 capability/side-effect/use 子集和执行生命周期约束接入；旧对象仅 TrustedLegacyObject，不自动检测任意裸 Vulkan 命令 | M3 |
-| REQ-13 | 小型引擎上的特性开发闭环 | P0 | 部分实现：示例与 Probe 复用 Runtime、资源与调度验证 Graphics/Compute/native callback/Forward display；Deferred 与最终产品闭环仍待 M4 | M3、M4 |
-| REQ-14 | 正确性、可复现与扩展性能观测 | P1 | 部分实现：M0 已有 CPU/Debug GPU Smoke、Validation/初始化负例、有限 resize 和统计基线；仍缺像素回归、逐帧资源隔离、逐 Pass 观测及不支持 Timestamp 的实机覆盖 | M0 完成、M5 强化 |
+| REQ-01 | 公共 Runtime 与可复用 Vulkan 封装 | P0 | 已验收（首轮）：六例复用Runtime/Graph；编辑与验证仍示例层；接入说明已同步，多帧属M5 | M2、M3、M4 |
+| REQ-02 | 模型导入 | P0 | 已验收（首轮）：strict scene、两实例共享mesh/独立TRS与多slot；实际侧栏模型成功替换重建单节点/重置选择，失败保留新模型；异步/跨场景缓存非首轮依赖 | M2、M4、M5 |
+| REQ-03 | 天空盒/HDR 导入 | P0 | 已验收（首轮）：sky/env独立、线性HDR、真正Clear黑GPU fallback/旧GPU释放/Load恢复及失败保留；完整IBL/HDR显示器输出非首轮承诺 | M2、M4 |
+| REQ-04 | 多 ShadingModel：PBR、Unlit | P0 | 已验收（首轮）：实例slot独立标量、Unlit禁用但保留M/R、共享着色与显示，两路径灯光/环境响应 | M2、M4 |
+| REQ-05 | 公共前向渲染路径 | P0 | 已验收（首轮）：公共HDR/对象级Blend/唯一Display、安全切换/编辑与资源保留，固定像素阈值 | M2、M3、M4 |
+| REQ-06 | 延迟渲染路径 | P0 | 已验收（首轮）：四RGBA16F/Lighting/共享天空BlendHDR/直接MRT八views及resize-recompile | M4 |
+| REQ-07 | 实时性能参数预览 | P0 | 已验收（首轮）：FPS/Frame当前loop；CPU/GPU/Draw/Vertices同一completed submit，waiting/unsupported明确，完整/紧凑统计可操作 | M0 完成、M1 集成、M4 |
+| REQ-08 | 可折叠侧边 UI 与参数检查 | P0 | 已验收（首轮）：实例/slot/材质/TRS/相机/灯光、收展/隐藏/重开、真实resize与普通true minimize/restore | M1、M2、M4 |
+| REQ-09 | 鼠标长按拖动查看 | P0 | 已验收（用户修订人工程序）：独立持续Orbit/滚轮/释放/UI-origin隔离；失焦隔离USER-SELFTESTED、重复SKIPPED；专项held stress未运行 | M1 完成、M4 |
+| REQ-10 | WASDQE 自由摄像机 | P0 | 已验收（用户修订人工程序）：独立W/S保持与释放、neutral handoff/reset；WASDQE/right-held look/UI文本capture/失焦USER-SELFTESTED、重复SKIPPED；18controller CPU测试证明数学/状态契约，不冒充全实机。仍Mclaren示例层 | M1 完成、M4 |
+| REQ-11 | RDG 风格的资源声明与执行 | P0 | 已验收（首轮）：typed allocation/use/range、import/export/resize、sync2与Compute；资源别名/多Queue不作为首轮条件，尚未实现 | M3、M4 |
+| REQ-12 | Vulkan 原生扩展入口 | P0 | 已验收（首轮）：checked native capability/side-effect/use子集与执行期借用；after-execute失效为源码核对，专项永久误用测试缺席；不自动检查任意裸Vulkan | M3、M4 |
+| REQ-13 | 小型引擎上的特性开发闭环 | P0 | 已验收（首轮）：最终需求矩阵、完整查看器工作流与现有Graphics/Compute/native接入说明；不是任意新特性已实现声明 | M3、M4 |
+| REQ-14 | 正确性、可复现与扩展性能观测 | P1 | 部分实现：CPU/Smoke/SyncVal与WP02有界HDR/格式/深度/多材质像素检查已验收；非通用历史图像平台。逐帧隔离/逐Pass观测/低能力Timestamp实机仍属后续强化 | M0 完成、M5 强化 |
 
 REQ-14 中影响 P0 功能正确性的测试随对应阶段完成，不能以 P1 为由延后必要的同步和生命周期验证。
+
+2026-10-11最终`build/qa-m4-wp03c-final/qa-report.md`与`req01-13-qa-matrix.md` ACCEPTED，依据当前冻结C276、A3与独立SessionB正常退出0/SyncVal error0、五新可视示例和明确继承的B回归。用户明确自测WASDQE全正确并跳过重复，又确认右键持续转向/UI文本capture/失焦正确并免重复人工；记录为USER-SELFTESTED/重复SKIPPED，不删除原功能需求、不扩大为GPU/模型验证豁免。专项diagonal/startup/mode/reset/epoch-held物理stress与exact rates新实机NOT RUN；18controller tests位于composite40证明数学/状态契约。Release CTest3pass/28skip77不是GPU通过，另20真实Release GPU组actual0；不是C全部重跑。REQ-14仍部分/M5未来，M4最终Lead闭环完成，M5未开始。物理OOM/device-loss/低caps/live-format/soak/RenderDoc未运行。具体会话/继承/限制见 [回归说明](../usage/regression-checks.md)，接入见 [开发渲染特性](../usage/developing-render-features.md)。
 
 ## 4. 验收口径
 
@@ -141,3 +143,4 @@ ShadingModel 回答“材质怎样响应光照”；RenderPath 回答“这些�
 | 日期 | 变更 |
 |---|---|
 | 2026-09-13 | 根据产品目标建立 REQ-01～14，明确小型 Vulkan 渲染引擎定位、双渲染路径、查看器及 RDG 风格扩展边界 |
+| 2026-10-11 | REQ-01～13首轮范围依最终C QA已验收；仅修订人工重复程序，保留功能需求、独立证据/用户自测/未运行边界；REQ-14仍部分，M5未开始 |

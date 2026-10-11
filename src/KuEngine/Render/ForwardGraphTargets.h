@@ -18,6 +18,9 @@ inline constexpr std::string_view sceneColor = "ForwardSceneColor";
 inline constexpr std::string_view sceneDepth = "ForwardSceneDepth";
 
 } // namespace forward_graph_resource
+inline constexpr VkFormat sceneHdrFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+[[nodiscard]] bool isSrgbAttachmentFormat(VkFormat format) noexcept;
+[[nodiscard]] bool needsManualDisplayEncoding(VkFormat format, bool encodeSrgb) noexcept;
 
 struct ForwardGraphTargets {
     ImageDesc color{};
@@ -42,6 +45,7 @@ void validateForwardGraphTargetFormats(
     const RHIDevice& device,
     VkFormat colorFormat,
     VkFormat depthFormat);
+void validateSceneHdrCapabilities(VkFormatFeatureFlags features);
 [[nodiscard]] ForwardDisplayUvTransform calculateForwardDisplayUvTransform(
     const ViewerPixelRect& sceneRect,
     VkExtent2D sourceExtent) noexcept;

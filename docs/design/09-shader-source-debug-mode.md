@@ -1,6 +1,6 @@
 # 构建与 Shader 编译设计
 
-核对日期：2026-10-07。
+核对日期：2026-10-10。
 
 源码：[根 CMake](../../CMakeLists.txt)、[Presets](../../CMakePresets.json)、[库目标](../../src/CMakeLists.txt)、[Mclaren CMake](../../examples/mclaren/CMakeLists.txt)、[Shader 脚本](../../examples/mclaren/shaders/compile_shaders.bat)。
 
@@ -26,9 +26,9 @@ vcpkg 工具链提供 GLFW、ImGui、VMA、GLM、JSON、spdlog/fmt、GoogleTest 
 
 ## Shader 链路
 
-RHIShader 只按显式 path/stage/entry 加载 SPIR-V，不负责运行时 GLSL 编译或热重载；Graphics 使用唯一 vertex/fragment stage，Compute 单独建立 Compute Pipeline。各示例 CMake 在 POST_BUILD 中调用 glslc 并复制 Shader 源码/脚本；GraphResourceProbe 也复制其 `.comp` shader，Forward Display 另有全屏 display vertex/fragment shader。Mclaren 还复制公共 lighting.glsl、模型、JSON 和 HDR。
+RHIShader 只按显式 path/stage/entry 加载 SPIR-V，不负责运行时 GLSL 编译或热重载；Graphics 使用唯一 vertex/fragment stage，Compute 单独建立 Compute Pipeline。低层示例 CMake 在 POST_BUILD 中调用 glslc 并复制 Shader 源码/脚本；GraphResourceProbe 也复制其 `.comp` shader。Mclaren/ForwardReuse 依赖公共 `KuEngineForwardShaders` target，构建 forward/display 与 deferred geometry/lighting SPIR-V；Forward/Deferred 的共享 GLSL include 从资源源码目录解析。Mclaren 还复制公共 lighting.glsl、模型、JSON 和 HDR。
 
-CMake Debug 下 glslc 使用 -g -O0。Shader 变化不一定触发 App 重新链接，因此仅执行增量构建不保证 POST_BUILD 再运行；run 脚本会另行调用运行目录的 compile_shaders.bat。
+低层示例/旧 Mclaren POST_BUILD 的 Debug glslc 使用 -g -O0；当前公共 KuEngineForwardShaders 命令未添加这些调试标记，不以 Debug C++ 配置推断其源码调试能力。公共 Forward/Deferred 自定义 target 随依赖构建重新执行；其余 POST_BUILD Shader 变化不一定触发 App 重新链接，因此仅执行增量构建不保证 POST_BUILD 再运行；run 脚本会另行调用运行目录的 compile_shaders.bat。
 
 ## Mclaren 调试编译模式
 
@@ -42,8 +42,12 @@ CMake Debug 下 glslc 使用 -g -O0。Shader 变化不一定触发 App 重新链
 
 run_mclaren.bat 默认前台等待并返回应用退出码；bg 异步启动，只能反映启动动作。操作命令见 [Shader 调试指南](../usage/shader-debugging.md)。
 
-GPU Smoke 的 CTest 工作目录为各 App 的输出目录，使用 `SKIP_RETURN_CODE 77` 或脚本标记处理环境不可用。正常 smoke 测试要求带预期计数的 `KUENGINE_COMPLETED_STATS ... status=matched`，并将 `KUENGINE_VALIDATION_ERROR`/`KUENGINE_SMOKE_FAIL` 视为失败；负例反向验证 Validation error 与初始化失败不会被误判为通过或 skip。Debug 的顺序 Shader 复制已由 QA 验证；Release 并行构建仍存在复制同名 Shader 的竞态风险。具体命令和环境条件见 [回归检查](../usage/regression-checks.md)。
+GPU Smoke工作目录为App输出目录，SKIP_RETURN_CODE77/脚本标记明确环境skip，非GPU通过；正常matched统计/错误检查与预期负例保持。WP03-A真实Release脚本可REQUIRE_VALIDATION=OFF，默认ON，需逐真实case exit0/readback/checker通过。公共Shader输出跨配置隔离已落实，下述当前机制不重写旧失败历史。命令见 [回归检查](../usage/regression-checks.md)。
 
 ## 当前约束
 
+WP02普通shader线性HDR/唯一Display事实延续，历史验收29项与共享证据覆写见usage历史段。WP03-A公共target新增deferred/debug.frag，直接MRT固定映射clamp后单次format encoding，无tone/exposure。examples/CMakeLists实际输出`${CMAKE_BINARY_DIR}/bin/$<CONFIG>/shaders`（forward/deferred），legacy App POST_BUILD按TARGET_FILE_DIR；本轮fresh Debug/Release并行完整构建均0，实际SPIR-V配置隔离经QA核对，不能继续把旧公共target跨配置Shader覆盖当当前事实，也不把旧失败日志改成通过。新增path_pixel_checks/run_viewer_paths，Debug完整CTest30/30显式SyncVal，Release3pass27skip另真实19 GPU groups。aggregate path/HDR/light evidence目录按`$<CONFIG>`隔离；个别legacy resize/backface prefix仍共享，Release requireValidation跳过在写入前。
+
 没有统一 Shader 编译库、反射、热重载、Pipeline Cache 或 RenderDoc API 自动接入。源码调试信息供外部捕获工具使用，不能把这些编译标记视为自动支持所有 Shader 调试能力。
+
+B当前永久新增`test_mclaren_scene_editing` CPU覆盖、`edit_pixel_checks`与`tests/run_mclaren_edits.cmake`/两实例多primitive-slot fixture；helper属于examples/mclaren，未改变Shader算法或Runtime状态机。GPU smoke开启后CTest31项。2026-10-10独立QA fresh Debug/Release全build0，每配置core137/camera40；Debug显式SyncVal31/31(skip0/fail0)，Release3pass28skip(fail0；77非GPU通过)，另20真实Release GPU groups。B evidence为`edit-evidence/$<CONFIG>`，真实Release另用独立Release-real目录，SPIR-V仍bin/$<CONFIG>隔离。当前29samples/16edits/layout×2，命令/实际退出/历史与NOT RUN见usage；前述A/WP02计数保留为历史证据，非当前31项计数。

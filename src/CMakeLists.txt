@@ -42,7 +42,13 @@ target_sources(KuEngine PRIVATE
     KuEngine/Render/GpuMesh.cpp
     KuEngine/Render/GpuModelAsset.cpp
     KuEngine/Render/ForwardCommon.cpp
+    KuEngine/Render/DeferredCommon.cpp
+    KuEngine/Render/DeferredGeometryPass.cpp
+    KuEngine/Render/DeferredLightingPass.cpp
     KuEngine/Render/ForwardGraphTargets.cpp
+    KuEngine/Render/ScenePasses.cpp
+    KuEngine/Render/ScenePathControl.cpp
+    KuEngine/Render/GBufferDisplayPass.cpp
     KuEngine/Render/ForwardDisplayProgram.cpp
     KuEngine/Render/ForwardDisplayPass.cpp
     KuEngine/Render/ForwardProgram.cpp

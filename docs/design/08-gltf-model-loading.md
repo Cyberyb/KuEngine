@@ -1,6 +1,6 @@
 # glTF/GLB 模型加载设计
 
-核对日期：2026-09-16。源码：[Model](../../src/KuEngine/Asset/Model.h)、[Scene](../../src/KuEngine/Asset/Scene.h)、[GpuModelAsset](../../src/KuEngine/Render/GpuModelAsset.h)。
+核对日期：2026-10-11（C核对既有模型替换边界）。源码：[Model](../../src/KuEngine/Asset/Model.h)、[Scene](../../src/KuEngine/Asset/Scene.h)、[GpuModelAsset](../../src/KuEngine/Render/GpuModelAsset.h)。
 
 ## 输入与输出
 
@@ -36,19 +36,21 @@ Metallic-Roughness 与 Occlusion 保持独立图像，shader 分别读取其 glT
 Scene JSON 模型路径
 → AssetPath / SceneLoader → SceneData (MeshHandle / Instance)
 → ModelLoader → MeshData
-→ MclarenSceneAsset 合并适配
+→ MclarenSceneAsset 导入fit / 轻量实例与slot元数据
 → GpuModelAsset → GpuMesh / ResourceUploader
 → ForwardRenderer
 ```
 
-SceneLoader 对同一规范路径只加载一次 MeshData，并以稳定 MeshHandle 供多个实例引用；MclarenSceneAsset 仍可合并多个模型并修正顶点/索引/材质偏移，这与在 Scene JSON 中支持逐节点实例变换是不同能力。GpuModelAsset 拥有上传后的单个 GpuMesh；Mclaren 上传后释放其合并 CPU Mesh 和 SceneData 中的 CPU Mesh，保留展示、默认和相机所需元数据。
+SceneLoader对同一规范路径只加载一次MeshData，稳定MeshHandle供多个SceneInstance引用；glTF内部节点已烘焙，不是查看器可编辑实例。GpuModelAsset拥有单个GpuMesh，Mclaren按handle上传一次。`releaseCpuMesh()`以空vector swap释放vertices/indices/所有纹理pixels(capacity=0)，HDR像素也释放；保留mesh bounds/subMeshes/materials(含纹理元信息)、实例TRS/materialSlots与路径。编辑不调用ModelLoader或重传GPU mesh/texture/descriptor。SceneData.valid仍严格完整导入校验，不因释放而放宽；导入fit静态缓存不随编辑重frame相机。
 
 Mclaren 可在单帧 Fence-safe update 点替换单个 GLB/glTF：候选 state 会完整重建 SceneData/默认与 fit 信息、按 handle 的 GpuModelAsset、材质 variant、ForwardRenderer 容量、pipeline 与预期统计，全部成功后才交换。直接模型替换不继承初始 Mclaren Scene JSON 的 MaterialConfig 全局颜色因子，而是使用候选模型的单位因子；该因子随已发布模型 state 一同原子切换。可选纹理缺失/无效使用 fallback；真实上传异常则令候选失败且保留 live state。
 
 ## 当前能力边界
 
+侧栏成功Model Load由`MclarenSceneAsset::loadModel`构建单节点`replacement-model`新SceneData，发布后instance/slot选择重置0，不保留初始双实例编辑。普通path/HDR/resize/recompile保留场景；失败模型候选保留当前新模型。这是既有实现，最终C独立SessionB验证success request5/failed request6；不能声称A3双实例generation19跨进程保留。
+
 已接入 glTF TANGENT，Shader 优先用切线构造 TBN，缺失时使用导数重建；emissive 因子与贴图已接入。
 
-尚无 skin、animation、morph、完整 sparse accessor、压缩纹理或资源缓存。顶点只保留 uv0/uv1；高编号 UV 不构成完整顶点属性链。没有完整 IBL、OIT 或色度正确 HDR 输出。
+尚无 skin、animation、morph、完整 sparse accessor、压缩纹理或资源缓存。顶点只保留uv0/uv1，高编号UV不是完整属性链。WP02未修改loader接口/所有权；新增非平坦normal fixture经现有glTF链路验证UV1/texture-transform/normalScale。统一线性HDR/显示事实见 [Forward](11-forward-rendering.md)，完整IBL/OIT不是模型loader职责或本次首轮范围。
 
 GPU 布局与材质绑定详见 [PBR 设计](10-pbr-rendering.md)，使用方法见 [Mclaren](../usage/mclaren-example.md)。

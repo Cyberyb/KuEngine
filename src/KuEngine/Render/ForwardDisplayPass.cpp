@@ -2,6 +2,7 @@
 
 #include "ForwardGraphTargets.h"
 #include "RenderGraphResources.h"
+#include "DeferredCommon.h"
 
 #include <stdexcept>
 
@@ -13,6 +14,7 @@ void ForwardDisplayPass::initialize(const RenderContext& context)
     validateForwardGraphTargetFormats(
         context.device, targets.color.format, targets.depth.format);
     m_sceneColorDesc = targets.color;
+    if (m_deferredSource) m_sceneColorDesc = makeDeferredSceneColor(context);
     m_swapChainDesc = runtimeColorImageDesc(context);
 
     auto candidate = std::make_unique<ForwardDisplayProgram>();
@@ -25,8 +27,9 @@ void ForwardDisplayPass::initialize(const RenderContext& context)
 
 void ForwardDisplayPass::setup(RenderGraphBuilder& builder)
 {
+    if (!m_prepareDependency.empty()) builder.dependsOn(m_prepareDependency);
     m_sceneColor = builder.createImage(
-        forward_graph_resource::sceneColor,
+        m_deferredSource ? deferredSceneColorName : forward_graph_resource::sceneColor,
         m_sceneColorDesc);
     builder.useImage(m_sceneColor, ImageUse::FragmentSampled);
     const ImageHandle swapChainColor = builder.importImage(
@@ -53,7 +56,8 @@ void ForwardDisplayPass::execute(
         calculateForwardDisplayUvTransform(
             frame.viewerLayout.sceneFramebuffer,
             sceneColor.extent);
-    m_program->draw(commands, sceneColor, uvTransform);
+    const auto view = m_viewProvider ? m_viewProvider(frame) : ForwardView{};
+    m_program->draw(commands, sceneColor, uvTransform, view.environmentExposure, view.outputGamma);
 }
 
 } // namespace ku

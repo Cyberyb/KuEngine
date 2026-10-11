@@ -69,6 +69,13 @@ bool MclarenReplacementController::queue(
         setError(errorMessage, "An asset replacement request is already pending");
         return false;
     }
+    if (kind != MclarenAssetKind::Model && kind != MclarenAssetKind::Environment
+        && kind != MclarenAssetKind::ClearEnvironment) {
+        setError(errorMessage, "Unknown asset operation"); return false;
+    }
+    if (kind == MclarenAssetKind::ClearEnvironment && !path.empty()) {
+        setError(errorMessage, "ClearEnvironment does not accept a path"); return false;
+    }
     if (m_nextRequestId == std::numeric_limits<uint64_t>::max()) {
         setError(errorMessage, "Asset replacement request id capacity exhausted");
         return false;
@@ -109,7 +116,8 @@ void MclarenReplacementController::publishSuccess(
         m_live.expectedVertices = expectedVertices;
         m_live.modelGlobalBaseColorFactor = modelGlobalBaseColorFactor;
     } else {
-        m_live.environmentPath = activePath;
+        m_live.environmentPath = request.kind == MclarenAssetKind::ClearEnvironment
+            ? std::filesystem::path{} : activePath;
         ++m_live.environmentGeneration;
         m_live.environmentIdentity = identity;
     }
@@ -118,7 +126,7 @@ void MclarenReplacementController::publishSuccess(
         : MclarenReplacementCategory::None;
     m_status = optionalTextureFallback
         ? "Loaded with optional texture fallback"
-        : "Loaded successfully";
+        : request.kind == MclarenAssetKind::ClearEnvironment ? "Environment cleared" : "Loaded successfully";
 }
 
 void MclarenReplacementController::publishFailure(
@@ -149,7 +157,14 @@ MclarenCommandLineOptions parseMclarenCommandLine(
     MclarenCommandLineOptions options{};
     for (size_t index = 0; index < arguments.size(); ++index) {
         const std::string_view argument = arguments[index];
-        if (argument == "--mclaren-replace-model"
+        if (argument == "--scene") {
+            if (++index >= arguments.size() || arguments[index].empty() || arguments[index].starts_with("--"))
+                throw std::invalid_argument("--scene requires a path");
+            if (!options.scenePath.empty()) throw std::invalid_argument("--scene must be specified once");
+            options.scenePath = std::string(arguments[index]);
+        } else if (argument == "--mclaren-clear-hdr") {
+            options.replacements.push_back({MclarenAssetKind::ClearEnvironment, {}});
+        } else if (argument == "--mclaren-replace-model"
             || argument == "--mclaren-replace-hdr") {
             if (++index >= arguments.size()) {
                 throw std::invalid_argument(
@@ -184,6 +199,9 @@ bool resolveMclarenAssetPath(
     std::string& errorMessage)
 {
     errorMessage.clear();
+    if (kind == MclarenAssetKind::ClearEnvironment) {
+        errorMessage = "ClearEnvironment is not a path-load operation"; return false;
+    }
     if (input.empty()) {
         errorMessage = "Path is empty";
         return false;
@@ -224,7 +242,7 @@ bool resolveMclarenAssetPath(
 
 const char* toString(MclarenAssetKind kind) noexcept
 {
-    return kind == MclarenAssetKind::Model ? "model" : "hdr";
+    return kind == MclarenAssetKind::Model ? "model" : kind == MclarenAssetKind::ClearEnvironment ? "clear-hdr" : "hdr";
 }
 
 const char* toString(MclarenReplacementStage stage) noexcept

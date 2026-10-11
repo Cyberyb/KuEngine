@@ -1,6 +1,6 @@
 # KuEngine 文档中心
 
-文档按职责维护。当前设计以工作区源码为准，包含尚未提交的实现；历史快照只用于对比。最近一次局部同步：2026-10-07（M3-WP04；M3 文档闭环）。
+文档按职责维护。当前设计以工作区源码为准，包含尚未提交的实现；历史快照只用于对比。最近同步2026-10-11：M4-WP03-C最终QA ACCEPTED + DOCUMENTED，REQ-01～13首轮范围已验收，WP01/02/A/B既有门禁已闭；WP03/M4已由Lead最终审计闭环（DONE），M5未开始。人工证据区分独立观察与用户自测/重复豁免，见[回归说明](usage/regression-checks.md)。
 
 ## 目录职责
 
@@ -33,12 +33,13 @@
 | Core/Engine、Window、Input | [Core Runtime](design/06-core-runtime.md) |
 | RHI、同步、上传、命令统计、Timestamp Query | [RHI](design/01-rhi-layer.md) |
 | RenderPass、RenderContext、RenderGraph、RenderPipeline | [渲染调度](design/02-render-pass.md) |
+| Deferred Geometry/Lighting、GBuffer 与公共着色分派 | [Deferred](design/13-deferred-rendering.md)、[公共 Forward](design/11-forward-rendering.md)、[Graph 资源](design/12-graph-resources.md) |
 | Core/Log、Vulkan 错误处理 | [日志与诊断](design/03-logging.md) |
 | UIOverlay、性能统计口径 | [UI 与统计](design/05-ui-layer.md) |
 | AssetConfig、资源路径、JSON | [资产配置](design/07-resource-asset-spec.md) |
 | ModelLoader、glTF 数据转换 | [模型加载](design/08-gltf-model-loading.md) |
 | GpuMesh、TextureFactory、Material、PBR、Mclaren 资源 | [PBR 与 GPU 资源](design/10-pbr-rendering.md) |
-| 四个示例的装配、Pass 和相机 | [示例设计](design/04-triangle-example-tech.md) |
+| 六个示例的装配、Pass 和相机 | [示例设计](design/04-triangle-example-tech.md) |
 | CMake、Shader、启动与编译脚本 | [构建与 Shader](design/09-shader-source-debug-mode.md) |
 
 跨模块变更还需核对 design 总览和 structure 宏观架构；未来任务只进入 structure，完成记录只进入当日日志。移动或重命名文档时同步修复引用。

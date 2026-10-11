@@ -128,6 +128,10 @@ public:
     [[nodiscard]] VkFormat          depthFormat()    const { return m_depthFormat; }
 
     [[nodiscard]] const EngineConfig& config() const { return m_config; }
+    // Actual fence-completed submission, not frame slot or Graph recording serial.
+    [[nodiscard]] const std::optional<CompletedFrameStatistics>& completedFrameStatistics() const noexcept {
+        return m_frameStatistics.completedFrame();
+    }
     [[nodiscard]] uint32_t currentFrame() const;
     [[nodiscard]] bool     isRunning()    const { return m_running; }
     [[nodiscard]] float   deltaTime()    const { return m_deltaTime; }

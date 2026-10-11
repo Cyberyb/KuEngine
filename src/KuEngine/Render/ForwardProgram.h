@@ -39,6 +39,10 @@ public:
         VkCompareOp depthCompareOp,
         std::string& errorMessage);
     void reset();
+    // Geometry uses the same material/frame/environment/draw set schema.
+    [[nodiscard]] bool initializeGeometry(RHIDevice& device, VkFormat depthFormat,
+        VkCompareOp depthCompareOp, std::string& errorMessage);
+    [[nodiscard]] bool geometryMode() const noexcept { return m_geometryMode; }
 
     [[nodiscard]] bool ensurePipelines(
         std::span<const ForwardPipelineKey> keys,
@@ -62,6 +66,7 @@ private:
     VkFormat m_colorFormat = VK_FORMAT_UNDEFINED;
     VkFormat m_depthFormat = VK_FORMAT_UNDEFINED;
     VkCompareOp m_depthCompareOp = VK_COMPARE_OP_LESS;
+    bool m_geometryMode = false;
     VkDescriptorSetLayout m_setLayouts[forward_set::count]{};
 
     std::unique_ptr<RHIShader> m_vertexShader;

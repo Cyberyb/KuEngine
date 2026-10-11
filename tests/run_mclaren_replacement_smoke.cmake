@@ -8,11 +8,21 @@ if(NOT DEFINED KUENGINE_SMOKE_APP
     message(FATAL_ERROR "Missing Mclaren replacement smoke configuration")
 endif()
 
+if(NOT DEFINED REQUIRE_VALIDATION)
+    set(REQUIRE_VALIDATION ON)
+endif()
+set(validation)
+if(REQUIRE_VALIDATION)
+    set(validation --smoke-require-validation)
+endif()
 set(arguments
     --smoke-frames 8
-    --smoke-require-validation
+    ${validation}
     --mclaren-replace-after-updates 1)
 set(expected_markers)
+if(KUENGINE_MCLAREN_DEFERRED)
+    list(APPEND arguments --deferred --smoke-recompile-after-setup)
+endif()
 
 if(KUENGINE_MCLAREN_SCENARIO STREQUAL "valid")
     list(APPEND arguments

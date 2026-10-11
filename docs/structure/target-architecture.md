@@ -1,6 +1,6 @@
 # KuEngine 目标架构与设计边界
 
-更新日期：2026-09-13。本文描述未来演进方向，图中的逻辑模块不等于已经存在的类或 API。需求以 [产品需求](product-requirements.md) 为准，现状以 [当前宏观架构](current-architecture.md) 和 [design](../design/README.md) 为准，实施顺序见 [roadmap](roadmap.md)。
+更新日期：2026-10-11。本文描述未来演进方向，图中的逻辑模块不等于已经存在的类或 API。需求以 [产品需求](product-requirements.md) 为准，现状以 [当前宏观架构](current-architecture.md) 和 [design](../design/README.md) 为准，实施顺序见 [roadmap](roadmap.md)。
 
 ## 1. 一句话原则
 
@@ -49,7 +49,7 @@ flowchart TB
 | RenderGraph | 描述资源、使用方式、依赖、内部资源生命周期及状态转换计划 | 理解某种 PBR 公式；接管应用所有长期对象 |
 | RenderPipeline / RHI | 执行图计划，记录 Graphics/Compute/Copy 命令，提供 Vulkan 能力与诊断 | 生成游戏场景；为尚未使用的扩展建立庞大抽象 |
 
-现有类优先原地演进。当前 `RenderPipeline` 是图执行器，不因为引入 Forward/Deferred 就直接把它改造成承载所有着色逻辑的 Renderer。M2 已将公共 ForwardProgram/ForwardRenderer 与长期 mesh/material/environment 资产落地，Mclaren 保留为示例装配入口；旧 `MclarenRenderResources` 不是运行主路径。M3 已落地 display-ready LDR 的 Graph-owned output；线性 HDR 统一输出、Deferred 和多帧边界仍是未来目标。
+现有类原地演进，Pipeline是图执行器不承载中央着色。M2/M3/WP01/02/A/B已落地长期资产/Graph/HDR、稳定snapshot、四phase UBO、CPU静态mask/直接MRT及Mclaren实例slot编辑/真正Clear。公共SceneMaterialSlot保持标量且无ImGui，示例CPU candidate由Source安全准备发布，编辑不重传共享mesh/纹理/descriptor；环境寿命token仍示例窄验证。C最终QA已验收首轮需求/交互/现有接入闭环，文档已同步，最终M4 Lead审计通过；C未新增Runtime接口。不得把编辑队列/验证状态机迁入Runtime或引入ECS/M5 profiler。M5未开始；未来多帧须隔离资源回收，不把目标边界当已实现多帧行为。
 
 ## 3. 借鉴 RDG 的部分
 
@@ -95,14 +95,16 @@ flowchart LR
     Sky["天空背景"]
     Transparent["前向透明"]
     Output["曝光 / Tone Mapping / 显示转换"]
+    Debug["GBuffer八views：直接MRT固定映射/单次编码"]
     UI["UI 合成 / Present"]
     Scene --> Choice
     Choice -->|Forward| Forward --> HDR
     Choice -->|Deferred| GBuffer --> Lighting --> HDR
     HDR --> Sky --> Transparent --> Output --> UI
+    GBuffer --> Debug --> UI
 ```
 
-这是目标数据流而非固定调度实现；天空与几何的先后可按深度策略调整。UI 在显示输出之后合成，避免材质曝光改变文字颜色。UI 可以在迁移初期保留当前尾部作用域，最终通过声明式节点或显式外部阶段交接纳入状态契约，不要求第一步重写 ImGui 后端。
+这是目标数据依赖而非执行图：当前A的debug与普通Output互斥、直接MRT而非HDR输入，但Geometry/Lighting/Blend仍执行，不能把debug图理解成裁剪了Lighting/透明。当前背景在几何前CLEAR共享Color；UI在选定输出编码后。未来边界保持长期资产/Graph内部图像分离，不要求重写ImGui后端。
 
 PBR 的 Shader 逻辑应尽量共用，避免前向/延迟各自维护一套材质解释。Unlit 是否直接写目标颜色或经 GBuffer 输出由具体设计决定，但外部材质语义必须一致。新增 ShadingModel 时明确其 GBuffer 表达或前向专用限制，不用无限扩大的 GBuffer 预埋所有可能模型。
 

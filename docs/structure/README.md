@@ -19,3 +19,5 @@ product-requirements、target-architecture、current-architecture 和 roadmap �
 日期快照与 archive 保留当时观点，不作为当前实现依据，也不在每次模块修改时重写。原有架构 PNG 保留在 archive，仍可用于历史对比。
 
 原有 PDF 是历史导出物；更新 Markdown 不会自动刷新 PDF。
+
+当前执行位置2026-10-11：WP01/02/A/B既有门禁已闭；C最终QA ACCEPTED + DOCUMENTED，REQ-01～13首轮范围已验收。WP03/M4已由Lead最终审计闭环（DONE），M5未开始，本轮已停止在M4。定义见 [M4任务包](../prompts/m4-task-packets.md)。

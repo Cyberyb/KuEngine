@@ -7,8 +7,67 @@
 #include <limits>
 #include <map>
 #include <stdexcept>
+#include <cstring>
+#include <glm/gtc/type_ptr.hpp>
 
 namespace ku {
+ResolvedMaterial resolveInstanceMaterial(const asset::MaterialData& base,
+    const asset::SceneInstance& instance, uint32_t slot)
+{
+    auto result = resolveMaterial(base,
+        instance.hasMaterialOverride ? &instance.materialOverride : nullptr);
+    for (const auto& edit : instance.materialSlots) {
+        if (edit.slot != slot) continue;
+        result.shadingModel = edit.shadingModel;
+        result.baseColorFactor = edit.baseColor;
+        result.emissiveFactor = edit.emissive;
+        result.metallicFactor = edit.metallic;
+        result.roughnessFactor = edit.roughness;
+        break;
+    }
+    return result;
+}
+ForwardFrameUniforms makeForwardFrameUniforms(const ForwardView& view)
+{
+    ForwardFrameUniforms uniforms{};
+    std::memcpy(uniforms.viewProjection, glm::value_ptr(view.viewProjection),
+        sizeof(uniforms.viewProjection));
+    std::memcpy(uniforms.inverseViewProjection,
+        glm::value_ptr(view.inverseViewProjection),
+        sizeof(uniforms.inverseViewProjection));
+    uniforms.cameraPosition[0] = view.cameraPosition.x;
+    uniforms.cameraPosition[1] = view.cameraPosition.y;
+    uniforms.cameraPosition[2] = view.cameraPosition.z;
+
+    asset::SceneLightingConfig lighting = view.lighting;
+    asset::sanitizeSceneLighting(lighting);
+    uniforms.directionalDirectionIntensity[0] = lighting.direction.x;
+    uniforms.directionalDirectionIntensity[1] = lighting.direction.y;
+    uniforms.directionalDirectionIntensity[2] = lighting.direction.z;
+    uniforms.directionalDirectionIntensity[3] = lighting.intensity;
+    uniforms.directionalColorPointCount[0] = lighting.color.r;
+    uniforms.directionalColorPointCount[1] = lighting.color.g;
+    uniforms.directionalColorPointCount[2] = lighting.color.b;
+    uniforms.directionalColorPointCount[3] =
+        static_cast<float>(lighting.pointLights.size());
+    for (size_t index = 0; index < lighting.pointLights.size(); ++index) {
+        const auto& point = lighting.pointLights[index];
+        uniforms.pointPositionRange[index][0] = point.position.x;
+        uniforms.pointPositionRange[index][1] = point.position.y;
+        uniforms.pointPositionRange[index][2] = point.position.z;
+        uniforms.pointPositionRange[index][3] = point.range;
+        uniforms.pointColorIntensity[index][0] = point.color.r;
+        uniforms.pointColorIntensity[index][1] = point.color.g;
+        uniforms.pointColorIntensity[index][2] = point.color.b;
+        uniforms.pointColorIntensity[index][3] = point.intensity;
+    }
+    uniforms.environmentParams[0] = view.environmentEnabled ? 1.0f : 0.0f;
+    uniforms.environmentParams[1] = std::max(0.0f, view.environmentIntensity);
+    uniforms.environmentParams[2] = std::max(0.0f, view.environmentExposure);
+    uniforms.environmentParams[3] = view.outputGamma ? 1.0f : 0.0f;
+    return uniforms;
+}
+
 namespace {
 
 asset::AlphaMode parseAlphaMode(const std::string& value)

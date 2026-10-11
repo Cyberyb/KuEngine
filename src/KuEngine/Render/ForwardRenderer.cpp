@@ -6,6 +6,7 @@
 #include <KuEngine/RHI/RHIDevice.h>
 #include <KuEngine/RHI/RHIPipeline.h>
 #include <KuEngine/Render/ForwardProgram.h>
+#include <KuEngine/Render/DeferredCommon.h>
 #include <KuEngine/Render/GpuMesh.h>
 #include <KuEngine/Render/GpuModelAsset.h>
 #include <KuEngine/Render/PBRResources.h>
@@ -184,42 +185,7 @@ bool ForwardRenderer::ensureCapacity(size_t drawCapacity, std::string& errorMess
 
 bool ForwardRenderer::writeFrame(const ForwardView& view)
 {
-    ForwardFrameUniforms uniforms{};
-    std::memcpy(uniforms.viewProjection, glm::value_ptr(view.viewProjection),
-        sizeof(uniforms.viewProjection));
-    std::memcpy(uniforms.inverseViewProjection,
-        glm::value_ptr(view.inverseViewProjection),
-        sizeof(uniforms.inverseViewProjection));
-    uniforms.cameraPosition[0] = view.cameraPosition.x;
-    uniforms.cameraPosition[1] = view.cameraPosition.y;
-    uniforms.cameraPosition[2] = view.cameraPosition.z;
-
-    asset::SceneLightingConfig lighting = view.lighting;
-    asset::sanitizeSceneLighting(lighting);
-    uniforms.directionalDirectionIntensity[0] = lighting.direction.x;
-    uniforms.directionalDirectionIntensity[1] = lighting.direction.y;
-    uniforms.directionalDirectionIntensity[2] = lighting.direction.z;
-    uniforms.directionalDirectionIntensity[3] = lighting.intensity;
-    uniforms.directionalColorPointCount[0] = lighting.color.r;
-    uniforms.directionalColorPointCount[1] = lighting.color.g;
-    uniforms.directionalColorPointCount[2] = lighting.color.b;
-    uniforms.directionalColorPointCount[3] =
-        static_cast<float>(lighting.pointLights.size());
-    for (size_t index = 0; index < lighting.pointLights.size(); ++index) {
-        const auto& point = lighting.pointLights[index];
-        uniforms.pointPositionRange[index][0] = point.position.x;
-        uniforms.pointPositionRange[index][1] = point.position.y;
-        uniforms.pointPositionRange[index][2] = point.position.z;
-        uniforms.pointPositionRange[index][3] = point.range;
-        uniforms.pointColorIntensity[index][0] = point.color.r;
-        uniforms.pointColorIntensity[index][1] = point.color.g;
-        uniforms.pointColorIntensity[index][2] = point.color.b;
-        uniforms.pointColorIntensity[index][3] = point.intensity;
-    }
-    uniforms.environmentParams[0] = view.environmentEnabled ? 1.0f : 0.0f;
-    uniforms.environmentParams[1] = std::max(0.0f, view.environmentIntensity);
-    uniforms.environmentParams[2] = std::max(0.0f, view.environmentExposure);
-    uniforms.environmentParams[3] = view.outputGamma ? 1.0f : 0.0f;
+    const ForwardFrameUniforms uniforms = makeForwardFrameUniforms(view);
     void* mapped = m_frameBuffer->map();
     if (mapped == nullptr) return false;
     std::memcpy(mapped, &uniforms, sizeof(uniforms));
@@ -253,6 +219,8 @@ bool ForwardRenderer::writeDraws(
         for (size_t component = 0; component < 3; ++component) {
             uniforms.emissiveFactor[component] = draw.material.emissiveFactor[component];
         }
+        uniforms.emissiveFactor[3] = static_cast<float>(
+            encodeGBufferShadingModel(draw.material.shadingModel).value_or(GBufferShadingCode::Empty));
         uniforms.materialFactors[0] = draw.material.metallicFactor;
         uniforms.materialFactors[1] = draw.material.roughnessFactor;
         uniforms.materialFactors[2] = draw.material.normalScale;
@@ -324,6 +292,10 @@ bool ForwardRenderer::render(CommandList& commandList,
         return false;
     }
     for (const ForwardDraw& draw : draws) {
+        if (m_program->geometryMode() && !supportsDeferredGeometry(pipelineKeyFor(draw.material))) {
+            errorMessage = "Deferred Geometry rejects Blend or unknown material models";
+            return false;
+        }
         if (draw.model == nullptr || !draw.model->ready()
             || draw.materials == nullptr || !draw.materials->ready()) {
             errorMessage = "Forward draw borrows an invalid GPU asset";
@@ -339,7 +311,7 @@ bool ForwardRenderer::render(CommandList& commandList,
         errorMessage = "Forward uniform buffer mapping failed";
         return false;
     }
-    drawSkybox(commandList, view);
+    if (!m_program->geometryMode()) drawSkybox(commandList, view);
     std::vector<ForwardSortKey> sortKeys;
     sortKeys.reserve(draws.size());
     for (size_t index = 0; index < draws.size(); ++index) {

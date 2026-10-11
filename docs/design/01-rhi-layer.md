@@ -1,6 +1,6 @@
 # RHI 当前设计
 
-核对日期：2026-10-07。源码目录：[src/KuEngine/RHI](../../src/KuEngine/RHI)。
+核对日期：2026-10-08。源码目录：[src/KuEngine/RHI](../../src/KuEngine/RHI)。
 
 ## 对象边界
 
@@ -82,4 +82,4 @@ RHITexture 持有一个 2D 图像及视图，可用于颜色纹理或 Runtime �
 
 ResourceUploader 接收字节数据并创建 Staging，统一拷贝 Buffer/2D Texture，纹理走 UNDEFINED → TRANSFER_DST → SHADER_READ_ONLY。上传后 queueWaitIdle；当前是初始化期同步设施。
 
-`ShaderDesc` 明确 path、stage 与 entry；GraphicsPipelineDesc 只接受唯一的 vertex/fragment shader，并提供顶点布局、DescriptorSetLayout、PushConstantRange、颜色/深度格式、拓扑、混合、剔除和深度状态。RHIPipeline 采用 Dynamic Rendering；RHIComputePipeline 独立创建/销毁 Compute Pipeline。没有 Pipeline Cache。附件格式必须与 Runtime 实际选择一致。
+`ShaderDesc` 明确 path、stage 与 entry；GraphicsPipelineDesc 只接受唯一 vertex/fragment shader，提供顶点布局、DescriptorSetLayout、PushConstantRange、颜色/深度格式、混合、剔除和深度状态。RHIPipeline 采用 Dynamic Rendering；Compute Pipeline 独立 RAII，无持久 Pipeline Cache。显示采用 Runtime 实际格式，SceneColor/Deferred MRT 固定 RGBA16F。Render 层检查 SceneColor attachment/blend/sampled/transfer-src、Depth attachment/transfer-src 和四 MRT 上限；不扩大全局设备基线。Blend depth test/no-write，颜色 SRC_ALPHA/ONE_MINUS_SRC_ALPHA；Display 对 UNORM 手动 sRGB、SRGB 硬件编码。离屏两种格式与 D32 前后深度读回经 GPU 验证，但低能力实机/强制 live-format 未运行；readback 与 phase UBO 均为 Render/示例所有权，无新 RHI 框架。
