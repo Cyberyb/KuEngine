@@ -1,10 +1,10 @@
 # 示例模块设计
 
-核对日期：2026-10-21。保留原 Triangle 文档路径，现在统一说明七个示例的当前装配。
+核对日期：2026-10-24。保留原 Triangle 文档路径，现在统一说明八个示例的当前装配。
 
 ## 公共入口
 
-七个 main 都创建 `EngineConfig`，再交给 `runApplication()` 统一解析参数、创建 Engine、注册 Pass、compile/run 和归纳退出码。Vulkan 帧循环、交换链、同步、深度和 UI Backend 由 Engine 持有。
+八个 main 都创建 `EngineConfig`，再交给 `runApplication()` 统一解析参数、创建 Engine、注册 Pass、compile/run 和归纳退出码。Vulkan 帧循环、交换链、同步、深度和 UI Backend 由 Engine 持有。
 
 | 示例 | Pass/组件 | 当前绘制 |
 |---|---|---|
@@ -14,11 +14,12 @@
 | [Mclaren](../../examples/mclaren/MclarenPass.cpp) | MclarenPass ScenePrepare/替换/相机及公共 ScenePasses | Background → Forward Opaque 或 Geometry/Lighting → Blend → Display |
 | [ForwardReuse](../../examples/forward_reuse/ForwardReusePass.cpp) | ForwardReusePass ScenePrepare 与公共 ScenePasses | 两路径 semantic/HDR/normal fixtures，共享资产与稳定 snapshot |
 | [CornellBox](../../examples/cornell_box/CornellBoxPass.cpp) | CornellBoxPass ScenePrepare、公共 ScenePasses、可选 CornellBoxReadback | 程序化房间/两盒/顶灯，默认 Deferred 10 draws / 114 vertices；Forward 9/111 |
+| [VolumetricIntegration](../../examples/volumetric_integration/VolumetricPass.cpp) | 示例 ScenePass / DisplayPass / 可选 ReadbackPass | 复刻 SebH XlBSRz：全屏场景积分与独立显示，普通及读回均 2 draws / 6 vertices |
 | [GraphResourceProbe](../../examples/graph_resource_probe/GraphResourceProbePass.cpp) | GraphResourceProbePass | 六 Pass Graph：ImageClear、BufferFill、native Copy callback、normal Compute callback、SampleDraw、PostDrawCopy；固定 1 draw / 3 vertices |
 
 普通运行（无readback probe）含唯一 Display：Mclaren Forward91/9,202,884、Deferred92/9,202,887；ForwardReuse Forward9/45、Deferred10/48。Deferred 多一个 Lighting 全屏三角形；测试 UNORM/SRGB display probes 额外2 draws/6 vertices，fixture/天空开关也改变计数，不把探针计数当普通基线。
 
-七个示例共享以下非交互冒烟参数：`--smoke-frames N` 按成功提交的帧数停止（`0` 保持无限交互循环）；`--smoke-require-validation` 要求可捕获 Validation 消息；`--smoke-resize-after FRAME WIDTH HEIGHT` 在指定提交帧后请求窗口 resize，且帧上限至少比该帧多两帧；`--smoke-sidebar-collapsed` 从紧凑侧栏启动并核对布局；`--smoke-inject-validation-error` 仅用于受控负例，必须同时要求 Validation 与正帧数。普通不带参数的运行方式不变。
+八个示例共享以下非交互冒烟参数：`--smoke-frames N` 按成功提交的帧数停止（`0` 保持无限交互循环）；`--smoke-require-validation` 要求可捕获 Validation 消息；`--smoke-resize-after FRAME WIDTH HEIGHT` 在指定提交帧后请求窗口 resize，且帧上限至少比该帧多两帧；`--smoke-sidebar-collapsed` 从紧凑侧栏启动并核对布局；`--smoke-inject-validation-error` 仅用于受控负例，必须同时要求 Validation 与正帧数。普通不带参数的运行方式不变。
 
 各Pass可选提供`expectedFrameStatistics()`；RenderPipeline仅在所有启用Pass都有预期值时汇总，Runner将最后一个completed submit业务计数精确比较并输出`KUENGINE_COMPLETED_STATS ... status=matched`；不匹配/无快照/缺预期均smoke fail。Triangle1/3、Cube默认1/36、三Alpha3/9。MclarenSource Prepare为0/0；Background按sky开关0/0或1/3，Surface按snapshot每实例有效draw的indexCount累加，Display或GBufferDisplay始终1/3，DeferredLighting另1/3，Blend按实际分流计数。多实例按全部实际draw构成精确match，不仅单模型subMesh常数或正数检查；顶部默认计数含唯一Display，fixture/Clear/probe另按构成核对。
 
@@ -112,3 +113,29 @@ flowchart LR
 可选 `--cornell-readback-prefix` 仅用于普通 Deferred 的有限帧验证。CornellBoxReadback 声明 BaseMetallic/PositionModel/HDR 三图 TransferSource、导入自有 staging 为 TransferDestination，依赖 ForwardDisplay，在 Rendering Scope 外复制；Graph 负责传输与 HOST_READ 边界，单帧 Fence 后的 update/onResize inspect 才 invalidate/map。容量为 2048² 像素×三张 RGBA16F；rawbin 为 width/height 两个 uint32 后接三平面 half，PPM 是场景 viewport HDR 经 CPU 曝光/Reinhard/sRGB 转换的预览，非 Swapchain 截图。它不支持将任意材质交互、Forward/debug 路径视为通用截图。
 
 2026-10-21 [独立 QA](../../build/qa-cornell-box/qa-report.md) ACCEPTED：两配置 core142，Debug 定向 CTest7/7（0skip），显式 SyncVal errors=0，Release 默认/resize-recompile/Forward 真实 GPU 退出0；独立 half 原始像素和 ray/plane/OBB 检查、真实 GUI 控件通过。未运行项及命令见 [使用说明](../usage/cornell-box-example.md) 和 [回归说明](../usage/regression-checks.md)。
+
+## VolumetricIntegration / SebH XlBSRz
+
+源码：[入口](../../examples/volumetric_integration/main.cpp)、[Pass 接口](../../examples/volumetric_integration/VolumetricPass.h)、[场景/显示装配](../../examples/volumetric_integration/VolumetricPass.cpp)、[积分 Shader](../../examples/volumetric_integration/shaders/volumetric.frag)、[显示 Shader](../../examples/volumetric_integration/shaders/display.frag)、[读回](../../examples/volumetric_integration/VolumetricReadback.cpp)、[来源与许可](../../examples/volumetric_integration/NOTICE.md)。
+
+独立 `VolumetricIntegrationApp` 默认 1280×720、2 帧槽，复用 ApplicationRunner/Engine/Graph/RHI/UIOverlay。程序化场景为 x=0/40 红色两侧、y=0 绿色地面、z=0 蓝色背墙的开口房间，无天花板及 opaque interior 对象。固定相机 (20,18,-50)，按 sceneFramebuffer 比例生成视线并反转 Vulkan Y。暖色点光位置 (20+15 sin(t),15+12 cos(t),-20)，逆平方衰减；表面为 Lambert 并乘介质透射阴影，不使用公共 PBR 或独立 opaque shadow map。
+
+介质由 constant .02、height .3 与中心 (20,19,-17)/半径 5 的球形密度组合，默认视线最多 100 步、最大步长 1，光方向 16 次中点采样。支持 analytical（按段解析散射后更新透射率）、basic、transmittance-first、split（左 basic / 右 analytical）四模式。替代噪声为自包含 256² repeat/bilinear hash grid；保留固定相机而不实现原 iMouse 位移，点光奇点与低步数未命中作有限值防护。原站和原噪声纹理访问 403，来源为精确公开归档；不声明原站画面逐像素一致，改编 Shader 遵循 SebH 的 CC BY-NC-SA 3.0。
+
+```mermaid
+flowchart LR
+    Settings["ScenePass：CPU Settings / 48-byte push constants"] --> Scene["VolumetricIntegration：1 draw / 3 vertices"]
+    Scene --> Color["Graph pool：每槽 RGBA16F VolumetricSceneColor"]
+    Color --> Display["VolumetricDisplay：每槽 descriptor / 1 draw / 3 vertices"]
+    Display --> Swap["SwapChainColor → Runtime UI → Present"]
+    Color --> Readback["可选 VolumetricReadback：TransferSource"]
+    Display -. "执行顺序依赖" .-> Readback
+    Readback --> Stage["ReadbackPass 每槽 staging；Graph 借用"]
+    Stage --> Inspect["本槽 Fence 后 inspect；全帧 drain 后检查尾帧"]
+```
+
+ScenePass 拥有 CPU Settings、shader 与 pipeline；参数在 execute 录入 48 字节 push constants，不共享可变 GPU UBO。Graph pool 每槽分配 swapchain-relative RGBA16F，声明 color/sampled/transfer-src，场景 CLEAR/STORE；Display 拥有 sampler/pipeline/每槽 RHIParameterSet，复用槽 Fence 后重绑图像。Display texelFetch 当前附件坐标，曝光固定 1、无 tone map；UNORM 直接输出原 pow(1/2.2)，sRGB 附件先 inverse-sRGB 再由硬件编码。它是示例专用显示，不改变公共 ForwardDisplay 的 Reinhard/sRGB 契约。
+
+可选 Readback 在 Rendering Scope 外执行：声明 SceneColor TransferSource、导入自有 staging 为 TransferDestination，最终 HOST_READ；显式依赖 Display 只约束执行顺序，读回不采样 Display 或 Swapchain。update 在本槽 Fence 后 invalidate/map，resize/recompile/析构在全帧安全点 inspect 所有 pending，包括最后提交。CaptureReport 与 main 共享；析构检测到导出失败也返回非零。每帧保存当次 submit/slot/viewport/constants、裁剪线性 RGBA half、参考 gamma PPM 和元数据。上限是整个附件总像素 2048×2048，普通渲染不受该读回上限限制；正数 --smoke-frames 是导出前置条件，禁止无限导出。业务统计 Scene 1/3 + Display 1/3，Readback 0/0；UI 不计入。
+
+固定时间与可选 timeStep 按 actual submittedFrame 推进；交互时间未暂停时按 deltaTime 增长，参数 UI 在本帧 execute 前生效。独立 [QA](../../build/qa-volumetric-integration/qa-report.md) 于 2026-10-24 ACCEPTED，证据与未运行项见 [使用说明](../usage/volumetric-integration-example.md)。本包只消费并验证新示例 1/2 槽，M5 整体验收不受影响。

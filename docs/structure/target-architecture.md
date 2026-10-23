@@ -1,6 +1,6 @@
 # KuEngine 目标架构与设计边界
 
-更新日期：2026-10-21。本文描述未来演进方向，图中的逻辑模块不等于已经存在的类或 API。需求以 [产品需求](product-requirements.md) 为准，现状以 [当前宏观架构](current-architecture.md) 和 [design](../design/README.md) 为准，实施顺序见 [roadmap](roadmap.md)。
+更新日期：2026-10-24。本文描述未来演进方向，图中的逻辑模块不等于已经存在的类或 API。需求以 [产品需求](product-requirements.md) 为准，现状以 [当前宏观架构](current-architecture.md) 和 [design](../design/README.md) 为准，实施顺序见 [roadmap](roadmap.md)。
 
 ## 1. 一句话原则
 
@@ -120,3 +120,5 @@ PBR 的 Shader 逻辑应尽量共用，避免前向/延迟各自维护一套材�
 - 判断封装是否合适的标准：第二个实验是否能复用；能否解释资源由谁创建和释放；自定义 Vulkan 操作是否仍然可表达。类的数量不是进展指标。
 
 目标架构变更只更新本文；相应实现落地后，才将确定的类、接口与行为写入 design。原有架构图片和历史快照保留，不改画成尚未存在的实现。
+
+2026-10-24 REQ-16 已按上述独立示例边界落地并获独立 QA ACCEPTED；当前 Scene/Display/可选 Readback 的类、所有权与已实现数据流见 [04 设计](../design/04-triangle-example-tech.md)。噪声替代、固定相机与专用原 gamma 显示不扩展为公共 PBR 或任意 Shadertoy 输入承诺，M5 整体验收仍单独管理。

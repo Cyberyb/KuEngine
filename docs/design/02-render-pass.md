@@ -87,3 +87,5 @@ Graph 已管理真实 internal Image/Buffer allocation 和 synchronization2 imag
 callback的declare/prepare参数为可变Parameters&，execute才是const Parameters&；name/declare/execute必需，其余prepare/nativeContract/expectedStatistics可选，实际header为RenderGraphCallbackPass.h。现有接入步骤见[开发渲染特性](../usage/developing-render-features.md)。当前CPU测试覆盖逻辑依赖、循环/缺失依赖、Hazard、附件声明等；不是完整GPU执行回归。测试入口：[test_render_graph.cpp](../../tests/core/test_render_graph.cpp)。
 
 2026-10-21 CornellBox 通过既有 SceneViewerPasses 接入静态分支，默认 Deferred；不改变公共调度接口。其可选读回 Pass 在 Scope 外声明三图 TransferSource 与借用 staging TransferDestination/HOST_READ，update/onResize 在单帧 Fence 后检查，详见 [04](04-triangle-example-tech.md)。WP03-A“两例”仍指当时历史范围。
+
+2026-10-24 VolumetricIntegration 作为新消费者复用既有接口：Scene 写每槽 RGBA16F → Display sampled 写 SwapChainColor → 可选 scope 外 Readback，最后 Runtime Overlay。Readback 直接读 SceneColor，显式依赖 Display 表示顺序；staging 本槽 Fence 后 inspect，全帧安全点 drain 尾帧。未新增公共调度 API，详情见 [04](04-triangle-example-tech.md)。本包验证 1/2 槽，不等同 M5 整体验收。

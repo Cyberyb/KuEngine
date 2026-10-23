@@ -10,7 +10,7 @@
 | [01 RHI](01-rhi-layer.md) | 设备、资源、上传、同步、命令与 GPU 计时 |
 | [02 Render 调度](02-render-pass.md) | Pass 生命周期、Graph 编译、附件执行 |
 | [03 日志与诊断](03-logging.md) | spdlog、VK_CHECK 与 Validation |
-| [04 示例设计](04-triangle-example-tech.md) | Triangle、Cube、Alpha3Pass、Mclaren、ForwardReuse、GraphResourceProbe、CornellBox 七个示例的当前装配 |
+| [04 示例设计](04-triangle-example-tech.md) | Triangle、Cube、Alpha3Pass、Mclaren、ForwardReuse、GraphResourceProbe、CornellBox、VolumetricIntegration 八个示例的当前装配 |
 | [05 UI 与性能统计](05-ui-layer.md) | UIOverlay、Pass 控件与统计口径 |
 | [06 Core Runtime](06-core-runtime.md) | Engine、Window、Input、帧循环和 resize |
 | [07 资产配置](07-resource-asset-spec.md) | 资源目录、Scene/Material JSON 与路径解析 |
@@ -24,3 +24,5 @@
 每次修改模块都按 [同步约定](../README.md) 核对对应文档。各文档保留“当前约束”，用于准确描述实现边界；不在这些章节中排任务或列未来阶段。
 
 2026-10-21 新增 CornellBox 公共 Deferred/PBR 消费者：程序化 MeshData 直接上传，复用 SceneDrawSource、四 phase Renderer 与 Graph 附件；公共 Runtime/Shader 未改。REQ-15 独立 QA ACCEPTED，设计见 [04](04-triangle-example-tech.md)，操作与精确证据范围见 [CornellBox](../usage/cornell-box-example.md)。
+
+2026-10-24 新增 VolumetricIntegration / REQ-16 独立全屏体积积分消费者，QA ACCEPTED + DOCUMENTED；复用现有 1/2 帧槽 Runtime/Graph，不扩展公共 PBR 或验收 M5 整包。场景、显示、读回所有权及数据流见 [04](04-triangle-example-tech.md)，来源/运行/证据边界见 [使用说明](../usage/volumetric-integration-example.md)。

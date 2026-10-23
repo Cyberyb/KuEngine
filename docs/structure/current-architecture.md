@@ -4,7 +4,7 @@
 
 ## 定位与当前能力
 
-KuEngine 是基于 Vulkan 1.3 的图形算法验证框架。当前由一个公共 Runtime 承载七个示例，具备 Pass/Callback 调度、图像附件执行、Graphics/Compute 图资源、glTF/PBR 输入、UI 参数控制与基础性能观测。
+KuEngine 是基于 Vulkan 1.3 的图形算法验证框架。当前由一个公共 Runtime 承载八个示例，具备 Pass/Callback 调度、图像附件执行、Graphics/Compute 图资源、glTF/PBR 输入、UI 参数控制与基础性能观测。
 
 CMake/版本宏仍标为 0.1.0；历史文档中的 v0.2/v0.3 是迭代阶段称谓，本页不据此宣布新版本发布。
 
@@ -12,7 +12,7 @@ CMake/版本宏仍标为 0.1.0；历史文档中的 v0.2/v0.3 是迭代阶段称
 
 ```mermaid
 flowchart TB
-    App["应用：Triangle / Cube / Alpha3Pass / Mclaren / ForwardReuse / GraphResourceProbe / CornellBox"]
+    App["应用：Triangle / Cube / Alpha3Pass / Mclaren / ForwardReuse / GraphResourceProbe / CornellBox / VolumetricIntegration"]
     Runner["ApplicationRunner：参数 / smoke 结果"]
     Runtime["Engine：公共 Runtime"]
     Platform["Window / Input / ViewerLayout / SceneInteraction"]
@@ -33,6 +33,10 @@ flowchart TB
     Graph --> Pass
     Graph --> Targets
     Targets --> Display
+    Volume["VolumetricIntegration：示例全屏积分"] --> VolumeColor["Graph每槽 RGBA16F VolumetricSceneColor"]
+    VolumeColor --> VolumeDisplay["原pow1/2.2专用显示；无tone map"]
+    VolumeDisplay --> Frames
+    VolumeColor --> VolumeReadback["可选每槽staging读回 / Fence后inspect"]
     Display --> Frames
     Runtime --> UI
     Pass --> RHI["RHI：Buffer / Texture / Shader / Pipeline"]
@@ -79,13 +83,13 @@ UIOverlay 是唯一顶层右侧栏，展开态包含 Performance、Parameters / 
 
 FPS/Frame 来自当前主循环；CPU、GPU、Draw Calls、Vertices 来自同一个已完成 submitted frame。Engine 在 submit 后暂存 CPU 与业务计数，Fence 完成或退出 device idle 后结合 Timestamp 发布快照。GPU 状态分为 Unsupported、Waiting、Available；Draw/Vertices 使用饱和 `uint64_t` 累加。Debug 构建中，Instance 仅在 Validation Layer 和 Debug Utils 可用时捕获 Vulkan 回调并写入统一日志；共享 Tracker 的 warning/error 累计值可跨 Instance 销毁读取，ApplicationRunner 会将非零 error 映射为失败退出码。显式 smoke 模式额外要求可捕获 Validation，并将缺少驱动、设备、Layer 或 Debug Utils 报告为 skip；这些计数仍不显示在 UI。Graph Debug UI 展示依赖、屏障和执行摘要。
 
-这提供单帧量级的观测；尚无性能曲线、每 Pass Query、结果导出或可复现实验框架。具体统计口径见 [UI 设计](../design/05-ui-layer.md)。
+这提供单帧量级的观测；尚无公共性能曲线、每 Pass Query 或通用实验导出框架；VolumetricIntegration 有示例局部固定时间/有界像素导出。具体统计口径见 [UI 设计](../design/05-ui-layer.md)。
 
 ## 已实现与现有限制
 
 | 领域 | 当前实现 | 当前限制 |
 |---|---|---|
-| Runtime | 七示例统一帧循环、深度 format 选择、按提交帧数停止、自动 resize/recompile、completed-submit 统计 | 单帧并行；重建使用 deviceWaitIdle，最小化/恢复未纳入自动 smoke |
+| Runtime | 八示例统一帧循环、深度 format 选择、按提交帧数停止、自动 resize/recompile、completed-submit 统计 | 当前工作区支持 1/2 帧槽；M5-WP01 整体验收独立；重建使用全帧等待，最小化/恢复未纳入自动 smoke |
 | Graph | typed Image/Buffer descriptor/handle、internal pool、candidate compile/resize、first-use/LOAD/export、显式 use、CPU state planner、synchronization2 image/buffer barrier、Compute callback/checked resolver/受约束 native scope、Forward SceneColor/Depth/display | 无别名/多 Queue；内部内容不跨帧保留；不自动检测任意裸 Vulkan 命令 |
 | RHI | Vulkan/VMA 薄封装、同步上传、动态渲染、显式 ShaderDesc、Compute Pipeline/ParameterSet、可用性检测后的 Validation/Debug Utils 消息记录 | 旧式 Barrier 仍有兼容入口，上传 queueWaitIdle，无 Async Compute；部分同步 wait 返回值尚未统一检查 |
 | Forward/Deferred/资产 | 共享HDR/透明/天空；strict配置/scene/CLI优先、Fence-safe静态mask、四phase UBO、直接MRT八views；Mclaren实例/slot编辑与完整黑GPU Clear安全发布/旧GPU释放 | 首轮C QA已验收，非通用ECS/编辑器；对象中心排序非OIT；完整IBL/多帧retire非首轮 |
@@ -94,7 +98,7 @@ FPS/Frame 来自当前主循环；CPU、GPU、Draw Calls、Vertices 来自同一
 
 ## 源码和测试组织
 
-公共库在 src/KuEngine，下分 Core、RHI、Render、Asset、UI；示例在 examples 的七个示例子目录，资源在 resources。
+公共库在 src/KuEngine，下分 Core、RHI、Render、Asset、UI；示例在 examples 的八个示例子目录，资源在 resources。
 
 CTest 的 core_tests 覆盖 Engine/FrameStatistics/Graph/AssetConfig/ApplicationRunner/PBR/Validation、SidebarState、ViewerLayout、SceneInteraction、Scene/AssetPath/HDR/PBR 资产计划、Mclaren replacement、Graph state/Callback 与 Forward Graph targets CPU 语义；mclaren_camera_tests 覆盖双模式 `OrbitCameraController`。M3-WP04 QA 在独立 Debug/Release 构建中通过 Debug core124/camera32/定向37、完整 CTest19/19，以及 SyncVal 下 ForwardReuse 二次 compile 9/45、Probe 二次 compile 后 resize 1/3、Mclaren resize 91/9,202,884，均 errors=0；权威 Release CTest 为 3 Passed / 16 Skipped / 0 Failed。Release direct 的 ForwardReuse、Probe 二次 compile、Mclaren、Triangle 另行通过；require-validation/缺 Layer 的 77 是预期 skip。没有 RenderDoc、readback pixel baseline、soak、真实 live-format 强制或物理非等比 DPI 证据。
 
@@ -115,3 +119,9 @@ WP03-A正式`build/qa-m4-wp03a/qa-report.md`：fresh Debug/Release全build0，�
 2026-10-21 新增 CornellBox / REQ-15 独立示例，QA ACCEPTED、文档已同步；M5未开始，M4历史验收不重开。CornellBox 代码建立房间、两旋转盒和 emissive 顶灯，直接上传 MeshData，不经过导入器/JSON/外部 HDR。复用公共 SceneDrawSource、四 phase UBO、Deferred/Forward、HDR Display、侧栏和 Runtime，Graph 仍拥有附件；简化 PBR 采用四点光和中性环境，无阴影/GI/真实面积积分。默认1280×960，Deferred10/114、Forward9/111，相机为UI yaw/pitch/distance。可选有限Deferred GPU half读回是示例证据工具，不是公共截图平台。
 
 独立 [CornellBox QA](../../build/qa-cornell-box/qa-report.md)：Debug定向CTest7/7无skip、显式SyncVal0error，两配置core142/142，3组真实Release GPU与独立ray/plane/OBB像素/真实GUI通过；当前注册33项未全跑，其余NOT RUN见 [回归](../usage/regression-checks.md)。
+
+## VolumetricIntegration / REQ-16（2026-10-24）
+
+第八个独立示例复刻 SebH XlBSRz 的程序化开口房间、移动暖点光、constant/height/sphere 介质、100×16 默认积分和 analytical/basic/transmittance-first/split。ScenePass 自有 shader/pipeline/settings、48 字节 push constants；Graph 拥有每槽 RGBA16F；Display 自有 sampler/pipeline/每槽 descriptor，按原 pow(1/2.2) 输出，曝光 1 且无 tone map。可选 Readback 直接复制线性 SceneColor 到自有每槽 staging，Graph 借用；Fence 后检查并在 resize/recompile/退出 drain 尾帧。普通/读回均 2 draws/6 vertices，UI 最后合成。它不进入公共 PBR，也不包含 CornellBox 两盒或 opaque shadow map。
+
+原站和噪声纹理 403，使用精确公开归档并保留 SebH/CC BY-NC-SA 3.0；hash-noise、固定机位和数值防护差异均披露。REQ-16 [独立 QA](../../build/qa-volumetric-integration/qa-report.md) ACCEPTED + DOCUMENTED，Lead 最终核对待完成。两配置 core145、options4，Debug 定向 CTest8/8、Release3/3（均0skip），每配置 11 GPU 场景/36提交，Debug 显式 SyncVal0error；独立原作无噪声 CPU 参考 890 像素通过，全部 baseline PPM gamma 字节误差0，真实 GUI 与 bat 正常退出0。强制 sRGB attachment、原站逐像素、RenderDoc/soak/完整旧 GPU 矩阵未运行，详见 [使用与证据](../usage/volumetric-integration-example.md)。仅新示例 1/2 槽消费得到验证，M5-WP01 仍 IMPLEMENTING。

@@ -1,6 +1,6 @@
 # KuEngine 产品需求
 
-更新日期：2026-10-21。本文是产品目标与功能范围的维护入口；REQ-01～13首个产品范围已获最终C QA ACCEPTED，C文档已同步，M4已由Lead最终审计闭环（DONE），M5未开始。新增 REQ-15 康奈尔盒子示例，独立于 M5 实施。当前实现见 [宏观架构](current-architecture.md)，开发顺序见 [roadmap](roadmap.md)，架构取舍见 [目标架构](target-architecture.md)。
+更新日期：2026-10-24。本文是产品目标与功能范围的维护入口；REQ-01～13首个产品范围已获最终C QA ACCEPTED，C文档已同步，M4已由Lead最终审计闭环（DONE），M5未开始。新增 REQ-15 康奈尔盒子示例，独立于 M5 实施。当前实现见 [宏观架构](current-architecture.md)，开发顺序见 [roadmap](roadmap.md)，架构取舍见 [目标架构](target-architecture.md)。
 
 ## 1. 产品定位
 
@@ -71,7 +71,7 @@ P0 表示首个完整产品闭环必需，不表示所有 P0 都必须先于所�
 | REQ-13 | 小型引擎上的特性开发闭环 | P0 | 已验收（首轮）：最终需求矩阵、完整查看器工作流与现有Graphics/Compute/native接入说明；不是任意新特性已实现声明 | M3、M4 |
 | REQ-14 | 正确性、可复现与扩展性能观测 | P1 | 部分实现：CPU/Smoke/SyncVal与WP02有界HDR/格式/深度/多材质像素检查已验收；非通用历史图像平台。逐帧隔离/逐Pass观测/低能力Timestamp实机仍属后续强化 | M0 完成、M5 强化 |
 | REQ-15 | 自建康奈尔盒子延迟 PBR 示例 | P1 | 已验收（2026-10-21 独立 QA ACCEPTED）：代码生成房间、红绿侧墙、两个旋转盒体和可见顶灯；默认 Deferred，复用公共 PBR / GBuffer / HDR 输出 | 独立示例工作包 CornellBox |
-| REQ-16 | Shadertoy 体积光积分复刻示例 | P1 | 未实现：复刻 SebH 的 XlBSRz（VolumetricIntegration），包含程序化场景、介质散射/消光、光照阴影与动画，可调参并提供可复现验证入口 | 独立示例工作包 VolumetricIntegration |
+| REQ-16 | Shadertoy 体积光积分复刻示例 | P1 | 已验收（2026-10-24 独立 QA ACCEPTED）：SebH XlBSRz 场景/体积积分、参数侧栏、固定时间与有界像素导出；替代噪声/固定机位/许可和原站 403 边界已披露；DOCUMENTED，Lead 最终核对待完成 | 独立示例工作包 VolumetricIntegration |
 
 REQ-14 中影响 P0 功能正确性的测试随对应阶段完成，不能以 P1 为由延后必要的同步和生命周期验证。
 
@@ -138,7 +138,7 @@ ShadingModel 回答“材质怎样响应光照”；RenderPath 回答“这些�
 - 正确处理主视口坐标、Vulkan Y 方向、交换链输出编码、resize/recompile 和 1/2 帧在途；不复制窗口、Swapchain 或帧循环。
 - 验收包含 Shader 构建、实际 GPU 有限帧与非空画面检查、Validation、resize/recompile、固定时间动画/参数响应，以及受影响的已有示例回归。构建通过不能代替视觉或 GPU 验收。
 
-当前状态：未实现，2026-10-24 开始独立工作包；不改变既有 M5 工作包的状态或验收范围。原站访问校验与公开源码替代来源必须在交付中如实说明。
+当前状态：已验收，2026-10-24 [独立 QA ACCEPTED](../../build/qa-volumetric-integration/qa-report.md) + DOCUMENTED，Lead 最终核对待完成。两配置 core145/options4、Debug 定向 CTest8/8/Release3/3（0skip）、各11场景36提交、Debug 显式 SyncVal0error、无噪声原作 CPU 参考890像素、PPM编码全部645120像素字节误差0及实际 GUI/bat退出0。原站/原texture403，公开归档来源与许可见 [NOTICE](../../examples/volumetric_integration/NOTICE.md)；未运行原站逐像素或强制 sRGB attachment。详细范围见 [usage](../usage/volumetric-integration-example.md)。不改变既有 M5 工作包的状态或验收范围。
 
 ## 5. 如何修改或增加需求
 

@@ -1,6 +1,6 @@
 # UI 与性能统计设计
 
-核对日期：2026-10-10（B实例/slot编辑与Clear；统计口径不变）。
+核对日期：2026-10-24（REQ-16 侧栏补充；B实例/slot编辑与Clear及统计口径保持）。
 
 源码：[UIOverlay](../../src/KuEngine/UI/UIOverlay.h)、[Engine::render](../../src/KuEngine/Core/Engine.cpp)、[CommandList](../../src/KuEngine/RHI/CommandList.cpp)。
 
@@ -69,3 +69,9 @@ Mclaren 的 FreeFly 在此基础上还要求右键场景焦点：`WantCaptureKey
 2026-10-21 新示例复用唯一侧栏和 path/GBuffer 控件：Ceiling light [0,3] 仅缩放四点光，Exposure [.1,3]，Neutral fill [0,.5]；Material 选择短/高盒，独立 Roughness [.04,1]、Metallic [0,1]；Camera yaw [-16,16]°、pitch [-12,12]°、distance [3.2,5.5]，Reset view 恢复 0/0/4.1。参数进入本帧 post-UI snapshot；路径请求下一 Fence-safe update 生效，切换/resize/recompile 保留编辑。相机没有新增鼠标 Orbit/FreeFly。
 
 普通 Deferred 10 draws/114 submitted vertices，Forward 9/111；Prepare/空 Blend/可选 transfer 读回不产生 draw，ImGui 继续不计入业务统计。两盒独立 M/R、灯强、曝光、Base/Normal/Roughness/Metallic/ShadingModel/Scene、路径保留、相机和侧栏收展均由独立 QA 实际 GUI 观察，见 [CornellBox](../usage/cornell-box-example.md)。其余八视图映射延用公共实现，不把本轮观察扩成八视图全部重验。
+
+## VolumetricIntegration 参数与统计（2026-10-24）
+
+ScenePass 复用唯一侧栏：Pause、Time [0,60] 秒、四种 Integration（split 左 basic/右 analytical）、Fog density [0,5]、Strong height fog [0,10]、Light intensity [0,5]、View steps [16,256]、Shadow steps [1,64]、Fog noise、Volumetric shadows 和 Reset reference defaults。UI 范围与 CLI 可不同，CLI 精确范围见 [使用说明](../usage/volumetric-integration-example.md)。Reset 恢复 time=0/动画、analytical、density/light=1、strongFog=0、100/16 步、noise/shadows 开启。固定相机不响应 Orbit/FreeFly 或原作 iMouse。
+
+CPU Settings 在本帧 UI 后以 push constants 记录到 ScenePass；Display 使用本槽 descriptor，参数不写共享 GPU UBO。两个全屏三角形合计 2 draws / 6 vertices，可选读回为 0/0，UI 统计口径不变。场景投影使用 sceneFramebuffer 比例，侧栏收展不拉伸球形介质。独立 QA 实际操作了暂停/时间、全部积分模式、密度/强雾/光、noise/shadows/reset 与侧栏收展，并验证应用正常退出；本包 [QA 证据](../../build/qa-volumetric-integration/qa-report.md) 不替代 M5 或其他示例整体验收。

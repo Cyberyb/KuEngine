@@ -65,3 +65,7 @@ WP03-A ScenePathControl只借用静态分支Pass，CPU request下一Fence-safe u
 ViewerPathSmoke/Readback为examples/common有限验证，不改Graph API/Runtime调度；bounded transfer→HOST_READ配对actual completedSubmit，late resize保留copy extent到统计推进，exception unmap只helper修复。config-isolated aggregate evidence不代表所有legacy prefix隔离；完整映射/状态与未运行边界见 [回归说明](../usage/regression-checks.md)。
 
 Geometry CLEAR/STORE 写四 RGBA16F MRT 与共享深度；Lighting 四 FragmentSampled 读并 LOAD/STORE 写共享 ForwardSceneColor，Empty discard 保留 Background。Blend 使用 Geometry 保留下来的深度，Display 两路径读取同一 SceneColor；兼容 deferredSource 名称为共享资源名别名。Graph 自动生成 attachment→sample 与写后 LOAD 的同步2屏障；Lighting/GBuffer消费者保持启用而Geometry禁用会被内容预检拒绝，运行中消费者读disabled/stale Prepare会被checked snapshot拒绝。Lighting 按 generation/ImageView 重绑。示例 Readback 在 scope 外声明 TransferSrc/imported TransferDst→HOST_READ；Fence 后 invalidate/读取。HDR RGBA16F、UNORM/SRGB、visibility 与 pre/post Blend D32 深度使用有界 staging，最多2048×2048，不扩展公共 Graph API。布局/所有权见 [Deferred](13-deferred-rendering.md)。
+
+## VolumetricIntegration 消费者（2026-10-24）
+
+新示例通过既有接口声明每槽 `VolumetricSceneColor`（swapchain-relative RGBA16F，color/sampled/transfer-src），pool 拥有图像；Scene CLEAR/STORE → Display FragmentSampled，另一路直接给可选 Readback TransferSource。Readback 拥有每槽 staging，importBuffer 仅借用当前槽，声明 TransferDestination 与最终 HOST_READ；读回发生在 Display 后、Runtime UI 前。重用槽 Fence 后才能 invalidate/map，resize/recompile/退出等待全部帧并 inspect pending，保留 copy 时的 extent/scene rect 与实际提交信息。总附件像素上限 2048² 只适用于此可选读回。新增消费者未改 Graph 公共 API、export 或资源所有权契约；细节见 [示例设计](04-triangle-example-tech.md)。

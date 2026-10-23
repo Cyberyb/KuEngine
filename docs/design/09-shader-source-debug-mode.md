@@ -1,6 +1,6 @@
 # 构建与 Shader 编译设计
 
-核对日期：2026-10-10。
+核对日期：2026-10-24（REQ-16 构建补充；历史验收日期单独保留）。
 
 源码：[根 CMake](../../CMakeLists.txt)、[Presets](../../CMakePresets.json)、[库目标](../../src/CMakeLists.txt)、[Mclaren CMake](../../examples/mclaren/CMakeLists.txt)、[Shader 脚本](../../examples/mclaren/shaders/compile_shaders.bat)。
 
@@ -8,7 +8,7 @@
 
 项目使用 CMake 3.27+、C++20，KuEngine 为静态库，公开 include 根为 src。头文件和实现一起位于 src/KuEngine，没有独立 include 目录。
 
-KUENGINE_BUILD_EXAMPLES 和 KUENGINE_BUILD_TESTS 默认开启。App 包含 Triangle、Cube、Alpha3Pass、Mclaren、ForwardReuse、GraphResourceProbe 与 CornellBox；CTest 默认注册 core_tests 和 mclaren_camera_tests。根选项 `KUENGINE_ENABLE_GPU_SMOKE_TESTS` 默认关闭；开启后要求同时构建示例，并注册含 GraphResourceProbe 的 `gpu-smoke` 有限帧测试、受控 Validation error 负例，以及 `gpu-negative` 标签的缺 Shader 初始化失败负例。
+KUENGINE_BUILD_EXAMPLES 和 KUENGINE_BUILD_TESTS 默认开启。App 包含 Triangle、Cube、Alpha3Pass、Mclaren、ForwardReuse、GraphResourceProbe、CornellBox 与 VolumetricIntegration；CTest 默认注册 core_tests、mclaren_camera_tests 和 volumetric_options。根选项 `KUENGINE_ENABLE_GPU_SMOKE_TESTS` 默认关闭；开启后要求同时构建示例，并注册含 GraphResourceProbe 的 `gpu-smoke` 有限帧测试、受控 Validation error 负例，以及 `gpu-negative` 标签的缺 Shader 初始化失败负例。
 
 KuEngine 库目标按 CMake 配置公开 `KU_DEBUG_BUILD`：Debug 为 `1`，其余配置为 `0`。该定义同时控制应用日志级别与 Debug 构建的 Vulkan Validation 请求；它不是 Shader 调试开关，也不改变 Shader 编译脚本的模式选择。
 
@@ -57,3 +57,11 @@ B当前永久新增`test_mclaren_scene_editing` CPU覆盖、`edit_pixel_checks`�
 2026-10-21 新增 [CornellBoxApp target](../../examples/cornell_box/CMakeLists.txt)，七个 App 均在 [examples/CMakeLists](../../examples/CMakeLists.txt) 注册。CornellBox 依赖 KuEngineForwardShaders，不增加自定义 shader 或复制外部素材；[启动 bat](../../examples/cornell_box/run_cornell_box.bat) 默认 Debug，也接受 Release，配置/构建 build 后在 bin/配置目录前台启动并返回退出码；它不额外运行 compile_shaders.bat。
 
 [test_core](../../tests/CMakeLists.txt) 纳入 CornellBoxScene.cpp 和 [几何/材质测试](../../tests/core/test_cornell_box.cpp)。GPU smoke 开启时当前注册 33 项，新增 gpu_smoke_cornell_box（默认4帧）及 gpu_smoke_cornell_box_resize_recompile（6帧，1120×800，二次compile），均要求 Validation，读回输出按 cornell-evidence/$<CONFIG> 隔离。2026-10-21 独立 QA 只跑 Debug 定向7/7（0skip）及 Release core142/142，并另行启动3组真实 Release GPU；不是33项全跑。bat 仅源码核对，等价 CMake/应用命令实际通过，见 [QA](../../build/qa-cornell-box/qa-report.md)。
+
+## VolumetricIntegration 构建与验证注册（2026-10-24）
+
+[VolumetricIntegrationApp](../../examples/volumetric_integration/CMakeLists.txt) 是第八个 App，在 examples/CMakeLists 注册；仅依赖 KuEngine/ImGui，三个 GLSL stage 位于示例目录。`KuEngineVolumetricShaders` 使用每个文件的 custom OUTPUT + DEPENDS，App 显式依赖该 target，输出到 `bin/$<CONFIG>/shaders/volumetric_integration/*.spv`；Debug 使用 glslc -g -O0。Developer 实际 shader-only 增量构建确认修改 shader 时间戳触发 SPIR-V 重建、exe 未 relink，另一配置 hash 保持，见 [交接](../../build/volumetric-integration-dev/handoff.md)。无新增反射或热重载。
+
+[run_volumetric_integration.bat](../../examples/volumetric_integration/run_volumetric_integration.bat) 默认使用 preset 目录 `build/cmake-tools/vs2022-vcpkg`，支持 Debug/Release 与 KUENGINE_BUILD_DIR；配置、构建后在 binary folder 前台运行并返回应用退出码。该新脚本与既有默认 build 目录的脚本分别说明，不要求改动其他示例启动约定。
+
+默认新增 `volumetric_options` CTest（4 个 CPU 用例）；开启 GPU smoke 后另要求 Python3 Interpreter，注册 `gpu_smoke_volumetric_integration`，标准库 checker 创建独立 `volumetric-evidence/$<CONFIG>/run-*` 并对实际 raw payload 算 SHA256。实际失败不映射成 77 通过。QA fresh 配置 `ctest -N` 为 40 项（含当前 M5 工作区注册），该计数不代表全部已跑；本包独立 Debug 定向 8/8、Release 3/3，均 0 skip。历史 Cornell 33 项/B 31 项仍仅描述其当时注册。构建/CLI/真实 GPU/GUI/bat 证据见 [使用说明](../usage/volumetric-integration-example.md)。

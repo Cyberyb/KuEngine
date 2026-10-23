@@ -1,6 +1,6 @@
 # KuEngine 实施工作包
 
-更新日期：2026-10-11。本页将 [开发路线图](roadmap.md) 拆为可独立实现、验收和文档同步的工作包。需求范围以 [产品需求](product-requirements.md) 为准；工作包状态只在 QA 给出结论后变更。`ACCEPTED` 表示该工作包的验收条件通过，不表示所属阶段已经完成。
+更新日期：2026-10-24。本页将 [开发路线图](roadmap.md) 拆为可独立实现、验收和文档同步的工作包。需求范围以 [产品需求](product-requirements.md) 为准；工作包状态只在 QA 给出结论后变更。`ACCEPTED` 表示该工作包的验收条件通过，不表示所属阶段已经完成。
 
 ## 状态与使用方式
 
@@ -80,3 +80,9 @@
 | M3 | 已完成 | WP01～04 已验收；Graph 资源、同步、Compute、native contract 与 Forward 输出出口满足 |
 | M4 | 已完成，Lead最终审计通过 | WP01/02/A/B门禁已闭、C ACCEPTED + DOCUMENTED、REQ-01～13首轮已验收；Lead最终审计通过并关闭，本轮不启动M5 |
 | M5 | 未开始 | M5-WP01～03 通过 |
+
+## 独立示例工作包：VolumetricIntegration / REQ-16
+
+状态：ACCEPTED + DOCUMENTED（2026-10-24），Lead 最终核对待完成。依赖现有 Runtime/Graph/RHI/UI；不重开 M4，不将 M5-WP01 改为已验收。范围为 SebH XlBSRz 程序化场景/体积积分、专用显示、侧栏/CLI、有界实际提交读回、来源许可和构建启动。
+
+依据：[开发交接](../../build/volumetric-integration-dev/handoff.md)、[独立 QA ACCEPTED](../../build/qa-volumetric-integration/qa-report.md)。Debug/Release 六目标构建0、core145各通过，options4；定向 CTest8/8和3/3、0skip，各11场景36提交、新示例1/2槽/尾帧/resize-recompile、CPU参考890像素、gamma编码、GUI/bat与 scoped 旧例回归通过。Debug显式SyncVal0error；Release为真实GPU退出0，不宣称ReleaseValidation。强制sRGB实机、原站逐像素、RenderDoc/soak/完整旧GPU矩阵未运行；[使用说明](../usage/volumetric-integration-example.md) 保留精确边界。

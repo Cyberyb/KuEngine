@@ -82,7 +82,8 @@ KuEngine/
 │   ├── mclaren/           # Model, materials, depth and PBR
 │   ├── forward_reuse/     # Shared Forward/Deferred rendering fixtures
 │   ├── graph_resource_probe/ # Graph graphics/compute resources
-│   └── cornell_box/       # Procedural Cornell box, deferred PBR
+│   ├── cornell_box/       # Procedural Cornell box, deferred PBR
+│   └── volumetric_integration/ # SebH XlBSRz volumetric integration
 ├── docs/                  # Documentation center
 │   ├── design/            # Current architecture and design contracts
 │   ├── logs/              # Concise daily iteration logs
@@ -101,12 +102,13 @@ KuEngine/
 - [RHI Layer Design](docs/design/01-rhi-layer.md)
 - [RenderPass Interface](docs/design/02-render-pass.md)
 - [Logging & Debugging](docs/design/03-logging.md)
-- [七个示例的设计](docs/design/04-triangle-example-tech.md)
+- [八个示例的设计](docs/design/04-triangle-example-tech.md)
 - [UI 与性能统计](docs/design/05-ui-layer.md)
 - [每日迭代日志](docs/logs/README.md)
 - [Bug 维护规则](docs/bugs/README.md)
 - [Triangle 示例运行指南](docs/usage/triangle-example.md)
 - [CornellBox 程序化延迟 PBR 示例](docs/usage/cornell-box-example.md)
+- [VolumetricIntegration / Shadertoy XlBSRz 复刻](docs/usage/volumetric-integration-example.md)（REQ-16，QA ACCEPTED + DOCUMENTED）
 
 ## Version History
 
@@ -120,4 +122,4 @@ Current capabilities and future priorities are maintained in [Architecture](docs
 
 ## License
 
-MIT
+MIT. The adapted SebH VolumetricIntegration shader is CC BY-NC-SA 3.0; see its [attribution and modification notice](examples/volumetric_integration/NOTICE.md).

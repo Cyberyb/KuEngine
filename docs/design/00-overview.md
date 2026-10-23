@@ -1,6 +1,6 @@
 # 当前模块设计总览
 
-核对日期：2026-10-10。以当前工作区源码为准；宏观能力与未来方向分别见 [架构现状](../structure/current-architecture.md) 和 [路线图](../structure/roadmap.md)。
+核对日期：2026-10-24（REQ-16 示例层补充）。以当前工作区源码为准；宏观能力与未来方向分别见 [架构现状](../structure/current-architecture.md) 和 [路线图](../structure/roadmap.md)。
 
 ## 模块关系
 
@@ -21,6 +21,8 @@ flowchart TB
     Core --> RHI
     Schedule --> Pass
     Schedule --> RHI
+    Volumetric["VolumetricIntegration：场景积分 / 专用显示 / 可选读回"] --> Schedule
+    Volumetric --> RHI
     Pass --> Asset
     Procedural["CornellBoxScene：程序化 MeshData / MaterialData"] --> Render
     Pass --> Render
@@ -33,7 +35,7 @@ flowchart TB
     UI --> RHI
 ```
 
-`ApplicationRunner`是七个示例的共享启动入口，解析有限帧/resize/Validation冒烟参数，构造Engine并在其销毁后归纳退出结果。Engine统一执行acquire、record、submit、present，并生成唯一ViewerLayout快照。RenderPipeline执行Graph编译结果、管理各节点Dynamic Rendering Scope；Pass记录业务命令。UIOverlay唯一拥有右侧栏状态，Pipeline只提供Pass/Graph内容；它们仍直接依赖ImGui。
+`ApplicationRunner`是八个示例的共享启动入口，解析有限帧/resize/Validation冒烟参数，构造Engine并在其销毁后归纳退出结果。Engine统一执行acquire、record、submit、present，并生成唯一ViewerLayout快照。RenderPipeline执行Graph编译结果、管理各节点Dynamic Rendering Scope；Pass记录业务命令。UIOverlay唯一拥有右侧栏状态，Pipeline只提供Pass/Graph内容；它们仍直接依赖ImGui。
 
 ## 所有权与初始化信息
 
@@ -42,7 +44,7 @@ flowchart TB
 | Window、Instance、Surface、Device、SwapChain | Engine | 引用/原始句柄供运行时使用；Instance 还持有验证请求、可用性和消息计数状态 |
 | ApplicationRunOptions、共享 ValidationMessageTracker | ApplicationRunner | 将命令行冒烟语义传给 Engine；Tracker 在 Instance/Messenger 销毁后仍可读取最终已捕获计数 |
 | Pending / CompletedFrameStatistics | Engine 的 CompletedFrameStatisticsTracker | 一份提交在 Fence/deviceIdle 后从 pending 变为 completed，包含同一提交的 CPU、GPU、Draw 和 Vertices |
-| CommandPool、CommandList、SyncManager | Engine | 在单帧同步边界内复用；Engine 不再拥有 RuntimeDepth |
+| CommandPool、CommandList、SyncManager | Engine | 当前支持 1/2 帧槽，复用前等待对应槽；Engine 不再拥有 RuntimeDepth |
 | RenderPipeline、UIOverlay | Engine | Engine 驱动生命周期 |
 | SidebarState / SidebarLayoutPolicy | UIOverlay | 单一右侧栏状态、区段和布局策略；帧快照供 Engine、输入与绘制共同使用 |
 | ViewerLayout、SceneInteractionGate | Engine 帧数据 / 各交互 Pass | 前者按逻辑窗口和 framebuffer 映射场景矩形；后者仅保存拖动闩锁与输入 epoch |
@@ -66,13 +68,13 @@ flowchart TB
 
 ## 当前边界
 
-- Runtime 只允许 `framesInFlight == 1`。
+- 当前工作区 Runtime 支持 `framesInFlight` 为 1 或 2，Graph 内部资源按槽隔离。REQ-16 验证新示例的两种槽数；M5-WP01 整体验收仍独立、未完成。
 - Graph 已有 typed image/buffer descriptor、内部 allocation pool、checked handle/use/range resolve、candidate resize、synchronization2、Compute callback、受约束 native scope，以及 Graph-owned Forward SceneColor/Depth → Display → Overlay → Present 输出；内部 allocation 可缓存但内容逐帧失效。资源别名、多 Queue 尚未实现；系统不能自动检测任意裸 Vulkan 命令。
 - RHI 中实际类为 `RHITexture`，持有 Image/View/VMA allocation；Sampler 由上层持有。没有独立 RHIImage 或公共 Descriptor Builder。
 - AssetPath 统一规范资源根下相对路径并生成去重键；SceneLoader 以候选 SceneData 加载、验证并发布。HDRImage 是严格校验尺寸、元素溢出和 HDR 像素的纯 CPU 资产，不持有 Vulkan 资源。
 - `ForwardProgram` / `ForwardRenderer` 是 Mclaren、ForwardReuse 与 CornellBox 的公共绘制路径；Mclaren 不再合并公共主 mesh 或使用旧 renderer 主路径。树中旧 `MclarenRenderResources`/shader 文件未构建、未运行。
 - MaterialData 显式表达 PBR/Unlit、Opaque/Mask/Blend/cutoff/doubleSided、五个独立纹理和各自 UV；Scene 实例持有 TRS、material reference 和可选 override。材质 variant 只按 descriptor 资源差异去重，scalar/UV 在 draw UBO。
-- Mclaren Sidebar/CLI 对模型/HDR 仅排队不可变请求；当前单帧 Runtime 在 Fence 已完成、acquire 后、录制前同步构建候选。成功原子交换已发布 state，失败保留活跃路径、generation、相机和统计；没有异步加载、watcher、缓存或多帧 retire。
+- Mclaren Sidebar/CLI 对模型/HDR 仅排队不可变请求；当前 Runtime 在复用槽 Fence 已完成、acquire 后、录制前处理 update；涉及共享 GPU 对象的候选发布另用全帧安全点。成功原子交换已发布 state，失败保留活跃路径、generation、相机和统计；没有异步加载、watcher、缓存或多帧 retire。
 - Mclaren 相机提供 OrbitInspect / FreeFly 两种模式和统一 `CameraFrame`，`CameraInputSample` 仅将 Runtime Input/ImGui 状态适配到示例控制器；Cube 保持原有拖动控制，尚未接入 FreeFly。`OrbitCameraController` 的历史文件名在双模式后仍保留，是当前示例层技术债。
 - Draw Call/顶点统计由 CommandList 的饱和累加器记录；CPU、GPU、Draw、Vertices 通过 completed-submit 快照同时发布。FPS/Frame 保持当前主循环样本。右侧栏展开时保留场景区域，收起后以紧凑统计或仅重开控件覆盖在场景上；参数内容由 Pass 提供并按 Pass 索引隔离 ImGui ID。Debug 构建中，Instance 会在可用时将 Vulkan Validation/Debug Utils 消息写入日志并累计警告、错误数；ApplicationRunner 会在 Runtime 销毁后将已捕获的 Validation error 映射为失败退出码，有限帧参数只决定自动化运行范围。
 - 当前C++20/CMake/Vulkan体系，共享RGBA16F/天空/Blend/普通Display后Overlay；WP03-A实现config/CLI/UI安全路径切换、八GBuffer views。debug直接采样MRT替换Display，Geometry/Lighting/Blend仍执行，不读SceneColor。正常切换不重载/上传资产或compile图。B实现Mclaren实例/slot编辑与真正ClearEnvironment，但不是通用ECS/编辑器；完整IBL/OIT/多帧retire不属本次首轮范围。
@@ -84,3 +86,7 @@ flowchart TB
 原架构 PNG 已保留在 [历史架构图片](../structure/archive/kuengine-architecture.png)。其中“Engine::render 是占位”和“示例持有深度”的文字对应迁移前状态；当前模块关系以上方 Mermaid 和专项设计为准。
 
 2026-10-21 核对：CornellBox 新增示例层装配，公共接口和所有权契约未改；其 Renderer 在材质、环境、model、Program 之前释放。读回仅用于普通 Deferred 有限帧验证，详见 [示例设计](04-triangle-example-tech.md)。
+
+## VolumetricIntegration 示例层所有权（2026-10-24）
+
+`ScenePass` 拥有场景 pipeline/shader/CPU Settings，录制 48 字节 push constants；Graph pool 拥有每槽 `VolumetricSceneColor` RGBA16F。`DisplayPass` 拥有 sampler/pipeline 与每槽 descriptor，直接采样当前槽线性颜色，按参考 pow(1/2.2) 显示。可选 `ReadbackPass` 拥有每槽 staging，Graph 只借用 buffer；共享 CaptureReport 保留析构期导出错误供 main 返回失败。执行顺序为 Scene → Display → 可选 Readback → Runtime UI，Readback 的数据直接来自 SceneColor。新增消费者未修改公共 RenderPass/Graph 接口；完整数据流见 [04](04-triangle-example-tech.md)。

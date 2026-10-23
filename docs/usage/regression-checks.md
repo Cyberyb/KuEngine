@@ -12,7 +12,7 @@ cmake --build --preset debug
 ctest --preset debug
 ```
 
-启用GPU smoke后当前注册33项；CornellBox本轮定向范围见下节。B当时31项，独立fresh Debug/Release全build0，各core137/camera40；显式Debug SyncVal31Passed/0Skipped/0Failed actual0 190.13s，Release3Passed/28Skipped/0Failed actual0 12.17s。另20真实Release GPU groups逐组actual0；77/CTest skip非GPU通过，Release不捕获Validation。已有build命令须指同构建目录，不混preset。
+2026-10-24 QA fresh 工作区启用GPU smoke后注册40项（含M5在途工作区注册）；本包仅跑下文VolumetricIntegration定向范围。CornellBox在2026-10-21时注册33项，其定向范围见后文。B当时31项，独立fresh Debug/Release全build0，各core137/camera40；显式Debug SyncVal31Passed/0Skipped/0Failed actual0 190.13s，Release3Passed/28Skipped/0Failed actual0 12.17s。另20真实Release GPU groups逐组actual0；77/CTest skip非GPU通过，Release不捕获Validation。已有build命令须指同构建目录，不混preset。
 
 GraphResourceProbe 的手动 Synchronization Validation 前置命令为：
 
@@ -263,3 +263,15 @@ ApplicationRunner 会在 Engine 销毁后检查共享 Tracker，并把已捕获�
 QA 对 M1-WP03 的自动证据包括 Debug/Release CPU 测试、Debug GPU Smoke 7/7，以及 Release 与缺 Validation Layer 的 skip/失败语义检查；这些不等于完整的连续人机输入覆盖。
 
 历史M0/WP02公共Shader跨配置问题已在A按bin/$<CONFIG>落实隔离，旧失败保留。部分同步wait返回值仍未统一检查；aggregate配置隔离不代表所有legacy prefix隔离。最新C输入/自测/豁免/专项NOT RUN边界见前节。
+
+## VolumetricIntegration / REQ-16 独立验收（2026-10-24）
+
+正式 [QA报告](../../build/qa-volumetric-integration/qa-report.md) 为 ACCEPTED，文档已同步（DOCUMENTED），Lead 最终核对待完成。新包实现17文件冻结前后0 hash mismatch，git diff --check0；QA未修改实现。详细可复现命令和实际证据路径见 [使用说明](volumetric-integration-example.md)。
+
+- fresh QA Debug/Release 六目标构建退出0，各core145/145、options4；Debug定向CTest8/8、Release3/3，均0skip，非完整40项全跑。
+- 每配置11GPU场景/36实际提交：1/2槽固定时间同图、实际submit时间推进、密度/强雾积分能量次序、最低16步/零密度/零光、resize-recompile及尾帧通过。普通与读回均2draws/6vertices。
+- Debug显式Synchronization Validation，errors=0，唯一既有EOS overlay loader warning；Release真实GPU退出0，不声明ReleaseValidation。
+- 独立原作无噪声CPU参考5场景/890像素/2670通道通过，最大相对误差<0.097%；baseline645120像素原pow(1/2.2)PPM编码最大字节误差0。真实GUI暂停/参数/复位/侧栏及bat启动、app退出0、bat退出0通过。
+- Triangle/CornellBox/ForwardReuse定向GPU回归通过；不扩大为旧GPU全部矩阵、M5整体或通用PBR体积效果验收。
+
+NOT RUN：强制物理sRGB attachment、原站实时逐像素（原站/原纹理403）、RenderDoc、soak、完整旧GPU矩阵及其他硬件/OS。来源和CC BY-NC-SA3.0、替代噪声/固定机位差异见 [NOTICE](../../examples/volumetric_integration/NOTICE.md)。QA final-preview.png 是实际GPU PPM转换预览，不是Swapchain截图。
