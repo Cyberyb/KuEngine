@@ -11,6 +11,7 @@ namespace ku {
 
 struct ApplicationRunOptions {
     EngineRunOptions engine;
+    std::optional<uint32_t> framesInFlight;
     bool smokeArgumentsPresent = false;
     bool requireValidation = false;
     bool injectValidationError = false;

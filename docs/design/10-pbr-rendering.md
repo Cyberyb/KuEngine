@@ -68,3 +68,7 @@ Skybox全屏三角形位于独立SceneBackground Scope，关闭深度测试/写�
 - 实例独立TRS/slot材质与PBR/Unlit已接通；textureBindings.source仅选择glTF内置纹理或禁用，不支持任意外部贴图路径加载；尚无跨场景缓存或异步上传。
 - 统计使用 CommandList::drawIndexed；原始 Vulkan draw 无法自动计数。
 - tests/core/test_pbr.cpp 验证CPU辅助逻辑；永久GPU fixtures/checker覆盖多材质、非平坦normal/UV、sky/env和线性Blend，阈值与证据见 [回归说明](../usage/regression-checks.md)，不是全场景历史像素基线。
+
+## CornellBox 公共资源消费者
+
+2026-10-21 [CornellBoxPass](../../examples/cornell_box/CornellBoxPass.cpp) 直接将程序化 MeshData 上传至 GpuModelAsset，为八个无贴图 PBR/Opaque 材质建立既有 fallback/descriptor，并用代码构造 1×1 白环境（fill=.25）。Source 长期拥有 model/material/environment/Forward与Geometry Program，四 phase Renderer 各自持有 UBO；释放 renderer 后才释放借用资源和 Program。两盒材质编辑仅改变 scalar/draw 数据，不上传几何纹理。顶灯 emissive 固定、灯强仅影响四暖点光；共享 Shader 和公共 GPU 接口未改，现有简化环境贡献不等于完整 IBL、GI、阴影或真实面光积分。详见 [04](04-triangle-example-tech.md)。

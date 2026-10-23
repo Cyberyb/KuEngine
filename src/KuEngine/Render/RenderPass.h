@@ -1,4 +1,4 @@
-﻿// KuEngine 渲染 Pass 模块：定义单个渲染阶段的声明、执行、界面绘制与尺寸变化扩展接口。
+// KuEngine 渲染 Pass 模块：定义单个渲染阶段的声明、执行、界面绘制与尺寸变化扩展接口。
 #pragma once
 
 #include <cstdint>
@@ -23,6 +23,7 @@ struct FrameData {
     float    deltaTime;
     float    totalTime;
     ViewerLayout viewerLayout{};
+    uint64_t submittedFrame = 0; // next actual submission, never the rotating slot
 };
 
 enum class PassExecutionModel {

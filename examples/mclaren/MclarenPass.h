@@ -92,6 +92,7 @@ private:
     void resetAssetStates() noexcept;
 
     RHIDevice* m_device = nullptr;
+    std::function<void()> m_waitForAllFrames;
     ImageDesc m_colorTargetDesc{};
     ImageDesc m_depthTargetDesc{};
 

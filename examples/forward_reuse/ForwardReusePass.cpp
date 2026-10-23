@@ -204,17 +204,17 @@ void ForwardReusePass::initialize(const RenderContext& context)
     const size_t drawCapacity =
         m_scene.instances.size() * mesh.subMeshes.size();
     if (!m_renderer->initialize(
-            context.device, *m_program, drawCapacity, error)) {
+            context.device, *m_program, drawCapacity, error, context.framesInFlight)) {
         throw std::runtime_error(error);
     }
     if (pathControl().deferredAvailable()) {
         m_geometryRenderer = std::make_unique<ForwardRenderer>();
-        if (!m_geometryRenderer->initialize(context.device,*m_geometryProgram,drawCapacity,error)) throw std::runtime_error(error);
+        if (!m_geometryRenderer->initialize(context.device,*m_geometryProgram,drawCapacity,error, context.framesInFlight)) throw std::runtime_error(error);
     }
     m_blendRenderer = std::make_unique<ForwardRenderer>();
     m_backgroundRenderer = std::make_unique<ForwardRenderer>();
-    if (!m_blendRenderer->initialize(context.device, *m_program, drawCapacity, error)
-        || !m_backgroundRenderer->initialize(context.device, *m_program, 1, error))
+    if (!m_blendRenderer->initialize(context.device, *m_program, drawCapacity, error, context.framesInFlight)
+        || !m_backgroundRenderer->initialize(context.device, *m_program, 1, error, context.framesInFlight))
         throw std::runtime_error(error);
     pathControl().initialize(asset::resolveRenderPath(config.renderPath,m_pathOverride));
     m_deferred = pathControl().path() == asset::RenderPath::Deferred;

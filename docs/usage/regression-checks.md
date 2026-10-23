@@ -12,7 +12,7 @@ cmake --build --preset debug
 ctest --preset debug
 ```
 
-启用GPU smoke后当前全CTest31项。B独立fresh Debug/Release全build0，各core137/camera40；显式Debug SyncVal31Passed/0Skipped/0Failed actual0 190.13s，Release3Passed/28Skipped/0Failed actual0 12.17s。另20真实Release GPU groups逐组actual0；77/CTest skip非GPU通过，Release不捕获Validation。已有build命令须指同构建目录，不混preset。
+启用GPU smoke后当前注册33项；CornellBox本轮定向范围见下节。B当时31项，独立fresh Debug/Release全build0，各core137/camera40；显式Debug SyncVal31Passed/0Skipped/0Failed actual0 190.13s，Release3Passed/28Skipped/0Failed actual0 12.17s。另20真实Release GPU groups逐组actual0；77/CTest skip非GPU通过，Release不捕获Validation。已有build命令须指同构建目录，不混preset。
 
 GraphResourceProbe 的手动 Synchronization Validation 前置命令为：
 
@@ -23,6 +23,24 @@ $env:VK_LAYER_ENABLES='VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_E
 启动后先确认Validation startup，核Probe READY/COMPUTE_READY/RESIZE、1draw/3提交索引、蓝三角/真实resize与实际正常exit/error；marker不是画面证明。完整命令与原VK_LAYER_ENABLES保存/恢复见[GraphResourceProbe](graph-resource-probe-example.md)、[开发渲染特性](developing-render-features.md)。本页环境设置片段不是完整wrapper；实际复跑应用try/finally恢复调用者原值。
 
 ## 可选 GPU Smoke
+
+### CornellBox / REQ-15 独立验收（2026-10-21）
+
+正式 [QA报告](../../build/qa-cornell-box/qa-report.md) **ACCEPTED**。12个实现/测试/构建文件前后SHA256一致（`source-before.json` / `source-after.json`），QA无实现修复，文档同步期间代码继续冻结。此包独立于M5，不重开M4；以下只描述本包实际执行范围。
+
+| 检查 | 实际结果与证据（相对 build/qa-cornell-box） |
+|---|---|
+| 独立配置/构建 | VS2022 x64/vcpkg；Debug CornellBoxApp/test_core/test_mclaren_camera/TriangleApp/ForwardReuseApp，Release CornellBoxApp/test_core，均退出0；configure.log、build-Debug.log、build-Release.log |
+| Debug定向CTest | 7/7，0skip：core_tests（142）、mclaren_camera_tests（组合40）、Cornell默认与resize/recompile、Triangle、ForwardReuse及其recompile；ctest-Debug.log。当前注册33项未全跑 |
+| Release CPU | core142/142，ctest-Release-core.log、Release-core-detail.log |
+| Debug同步验证 | 显式VK_LAYER_ENABLES同步验证，Cornell两项复跑errors=0；ctest-Debug-cornell-detail.log，startup enable有记录。既有EOS重复Overlay注册warning保留 |
+| 真实Release GPU | 默认Deferred4帧、resize/recompile6帧、Forward3帧，均actual0/SMOKE_PASS/matched；gpu-Release-{default,resize,forward}.log。Deferred10/114、Forward9/111，未依赖77skip，也未以FPS证明性能提升 |
+| 独立原始GPU检查 | check_raw.py独立解析BaseMetallic/PositionModel/HDR half，用ray/plane/OBB验证最近表面；默认2499/resize1720样本，两配置通过，最大世界位置误差0.000980。红左绿右、PBRcode1、metallic0、两盒位置/遮挡和灯面HDR R>12通过；raw-{Debug,Release}-{default,resize}.json |
+| 真实GUI | gui-Debug.log及当场工具原图观察：灯强1→0→1、曝光、两盒独立M/R、Base/Normal/Roughness/Metallic/ShadingModel/Scene、Deferred↔Forward保留、yaw/pitch/distance/Reset、侧栏收展；正常退出0/SyncVal errors0。未另存截图payload，不编造持久截图链接 |
+
+运行命令、bat/preset目录和读回格式见 [CornellBox使用说明](cornell-box-example.md)。[final-default.png](../../build/qa-cornell-box/final-default.png) 来自实际GPU HDR经CPU Reinhard/sRGB转换，是场景预览，非Swapchain截图。读回仅为有限帧普通Deferred/PBR验证，容量2048²，非任意交互/路径/debug的通用截图。
+
+NOT RUN：完整33项CTest/全部旧M4 GPU、RenderDoc、低能力设备、soak、额外FreeFly/minimize/focus stress、bat实跑（仅源码核对，等价CMake和应用命令已实际执行）。无强制检查阻塞，无需新增bugs。Release未启用Validation；四点光/常量环境仅演示既有简化PBR，无阴影、GI、真实面光积分或完整IBL。既有公共侧栏长提示横向裁剪/滚动不影响核心控件，QA未判定阻塞。
 
 ### M4-WP03-C 最终产品验收与证据边界
 

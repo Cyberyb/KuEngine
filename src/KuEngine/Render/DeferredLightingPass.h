@@ -3,6 +3,7 @@
 #include "RenderPass.h"
 #include <functional>
 #include <memory>
+#include <vector>
 
 namespace ku {
 class RHIBuffer;
@@ -27,6 +28,6 @@ private:
     GBufferTargets m_targets{};
     ImageDesc m_outputDesc{};
     std::array<ImageHandle, gbufferAttachmentCount> m_images{};
-    std::unique_ptr<State> m_state;
+    std::vector<std::unique_ptr<State>> m_states;
 };
 } // namespace ku

@@ -1,6 +1,6 @@
 # KuEngine 开发路线图
 
-更新日期：2026-10-11。本路线以“小型 Vulkan 渲染引擎，服务渲染特性的快速开发与验证”为目标。不预设发布日期，M0～M5 是工作阶段，不是软件发布版本。
+更新日期：2026-10-21。本路线以“小型 Vulkan 渲染引擎，服务渲染特性的快速开发与验证”为目标。不预设发布日期，M0～M5 是工作阶段，不是软件发布版本。
 
 需求见 [产品需求](product-requirements.md)，边界见 [目标架构](target-architecture.md)，实现见 [宏观架构](current-architecture.md)。M0～M3完成；M4已完成（WP01/02/A/B/C门禁已闭，最终QA ACCEPTED、Planner DOCUMENTED、Lead审计通过，REQ-01～13首轮已验收）；M5未开始。
 
@@ -109,11 +109,11 @@ M4 完成后按 REQ-01～13 的验收口径进行整体检查，形成首个功�
 
 ### M5：多帧安全与实验效率
 
-状态：未开始；本轮已完成M4并停止，不自动启动M5。
+状态：2026-10-21 用户明确启动双帧子范围 M5-WP01，实施中，未验收；本轮仅支持 2 帧在途（保留 1 帧兼容），其余 M5 要求不实施，M5 整体不标为完成。
 
 范围：Runtime、动态资源、Uploader、统计、Graph 调试与测试。
 
-- 先隔离各帧槽的 UBO、Descriptor、Depth、中间资源和 Timestamp Query，再放开 2～3 帧并行；校验 CPU/GPU 样本与帧槽/提交的对应关系。
+- 本次先隔离各帧槽的命令、UBO、Descriptor、Depth、中间资源和 Timestamp Query，再放开 2 帧在途；校验 CPU/GPU 样本与帧槽/提交的对应关系。共享资源变化允许显式全帧等待，正常帧只等待复用槽；3 帧不在本次范围。
 - 批量上传、减少不必要的 queueWaitIdle，建立安全延迟回收；保留明确的资源替换等待边界。
 - 增加逐 Pass 计时、必要的统计曲线、场景/渲染参数预设与结果导出，便于对同一实验反复比较。新增统计分别定义含义，不改变旧指标却沿用旧标签。
 - 完善图像对比场景、GPU 自动回归、能力检查和二次开发文档；基于实际使用收窄依赖与 API，修正构建/日志边界问题。
@@ -121,6 +121,10 @@ M4 完成后按 REQ-01～13 的验收口径进行整体检查，形成首个功�
 验收：多帧运行、resize、资产替换和路径切换无资源提前复用；Validation 检查通过。可用同一预设重复比较两条路径，能区分场景变化与计时采样变化；对比基线时记录设备、分辨率、同步/呈现设置，不把提升 FPS 当作唯一成功标准。
 
 ## 4. 下一轮建议执行的范围
+
+2026-10-24 独立示例工作包 VolumetricIntegration（REQ-16），状态：准备实现、未验收。先确认 XlBSRz 的源码/来源与场景，再实现独立全屏体积光 Pass、参数侧栏、构建启动和固定时间验证入口；Developer CODE_COMPLETE 后冻结实现，由 QA 独立执行真实 GPU/Validation、画面、1/2 帧及 resize/recompile 和相关回归，ACCEPTED 后由 Planner 同步 design/usage/现状/日志。本包复用当前工作区能力，不改变 M4/M5 的既有状态，不将无法访问的原站实时对照写为已通过。
+
+2026-10-21 独立示例工作包 CornellBox（REQ-15），状态：QA 已验收（ACCEPTED）、文档已同步（DOCUMENTED）、Lead 最终核对完成（DONE）。程序化房间/两盒/顶灯已接入现有 SceneDrawSource / Deferred / PBR / HDR Display；[独立 QA](../../build/qa-cornell-box/qa-report.md)通过 CPU 几何、真实 GPU 像素/GUI、显式 SyncVal 与 resize/recompile，Debug定向CTest7/7，两配置core142/142，另3组真实Release GPU；未跑完整33项CTest。Lead 已核对 design / usage /需求现状、217 个本地引用与12个实现文件冻结哈希；图示已静态检查，未渲染。该工作包复用 M4 已有能力，不启动 M5，不重开已闭合的 M4 验收。
 
 WP01/02/A/B门禁已闭；2026-10-11 C最终QA `build/qa-m4-wp03c-final/qa-report.md` ACCEPTED + DOCUMENTED，REQ-01～13首轮已验收。Lead已核对冻结输入、完整REQ-01～13证据、文档与阶段出口，M4 DONE；不派新实现或重复豁免的人工作业。范围与依赖遵守 [实施工作包](implementation-plan.md) 和 [M4任务包](../prompts/m4-task-packets.md)，M4已闭环并停止，不进入M5。
 

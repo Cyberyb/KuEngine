@@ -42,6 +42,8 @@ void DeferredLightingPass::initialize(const RenderContext& context)
     const auto targets = makeGBufferTargets(context.depthFormat, context.clearDepthStencil);
     const auto output = makeDeferredSceneColor(context);
     validateForwardGraphTargetFormats(context.device, output.format, context.depthFormat);
+    std::vector<std::unique_ptr<State>> candidates;
+    for (uint32_t slot=0;slot<context.framesInFlight;++slot) {
     auto candidate = std::make_unique<State>();
     candidate->device = &context.device;
     VkSamplerCreateInfo sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -76,7 +78,9 @@ void DeferredLightingPass::initialize(const RenderContext& context)
     desc.depthTest = desc.depthWrite = false;
     desc.cullMode = VK_CULL_MODE_NONE;
     candidate->pipeline = std::make_unique<RHIPipeline>(context.device, desc);
-    m_state = std::move(candidate); // only publish a complete candidate
+    candidates.push_back(std::move(candidate));
+    }
+    m_states.swap(candidates); // only publish complete slot candidates
     m_targets = targets;
     m_outputDesc = output;
 }
@@ -93,8 +97,8 @@ void DeferredLightingPass::setup(RenderGraphBuilder& builder)
 void DeferredLightingPass::execute(CommandList& commands, const FrameData& frame,
     RenderGraphResourceResolver& resources)
 {
-    if (!m_state) throw std::runtime_error("Deferred Lighting is not initialized");
-    auto& s = *m_state;
+    if (m_states.empty()) throw std::runtime_error("Deferred Lighting is not initialized");
+    auto& s = *m_states.at(frame.frameIndex);
     VkExtent2D extent{};
     bool rebound = false;
     for (size_t i = 0; i < gbufferAttachmentCount; ++i) {

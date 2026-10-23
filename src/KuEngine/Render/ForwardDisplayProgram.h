@@ -4,6 +4,7 @@
 #include "RenderGraphResources.h"
 
 #include <cstdint>
+#include <vector>
 #include <memory>
 
 namespace ku {
@@ -25,12 +26,12 @@ public:
     void initialize(
         const RHIDevice& device,
         VkFormat sceneColorFormat,
-        VkFormat outputFormat);
+        VkFormat outputFormat, uint32_t framesInFlight = 1);
     void draw(
         CommandList& commands,
         const ResolvedImage& sceneColor,
         const ForwardDisplayUvTransform& uvTransform,
-        float exposure = 1.0f, bool encodeSrgb = true);
+        float exposure = 1.0f, bool encodeSrgb = true, uint32_t frameSlot = 0);
 
     [[nodiscard]] uint64_t descriptorRebindCount() const noexcept
     {
@@ -39,6 +40,7 @@ public:
 
 private:
     void reset() noexcept;
+    std::vector<std::unique_ptr<ForwardDisplayProgram>> m_additionalFrames;
 
     const RHIDevice* m_device = nullptr;
     VkFormat m_sceneColorFormat = VK_FORMAT_UNDEFINED;

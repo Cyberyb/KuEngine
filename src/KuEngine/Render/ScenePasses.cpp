@@ -26,7 +26,7 @@ void SceneBackgroundPass::setup(RenderGraphBuilder& b) {
 void SceneBackgroundPass::execute(CommandList& commands, const FrameData& frame) {
     std::string error;
     if (!m_source.sceneRenderer(SceneDrawPhase::Background).render(commands,
-            m_source.checkedSceneSnapshot(frame).view, {}, error))
+            m_source.checkedSceneSnapshot(frame).view, {}, error, frame.frameIndex))
         throw std::runtime_error("Scene background: " + error);
 }
 std::optional<CommandListStatistics> SceneBackgroundPass::expectedFrameStatistics() const {
@@ -62,7 +62,7 @@ void SceneSurfacePass::execute(CommandList& commands, const FrameData& frame) {
         if ((draw.material.alphaMode == asset::AlphaMode::Blend) == (m_phase == SceneDrawPhase::Blend))
             draws.push_back(draw);
     std::string error;
-    if (!m_source.sceneRenderer(m_deferred ? SceneDrawPhase::Geometry : m_phase).render(commands, view, draws, error))
+    if (!m_source.sceneRenderer(m_deferred ? SceneDrawPhase::Geometry : m_phase).render(commands, view, draws, error, frame.frameIndex))
         throw std::runtime_error("Scene surfaces: " + error);
 }
 std::optional<CommandListStatistics> SceneSurfacePass::expectedFrameStatistics() const {

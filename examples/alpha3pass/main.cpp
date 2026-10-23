@@ -11,7 +11,7 @@ int main(int argc, char* argv[])
     config.title = "KuEngine Alpha3Pass";
     config.width = 1280;
     config.height = 720;
-    config.framesInFlight = 1;
+    config.framesInFlight = 2;
     config.clearColor = {{0.05f, 0.06f, 0.08f, 1.0f}};
 
     return ku::runApplication(

@@ -32,6 +32,7 @@ ForwardDisplayProgram::~ForwardDisplayProgram()
 
 void ForwardDisplayProgram::reset() noexcept
 {
+    m_additionalFrames.clear();
     m_pipeline.reset();
     m_fragmentShader.reset();
     m_vertexShader.reset();
@@ -50,8 +51,9 @@ void ForwardDisplayProgram::reset() noexcept
 void ForwardDisplayProgram::initialize(
     const RHIDevice& device,
     VkFormat sceneColorFormat,
-    VkFormat outputFormat)
+    VkFormat outputFormat, uint32_t framesInFlight)
 {
+    if (framesInFlight < 1 || framesInFlight > 2) throw std::invalid_argument("Display supports one or two slots");
     if (sceneColorFormat == VK_FORMAT_UNDEFINED
         || outputFormat == VK_FORMAT_UNDEFINED) {
         throw std::invalid_argument(
@@ -114,6 +116,11 @@ void ForwardDisplayProgram::initialize(
         m_vertexShader = std::move(candidateVertex);
         m_fragmentShader = std::move(candidateFragment);
         m_pipeline = std::move(candidatePipeline);
+        for (uint32_t slot=1;slot<framesInFlight;++slot) {
+            auto next = std::make_unique<ForwardDisplayProgram>();
+            next->initialize(device, sceneColorFormat, outputFormat, 1);
+            m_additionalFrames.push_back(std::move(next));
+        }
     } catch (...) {
         if (candidateSampler != VK_NULL_HANDLE) {
             vkDestroySampler(device.device(), candidateSampler, nullptr);
@@ -125,8 +132,12 @@ void ForwardDisplayProgram::initialize(
 void ForwardDisplayProgram::draw(
     CommandList& commands,
     const ResolvedImage& sceneColor,
-    const ForwardDisplayUvTransform& uvTransform, float exposure, bool encodeSrgb)
+    const ForwardDisplayUvTransform& uvTransform, float exposure, bool encodeSrgb, uint32_t frameSlot)
 {
+    if (frameSlot > 0) {
+        m_additionalFrames.at(frameSlot - 1)->draw(commands, sceneColor, uvTransform, exposure, encodeSrgb);
+        return;
+    }
     if (!m_pipeline || !m_parameters || m_sampler == VK_NULL_HANDLE) {
         throw std::runtime_error("Forward display program is not initialized");
     }

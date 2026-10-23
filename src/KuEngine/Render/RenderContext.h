@@ -1,6 +1,7 @@
 // KuEngine 渲染上下文：向 Pass 提供由公共 Runtime 决定的格式、帧配置与设备能力。
 #pragma once
 
+#include <functional>
 #include <cstdint>
 #include <string_view>
 
@@ -30,6 +31,8 @@ struct RenderContext {
     const VkPhysicalDeviceProperties& deviceProperties;
     const VkPhysicalDeviceFeatures& deviceFeatures;
     const VkPhysicalDeviceVulkan13Features& deviceFeatures13;
+
+    std::function<void()> waitForAllFrames{};
 
     [[nodiscard]] bool hasDepth() const
     {

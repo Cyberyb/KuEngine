@@ -18,6 +18,8 @@ add_executable(test_core
     core/test_sidebar.cpp
     core/test_viewer_layout.cpp
     core/test_vulkan_validation.cpp
+    core/test_cornell_box.cpp
+    ${CMAKE_SOURCE_DIR}/examples/cornell_box/CornellBoxScene.cpp
 )
 
 target_include_directories(test_core PRIVATE
@@ -35,6 +37,10 @@ set_target_properties(test_core PROPERTIES
 )
 
 add_test(NAME core_tests COMMAND test_core)
+add_executable(test_volumetric_options core/test_volumetric_options.cpp)
+target_link_libraries(test_volumetric_options PRIVATE GTest::gtest GTest::gtest_main)
+set_target_properties(test_volumetric_options PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+add_test(NAME volumetric_options COMMAND test_volumetric_options)
 add_executable(hdr_pixel_checks hdr_pixel_checks.cpp)
 set_target_properties(hdr_pixel_checks PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 add_executable(path_pixel_checks path_pixel_checks.cpp)
@@ -80,6 +86,17 @@ set_target_properties(test_mclaren_camera PROPERTIES
 add_test(NAME mclaren_camera_tests COMMAND test_mclaren_camera)
 
 if(KUENGINE_ENABLE_GPU_SMOKE_TESTS)
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    add_test(NAME gpu_smoke_volumetric_integration
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_volumetric_checks.py
+            --app $<TARGET_FILE:VolumetricIntegrationApp>
+            --evidence ${CMAKE_CURRENT_BINARY_DIR}/volumetric-evidence/$<CONFIG>
+            --validation $<IF:$<CONFIG:Debug>,required,optional>
+        COMMAND_EXPAND_LISTS)
+    set_tests_properties(gpu_smoke_volumetric_integration PROPERTIES
+        LABELS "gpu-smoke;volumetric" SKIP_RETURN_CODE 77 TIMEOUT 240
+        PASS_REGULAR_EXPRESSION "KUENGINE_VOLUMETRIC_CHECKS_OK"
+        FAIL_REGULAR_EXPRESSION "Traceback;KUENGINE_VALIDATION_ERROR;KUENGINE_SMOKE_FAIL")
     if(NOT KUENGINE_BUILD_EXAMPLES)
         message(FATAL_ERROR
             "KUENGINE_ENABLE_GPU_SMOKE_TESTS requires KUENGINE_BUILD_EXAMPLES=ON")
@@ -98,6 +115,23 @@ if(KUENGINE_ENABLE_GPU_SMOKE_TESTS)
             TIMEOUT 120)
     endfunction()
 
+    foreach(frame_limit IN ITEMS 1 2 9)
+        kuengine_add_gpu_smoke(
+            gpu_smoke_dual_frame_drain_${frame_limit}
+            TriangleApp
+            "KUENGINE_COMPLETED_STATS frame=${frame_limit} .*status=matched"
+            --frames-in-flight 2 --smoke-frames ${frame_limit} --smoke-require-validation)
+    endforeach()
+    kuengine_add_gpu_smoke(gpu_smoke_dual_frame_cornell CornellBoxApp
+        "KUENGINE_FRAME_ISOLATION_OK slot=1 submit=6"
+        --frames-in-flight 2 --smoke-frames 9 --smoke-require-validation
+        --cornell-verify-frame-isolation
+        --cornell-readback-prefix ${CMAKE_CURRENT_BINARY_DIR}/dual-frame-evidence/$<CONFIG>/cornell)
+    kuengine_add_gpu_smoke(gpu_smoke_single_frame_compatibility ForwardReuseApp
+        "KUENGINE_COMPLETED_STATS frame=5 .*status=matched"
+        --frames-in-flight 1 --deferred --smoke-frames 5 --smoke-require-validation
+        --smoke-resize-after 2 800 600)
+
     kuengine_add_gpu_smoke(
         gpu_smoke_triangle
         TriangleApp
@@ -105,6 +139,14 @@ if(KUENGINE_ENABLE_GPU_SMOKE_TESTS)
         --smoke-frames 5
         --smoke-require-validation
         --smoke-resize-after 2 960 540)
+    kuengine_add_gpu_smoke(gpu_smoke_cornell_box CornellBoxApp
+        "KUENGINE_CORNELL_PIXELS_OK.*extent=1280x960"
+        --smoke-frames 4 --smoke-require-validation
+        --cornell-readback-prefix ${CMAKE_CURRENT_BINARY_DIR}/cornell-evidence/$<CONFIG>/default)
+    kuengine_add_gpu_smoke(gpu_smoke_cornell_box_resize_recompile CornellBoxApp
+        "KUENGINE_CORNELL_PIXELS_OK.*extent=1120x800"
+        --smoke-frames 6 --smoke-require-validation --smoke-resize-after 2 1120 800 --smoke-recompile-after-setup
+        --cornell-readback-prefix ${CMAKE_CURRENT_BINARY_DIR}/cornell-evidence/$<CONFIG>/resize)
     kuengine_add_gpu_smoke(
         gpu_smoke_cube
         CubeApp

@@ -85,6 +85,8 @@ RenderPipeline::~RenderPipeline()
 
 void RenderPipeline::compile(const RenderContext& context)
 {
+    if (context.framesInFlight < 1 || context.framesInFlight > 2)
+        throw std::invalid_argument("RenderPipeline supports one or two frame slots");
     m_compiled = false;
     invalidateExports();
 
@@ -98,11 +100,10 @@ void RenderPipeline::compile(const RenderContext& context)
     candidateGraph.compile();
 
     RHIRenderGraphResourceAllocator allocator(context.device);
-    RenderGraphResourcePool candidatePool = RenderGraphResourcePool::build(
-        candidateGraph,
-        context.initialExtent,
-        m_nextAllocationGeneration,
-        allocator);
+    std::vector<RenderGraphResourcePool> candidatePools;
+    for (uint32_t slot=0;slot<context.framesInFlight;++slot)
+        candidatePools.push_back(RenderGraphResourcePool::build(
+            candidateGraph, context.initialExtent, m_nextAllocationGeneration, allocator));
 
     for (auto& pass : m_passes) {
         pass->prepare(context);
@@ -158,7 +159,8 @@ void RenderPipeline::compile(const RenderContext& context)
     candidateDebug.orderSummary = orderSummary.str();
 
     m_renderGraph = std::move(candidateGraph);
-    m_resourcePool.swap(candidatePool);
+    m_resourcePools.swap(candidatePools);
+    m_activeFrame = 0;
     m_compiledExecutionOrder = std::move(candidateOrder);
     m_compileDebug = std::move(candidateDebug);
     m_externalImageBindings.clear();
@@ -181,7 +183,7 @@ void RenderPipeline::beginFrame()
 {
     ++m_exportLifetime->frameSerial;
     m_executeCompleted = false;
-    m_resourcePool.invalidateTransientContents();
+    m_resourcePools.at(m_activeFrame).invalidateTransientContents();
 }
 
 void RenderPipeline::execute(CommandList& cmd, const FrameData& frame)
@@ -190,6 +192,8 @@ void RenderPipeline::execute(CommandList& cmd, const FrameData& frame)
         throw std::runtime_error(
             "RenderPipeline must be compiled before graph execution");
     }
+    if (frame.frameIndex >= m_resourcePools.size()) throw std::out_of_range("Graph frame slot out of range");
+    m_activeFrame = frame.frameIndex;
     beginFrame();
     m_executeDebug = {};
     m_executeDebug.frameIndex = frame.frameIndex;
@@ -506,7 +510,7 @@ void RenderPipeline::bindExternalImage(
     const ImageDesc& expected = std::get<ImageDesc>(logical.description);
     validateExternalImageBindingInfo(
         expected,
-        m_resourcePool.swapchainExtent(),
+        m_resourcePools.at(m_activeFrame).swapchainExtent(),
         info,
         logical.name);
     m_externalImageBindings[handle.index] = ExternalImageBinding{
@@ -704,7 +708,7 @@ ResolvedImage RenderPipeline::resolveImagePhysical(ImageHandle handle)
     const ResourceDesc& logical = m_renderGraph.resource(handle);
     ResolvedImage resolved{};
     if (!logical.external()) {
-        resolved = m_resourcePool.resolveImage(handle);
+        resolved = m_resourcePools.at(m_activeFrame).resolveImage(handle);
     } else {
     const auto found = m_externalImageBindings.find(handle.index);
     if (found == m_externalImageBindings.end()) {
@@ -744,7 +748,7 @@ ResolvedBuffer RenderPipeline::resolveBufferPhysical(BufferHandle handle)
     const ResourceDesc& logical = m_renderGraph.resource(handle);
     ResolvedBuffer resolved{};
     if (!logical.external()) {
-        resolved = m_resourcePool.resolveBuffer(handle);
+        resolved = m_resourcePools.at(m_activeFrame).resolveBuffer(handle);
     } else {
     const auto found = m_externalBufferBindings.find(handle.index);
     if (found == m_externalBufferBindings.end()) {
@@ -780,7 +784,7 @@ void RenderPipeline::setResolvedImageState(
 {
     const ResourceDesc& logical = m_renderGraph.resource(handle);
     if (!logical.external()) {
-        m_resourcePool.setImageState(handle, state, contentsValid);
+        m_resourcePools.at(m_activeFrame).setImageState(handle, state, contentsValid);
         return;
     }
     ExternalImageBinding& binding = m_externalImageBindings.at(handle.index);
@@ -795,7 +799,7 @@ void RenderPipeline::setResolvedBufferState(
 {
     const ResourceDesc& logical = m_renderGraph.resource(handle);
     if (!logical.external()) {
-        m_resourcePool.setBufferState(handle, state, contentsValid);
+        m_resourcePools.at(m_activeFrame).setBufferState(handle, state, contentsValid);
         return;
     }
     ExternalBufferBinding& binding = m_externalBufferBindings.at(handle.index);
@@ -1018,15 +1022,14 @@ void RenderPipeline::onResize(uint32_t width, uint32_t height)
     invalidateExports();
     try {
         RHIRenderGraphResourceAllocator allocator(*m_device);
-        RenderGraphResourcePool candidate =
-            RenderGraphResourcePool::buildResizeCandidate(
-                m_renderGraph,
-                {width, height},
-                m_nextAllocationGeneration,
-                allocator);
+        std::vector<RenderGraphResourcePool> candidates;
+        for (size_t slot=0;slot<m_resourcePools.size();++slot)
+            candidates.push_back(RenderGraphResourcePool::buildResizeCandidate(
+                m_renderGraph, {width, height}, m_nextAllocationGeneration, allocator));
         for (auto& pass : m_passes) pass->onResize(width, height);
-        candidate.adoptAbsoluteAllocationsFrom(m_resourcePool);
-        m_resourcePool.swap(candidate);
+        for (size_t slot=0;slot<candidates.size();++slot)
+            candidates[slot].adoptAbsoluteAllocationsFrom(m_resourcePools[slot]);
+        m_resourcePools.swap(candidates);
         m_externalImageBindings.clear();
         m_externalBufferBindings.clear();
         ++m_nextAllocationGeneration;

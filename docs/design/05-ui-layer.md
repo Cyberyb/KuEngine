@@ -63,3 +63,9 @@ CPU 不含事件轮询、Fence/acquire 等待与 present；也不是进程 CPU �
 ImGui Backend 使用 GLFW 回调接入；滚轮由 Input 的 GLFW 回调累计。`SceneInteractionGate` 只允许活动窗口中、未被 ImGui 捕获且位于 `ViewerLayout.sceneLogical`（并排除覆盖 UI）内的按下开始拖动或消费滚轮；已开始的场景拖动可持续至松开。Input 在 attach、失焦、恢复、最小化/resize 跳帧等连续性中断时推进 epoch 并清空/抑制边缘，Gate 因而不会恢复陈旧拖动。
 
 Mclaren 的 FreeFly 在此基础上还要求右键场景焦点：`WantCaptureKeyboard`、`WantTextInput`、鼠标捕获或窗口/场景失效会取消焦点；切换模式、重置和 epoch 改变后必须等待无按键/无鼠标按下的中性样本。这样侧栏编辑文本、UI 操作和失焦不会驱动 WASDQE。Cube 仍只使用左键 OrbitInspect 语义。当前只有单 Context，未建立多窗口 UI 管理；自由相机仍为 Mclaren 示例层功能。
+
+## CornellBox 参数与统计
+
+2026-10-21 新示例复用唯一侧栏和 path/GBuffer 控件：Ceiling light [0,3] 仅缩放四点光，Exposure [.1,3]，Neutral fill [0,.5]；Material 选择短/高盒，独立 Roughness [.04,1]、Metallic [0,1]；Camera yaw [-16,16]°、pitch [-12,12]°、distance [3.2,5.5]，Reset view 恢复 0/0/4.1。参数进入本帧 post-UI snapshot；路径请求下一 Fence-safe update 生效，切换/resize/recompile 保留编辑。相机没有新增鼠标 Orbit/FreeFly。
+
+普通 Deferred 10 draws/114 submitted vertices，Forward 9/111；Prepare/空 Blend/可选 transfer 读回不产生 draw，ImGui 继续不计入业务统计。两盒独立 M/R、灯强、曝光、Base/Normal/Roughness/Metallic/ShadingModel/Scene、路径保留、相机和侧栏收展均由独立 QA 实际 GUI 观察，见 [CornellBox](../usage/cornell-box-example.md)。其余八视图映射延用公共实现，不把本轮观察扩成八视图全部重验。

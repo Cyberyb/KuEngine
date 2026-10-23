@@ -1,6 +1,7 @@
 #pragma once
 #include "ScenePasses.h"
 #include <memory>
+#include <vector>
 namespace ku {
 // Narrow MRT display; optional fixed-format internal output is for bounded
 // format-encoding tests. Graph owns every source/output image.
@@ -21,6 +22,6 @@ private:
     GBufferTargets m_targets{};
     ImageDesc m_output{};
     std::array<ImageHandle,4> m_images{};
-    std::unique_ptr<State> m_state;
+    std::vector<std::unique_ptr<State>> m_states;
 };
 }

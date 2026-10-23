@@ -1,6 +1,6 @@
 # KuEngine 目标架构与设计边界
 
-更新日期：2026-10-11。本文描述未来演进方向，图中的逻辑模块不等于已经存在的类或 API。需求以 [产品需求](product-requirements.md) 为准，现状以 [当前宏观架构](current-architecture.md) 和 [design](../design/README.md) 为准，实施顺序见 [roadmap](roadmap.md)。
+更新日期：2026-10-21。本文描述未来演进方向，图中的逻辑模块不等于已经存在的类或 API。需求以 [产品需求](product-requirements.md) 为准，现状以 [当前宏观架构](current-architecture.md) 和 [design](../design/README.md) 为准，实施顺序见 [roadmap](roadmap.md)。
 
 ## 1. 一句话原则
 
@@ -110,8 +110,11 @@ PBR 的 Shader 逻辑应尽量共用，避免前向/延迟各自维护一套材�
 
 ## 5. 渐进迁移与复杂度约束
 
+- REQ-16 的 Shadertoy 体积光积分保持独立示例 Pass：复用现有 Runtime/Graph/RHI/侧栏，在示例层组织全屏程序化场景、介质与光照积分；常量按提交帧传递，不引入共享可变 GPU 参数。输出处理应匹配参考显示语义并正确处理交换链编码；不为单个复刻新增通用 Shadertoy 播放器或修改公共 PBR 着色语义。
+- REQ-15 康奈尔盒子保持示例层程序化建模：输出既有 CPU Mesh/Material 与 SceneDrawSource，复用公共 Deferred、PBR 和 HDR Display；附件仍由 Graph 拥有，不复制 Runtime、RHI 或另建一套光照 Shader。可见 emissive 顶灯与点光照明分别表达，不引入尚未实现的面光源、阴影或 GI 承诺。
 - 先在现有 Mclaren 上验证侧栏与相机，再将通用数据与渲染能力抽出；不先重写四个示例。Triangle/Cube/Alpha3Pass 继续作为低层封装与图执行的回归样例。
 - 先保留单帧运行，完成单队列、离屏资源和同步闭环，再引入逐帧资源隔离。不能只将 `framesInFlight` 从 1 改成 2。
+- 2026-10-21 授权的 M5-WP01 目标限定为 2 帧在途（兼容 1 帧，不实现 3 帧）。可变 GPU 资源、图物理状态和 Query 按帧槽隔离，呈现信号按交换链图像寿命管理；完成提交编号独立于帧槽和 imageIndex。正常帧不全局 idle；共享 GPU 对象替换、resize/recompile 与退出可等待全部提交，通用延迟回收和上传优化仍留待后续。
 - 可复用资源按类型和所有权拆分，避免将 `MclarenRenderResources` 简单改名为另一个大容器。
 - 不同时引入多后端 RHI、插件框架、完整 ECS、材质节点编辑器、通用反射和任务系统。只有具体特性确实需要时，才扩展相关机制。
 - 判断封装是否合适的标准：第二个实验是否能复用；能否解释资源由谁创建和释放；自定义 Vulkan 操作是否仍然可表达。类的数量不是进展指标。

@@ -10,7 +10,7 @@ int main(int argc, char* argv[])
     config.title = "KuEngine Graph Resource Probe";
     config.width = 640;
     config.height = 480;
-    config.framesInFlight = 1;
+    config.framesInFlight = 2;
     config.enableDepth = false;
     config.clearColor = {{0.04f, 0.05f, 0.07f, 1.0f}};
 

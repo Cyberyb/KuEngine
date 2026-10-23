@@ -9,6 +9,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
+#include <array>
 
 namespace ku {
 
@@ -64,8 +66,8 @@ struct GraphResourceComputeParameters {
     BufferHandle m_compute{};
     BufferHandle m_draw{};
     std::unique_ptr<RHIShader> m_shader;
-    std::unique_ptr<RHIParameterSet> m_parameters;
-    std::unique_ptr<RHIComputePipeline> m_pipeline;
+    std::vector<std::unique_ptr<RHIParameterSet>> m_parameters;
+    std::vector<std::unique_ptr<RHIComputePipeline>> m_pipeline;
 };
 
 [[nodiscard]] CallbackPassDesc<GraphResourceComputeParameters>
@@ -96,10 +98,10 @@ private:
     RHIDevice* m_device = nullptr;
     std::unique_ptr<RHIShader> m_vertexShader;
     std::unique_ptr<RHIShader> m_fragmentShader;
-    std::unique_ptr<RHIParameterSet> m_parameters;
+    std::vector<std::unique_ptr<RHIParameterSet>> m_parameters;
     std::unique_ptr<RHIPipeline> m_pipeline;
     VkSampler m_sampler = VK_NULL_HANDLE;
-    uint64_t m_boundImageGeneration = 0;
+    std::array<uint64_t,2> m_boundImageGeneration{};
     uint64_t m_initialImageGeneration = 0;
     uint64_t m_initialBufferGeneration = 0;
     VkExtent2D m_initialExtent{0, 0};

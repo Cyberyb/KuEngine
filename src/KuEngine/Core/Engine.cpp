@@ -1,4 +1,4 @@
-﻿#include "Engine.h"
+#include "Engine.h"
 #include "Window.h"
 #include "Input.h"
 #include "Log.h"
@@ -51,10 +51,9 @@ Engine::Engine(
     if (m_config.width == 0 || m_config.height == 0) {
         throw std::invalid_argument("Engine window dimensions must be greater than zero");
     }
-    if (m_config.framesInFlight != 1) {
+    if (m_config.framesInFlight < 1 || m_config.framesInFlight > 2) {
         throw std::invalid_argument(
-            "Public Runtime currently supports exactly one frame in flight because command buffers, "
-            "Graph resources, and Pass-owned dynamic resources are not yet replicated per frame");
+            "Public Runtime supports one or two frames in flight");
     }
     ku::log::init();
     try {
@@ -72,7 +71,10 @@ Engine::Engine(
         m_commandPool = m_device->createCommandPool();
         m_swapChain = std::make_unique<SwapChain>(*m_device, m_window->handle(), m_surface);
         m_syncManager = std::make_unique<SyncManager>(*m_device, m_config.framesInFlight);
-        m_commandList = std::make_unique<CommandList>(*m_device, m_commandPool);
+        m_syncManager->recreatePresentSemaphores(static_cast<uint32_t>(m_swapChain->imageCount()));
+        m_pendingExpected.resize(m_config.framesInFlight);
+        for (uint32_t slot = 0; slot < m_config.framesInFlight; ++slot)
+            m_commandLists.push_back(std::make_unique<CommandList>(*m_device, m_commandPool));
         if (m_config.enableDepth) {
             m_depthFormat = resolveDepthFormat(m_config.depthFormat);
         }
@@ -93,7 +95,7 @@ Engine::Engine(
         m_lastTime = Clock::now();
     } catch (...) {
         m_ui.reset();
-        m_commandList.reset();
+        m_commandLists.clear();
         m_syncManager.reset();
         m_swapChain.reset();
 
@@ -124,7 +126,7 @@ Engine::~Engine()
 
     m_renderPipeline.reset();
     m_ui.reset();
-    m_commandList.reset();
+    m_commandLists.clear();
     m_syncManager.reset();
     m_swapChain.reset();
 
@@ -154,6 +156,7 @@ void Engine::compile()
         throw std::runtime_error("Engine Runtime is not initialized");
     }
 
+    waitForAllFrames();
     m_pipelineCompiled = false;
     const RenderContext context{
         *m_device,
@@ -167,6 +170,7 @@ void Engine::compile()
         m_device->properties(),
         m_device->features(),
         m_device->features13(),
+        [this] { waitForAllFrames(); },
     };
     m_renderPipeline->compile(context);
     m_pipelineCompiled = true;
@@ -246,11 +250,11 @@ EngineRunResult Engine::mainLoop(const EngineRunOptions& options)
     if (m_device) {
         m_device->waitIdle();
     }
-    completePendingFrameStatistics();
+    for (uint32_t slot=0;slot<m_config.framesInFlight;++slot) completePendingFrameStatistics(slot);
     result.completedStatistics = m_frameStatistics.completedFrame();
     if (m_renderPipeline) {
         result.expectedStatistics =
-            m_renderPipeline->expectedFrameStatistics();
+            m_completedExpected;
     }
     return result;
 }
@@ -278,7 +282,8 @@ bool Engine::render()
 
     const uint32_t frameIndex = m_syncManager->currentFrame();
     m_syncManager->waitForFrame(frameIndex);
-    completePendingFrameStatistics();
+    completePendingFrameStatistics(frameIndex);
+    auto& commands = *m_commandLists.at(frameIndex);
 
     const uint32_t imageIndex =
         m_swapChain->acquireNextImage(m_syncManager->frameSync(frameIndex).imageAvailable);
@@ -291,6 +296,7 @@ bool Engine::render()
 
     FrameData frameData{};
     frameData.frameIndex = frameIndex;
+    frameData.submittedFrame = m_frameStatistics.nextSubmittedFrame();
     frameData.imageIndex = imageIndex;
     frameData.deltaTime = m_deltaTime;
     frameData.totalTime = m_totalTime;
@@ -330,7 +336,7 @@ bool Engine::render()
     uiStats.frameTimeMilliseconds = m_deltaTime * 1000.0f;
     uiStats.completedFrame = m_frameStatistics.completedFrame();
     uiStats.gpuStatusBeforeFirstCompletedFrame =
-        m_commandList->gpuTimingSupported()
+        commands.gpuTimingSupported()
         ? GpuTimeStatus::Waiting
         : GpuTimeStatus::Unsupported;
     m_ui->drawSidebar(
@@ -365,24 +371,24 @@ bool Engine::render()
 
     // External resource descriptors are validated before command recording so
     // a format/extent/aspect mismatch cannot leave a partially recorded frame.
-    m_commandList->begin();
+    commands.begin();
 
-    m_renderPipeline->execute(*m_commandList, frameData);
+    m_renderPipeline->execute(commands, frameData);
     m_renderPipeline->executeOverlay(
-        *m_commandList,
+        commands,
         [this, imageIndex](VkCommandBuffer cmd) {
             m_ui->render(
                 cmd,
                 m_swapChain->imageViews()[imageIndex],
                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
         });
-    m_renderPipeline->finalizeExternalImages(*m_commandList);
+    m_renderPipeline->finalizeExternalImages(commands);
 
     m_swapChainImageLayouts[imageIndex] = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-    m_commandList->end();
+    commands.end();
 
-    VkCommandBuffer buffer = m_commandList->cmd();
+    VkCommandBuffer buffer = commands.cmd();
     m_syncManager->submit(
         frameIndex,
         m_device->graphicsQueue(),
@@ -392,10 +398,13 @@ bool Engine::render()
         Clock::now() - cpuRenderStart).count();
     if (!m_frameStatistics.recordSubmittedFrame(
             cpuRenderTimeMilliseconds,
-            m_commandList->statistics())) {
+            commands.statistics(), frameIndex)) {
         throw std::logic_error(
             "A submitted frame statistics sample is still pending completion");
     }
+    m_pendingExpected[frameIndex] = m_renderPipeline->expectedFrameStatistics();
+    KU_DEBUG("KUENGINE_FRAME_SUBMIT submit={} slot={} frames={} cmd={} query={} expected_draws={}",
+        frameData.submittedFrame, frameIndex, m_config.framesInFlight, reinterpret_cast<uintptr_t>(commands.cmd()), commands.gpuTimingSupported(), m_pendingExpected[frameIndex] ? m_pendingExpected[frameIndex]->drawCalls : 0);
     const bool presented = m_syncManager->present(
         frameIndex,
         m_device->presentQueue(),
@@ -409,17 +418,27 @@ bool Engine::render()
     return true;
 }
 
-void Engine::completePendingFrameStatistics()
+void Engine::completePendingFrameStatistics(uint32_t slot)
 {
-    if (!m_commandList || !m_frameStatistics.hasPendingFrame()) {
-        return;
-    }
+    if (slot >= m_commandLists.size() || !m_frameStatistics.hasPendingFrame(slot)) return;
+    const auto submit = m_frameStatistics.pendingSubmit(slot);
+    const auto previous = m_frameStatistics.completedFrame();
+    const auto gpuTime = m_commandLists[slot]->collectGpuTime();
+    if (!m_frameStatistics.completePendingFrame(gpuTime, slot))
+        throw std::logic_error("Unable to complete frame-slot statistics");
+    if (!previous || submit > previous->submittedFrame) m_completedExpected = m_pendingExpected[slot];
+    m_pendingExpected[slot].reset();
+    KU_DEBUG("KUENGINE_FRAME_COMPLETE submit={} slot={}", submit, slot);
+}
 
-    const GpuTimeSample gpuTime = m_commandList->collectGpuTime();
-    if (!m_frameStatistics.completePendingFrame(gpuTime)) {
-        throw std::logic_error(
-            "Unable to publish pending submitted frame statistics");
-    }
+void Engine::waitForAllFrames()
+{
+    if (!m_device) return;
+    KU_DEBUG("KUENGINE_FRAME_DRAIN pending0={} pending1={}",
+        m_frameStatistics.pendingSubmit(0), m_frameStatistics.pendingSubmit(1));
+    VK_CHECK(vkDeviceWaitIdle(m_device->device()));
+    for (uint32_t slot = 0; slot < m_commandLists.size(); ++slot)
+        completePendingFrameStatistics(slot);
 }
 
 void Engine::recreateSwapChain()
@@ -442,8 +461,10 @@ void Engine::recreateSwapChain()
     }
 
     m_minimized = false;
+    waitForAllFrames();
     const VkFormat previousFormat = m_swapChain->imageFormat();
     m_swapChain->recreate(m_window->handle(), m_surface);
+    m_syncManager->recreatePresentSemaphores(static_cast<uint32_t>(m_swapChain->imageCount()));
     const bool formatChanged = swapchainFormatRequiresPipelineRecompile(
         previousFormat, m_swapChain->imageFormat());
     m_swapChainImageLayouts.assign(

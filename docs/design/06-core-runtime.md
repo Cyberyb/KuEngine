@@ -22,7 +22,7 @@ Engine 聚合窗口、Vulkan 对象、渲染管线和 UI，负责创建、运行
 
 `EngineRunOptions` 不属于持久渲染配置：`submittedFrameLimit=0` 保持无限交互循环；正值按成功提交的帧数停止。可选 `EngineResizeRequest` 在指定成功提交帧后调用窗口 resize，并由 `EngineRunResult` 分别记录请求与 Swapchain 重建完成。未 acquire、仅处理 resize 的循环不计入 submitted frame。该接口让自动化运行不依赖计时或强制关闭窗口，普通调用 `run()` 的行为不变。
 
-六个示例通过`ApplicationRunner`解析`--smoke-*`参数。它在Engine作用域外保存ValidationMessageTracker，Engine等待GPU、销毁RHI/Instance后仍可读取已捕获error决定退出码：参数错误2、普通初始化/运行失败1、Validation失败3、已知环境不可用smoke skip77。Mclaren的scene/实例编辑/Clear parser与候选队列留在示例，B不新增Runtime场景/ECS/验证状态机。
+七个示例通过`ApplicationRunner`解析`--smoke-*`参数。它在Engine作用域外保存ValidationMessageTracker，Engine等待GPU、销毁RHI/Instance后仍可读取已捕获error决定退出码：参数错误2、普通初始化/运行失败1、Validation失败3、已知环境不可用smoke skip77。Mclaren的scene/实例编辑/Clear parser与候选队列留在示例，B不新增Runtime场景/ECS/验证状态机。
 
 ## 一帧时序
 
@@ -70,3 +70,5 @@ Window 封装 GLFW 初始化、窗口、事件、framebuffer resize 与关闭回
 CPU 使用 Engine::Clock（`steady_clock`）测量 acquire 成功后至 submit 返回的墙钟时间，包括 Pass 更新、UI 和命令记录；不包括事件轮询、Fence/acquire 等待与 present。submit 后暂存 CPU 与业务计数，下一次 Fence 完成或退出 `waitIdle` 后与 GPU Query 合成 completed-submit 快照；FPS/Frame 仍是当前主循环的 `deltaTime`。详细显示语义见 [UI 与统计](05-ui-layer.md)。
 
 Runtime 的单帧限制是命令、动态 UBO、深度和 QueryPool 复用的前提。当前没有独立场景管理器、固定时间步模拟或多窗口运行调度。
+
+2026-10-21 核对 CornellBox：1280×960、enableDepth=true、framesInFlight=1，沿用 ApplicationRunner/ViewerLayout/Fence/resize/recompile。程序化场景和可选有限读回留在示例层；公共 Runtime 无代码修改，相机仅 UI 参数。

@@ -1,6 +1,41 @@
 #include <gtest/gtest.h>
-
 #include <KuEngine/Core/FrameStatistics.h>
+
+TEST(DualFrameStatisticsTest, IndependentPendingSlotsAndMonotonicDrain)
+{
+    ku::CompletedFrameStatisticsTracker tracker;
+    EXPECT_TRUE(tracker.recordSubmittedFrame(1.0f, {1, 3}, 0));
+    EXPECT_TRUE(tracker.recordSubmittedFrame(2.0f, {2, 6}, 1));
+    EXPECT_FALSE(tracker.recordSubmittedFrame(9.0f, {9, 9}, 0));
+    EXPECT_EQ(tracker.pendingSubmit(0), 1u);
+    EXPECT_EQ(tracker.pendingSubmit(1), 2u);
+    EXPECT_TRUE(tracker.completePendingFrame({ku::GpuTimeStatus::Available, 2.5}, 1));
+    EXPECT_TRUE(tracker.completePendingFrame({ku::GpuTimeStatus::Available, 1.5}, 0));
+    ASSERT_TRUE(tracker.completedFrame());
+    EXPECT_EQ(tracker.completedFrame()->submittedFrame, 2u);
+    EXPECT_FLOAT_EQ(tracker.completedFrame()->cpuTimeMilliseconds, 2.0f);
+    EXPECT_DOUBLE_EQ(tracker.completedFrame()->gpuTime.milliseconds, 2.5);
+    EXPECT_EQ(tracker.completedFrame()->commands.drawCalls, 2u);
+    EXPECT_TRUE(tracker.recordSubmittedFrame(3.0f, {3, 9}, 0));
+    EXPECT_EQ(tracker.pendingSubmit(0), 3u);
+    EXPECT_TRUE(tracker.completePendingFrame({}, 0));
+    EXPECT_EQ(tracker.completedFrame()->submittedFrame, 3u);
+    EXPECT_FALSE(tracker.hasPendingFrame(0));
+    EXPECT_FALSE(tracker.hasPendingFrame(1));
+}
+
+TEST(DualFrameStatisticsTest, UnsupportedSlotDoesNotAdvanceSerial)
+{
+    ku::CompletedFrameStatisticsTracker tracker;
+    EXPECT_FALSE(tracker.recordSubmittedFrame(1, {1, 3}, 2));
+    EXPECT_FALSE(tracker.completePendingFrame({}, 2));
+    EXPECT_FALSE(tracker.hasPendingFrame(2));
+    EXPECT_EQ(tracker.nextSubmittedFrame(), 1u);
+    EXPECT_TRUE(tracker.recordSubmittedFrame(1, {1, 3}, 1));
+    EXPECT_EQ(tracker.nextSubmittedFrame(), 2u);
+}
+
+
 
 #include <cstdint>
 #include <limits>

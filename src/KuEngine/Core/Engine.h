@@ -34,8 +34,8 @@ struct EngineConfig {
     std::string title = "KuEngine v" KU_VERSION;
     uint32_t width = 1280;
     uint32_t height = 720;
-    // First Runtime milestone intentionally keeps the proven single-frame path.
-    uint32_t framesInFlight = 1;
+    // At most two independent frame slots; one remains available for comparison.
+    uint32_t framesInFlight = 2;
     bool showStats = true;
     bool enableDepth = false;
     // VK_FORMAT_UNDEFINED selects the first supported Runtime depth format.
@@ -112,6 +112,8 @@ public:
     }
 
     void compile();
+    // Low-frequency shared-object mutation only; the normal loop waits one slot.
+    void waitForAllFrames();
     [[nodiscard]] EngineRunResult run(const EngineRunOptions& options = {});
     void quit() { m_running = false; }
 
@@ -120,7 +122,7 @@ public:
     [[nodiscard]] RHIDevice&        device()         const { return *m_device; }
     [[nodiscard]] SwapChain&        swapChain()      const { return *m_swapChain; }
     [[nodiscard]] SyncManager&      syncManager()    const { return *m_syncManager; }
-    [[nodiscard]] CommandList&      commandList()    const { return *m_commandList; }
+    [[nodiscard]] CommandList&      commandList()    const { return *m_commandLists.at(currentFrame()); }
     [[nodiscard]] UIOverlay&        ui()             const { return *m_ui; }
     [[nodiscard]] RenderPipeline&   renderPipeline() const { return *m_renderPipeline; }
     [[nodiscard]] VkSurfaceKHR      surface()        const { return m_surface; }
@@ -147,7 +149,7 @@ private:
     [[nodiscard]] EngineRunResult mainLoop(const EngineRunOptions& options);
     void pollEvents();
     [[nodiscard]] bool render();
-    void completePendingFrameStatistics();
+    void completePendingFrameStatistics(uint32_t slot);
     void recreateSwapChain();
     [[nodiscard]] VkFormat resolveDepthFormat(VkFormat requested) const;
 
@@ -157,7 +159,9 @@ private:
     std::unique_ptr<RHIDevice>     m_device;
     std::unique_ptr<SwapChain>     m_swapChain;
     std::unique_ptr<SyncManager>   m_syncManager;
-    std::unique_ptr<CommandList>   m_commandList;
+    std::vector<std::unique_ptr<CommandList>> m_commandLists;
+    std::vector<std::optional<CommandListStatistics>> m_pendingExpected;
+    std::optional<CommandListStatistics> m_completedExpected;
     std::unique_ptr<UIOverlay>     m_ui;
     std::unique_ptr<RenderPipeline> m_renderPipeline;
 

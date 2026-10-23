@@ -23,7 +23,7 @@ RenderPipeline通过unique_ptr持有Pass。compile(context)初始化/注册/调�
 
 兼容的无参 setup() 仍存在，默认 builder 版本会调用它。没有 shutdown() 接口，清理由析构完成。Pass enabled 改变不会重新编译 Graph；附件的内容依赖仍需满足执行约束。
 
-Mclaren UI/CLI 请求入队，`update()` 在 Engine 等待单帧 Fence、acquire 后、录制前构建/发布完整替换候选；失败保留 live state。resize 跳过帧保留请求。两示例的 ScenePrepare `execute()` 位于本帧 UI 后，生成稳定 snapshot；所有 scene consumer 显式 dependsOn prepare 并检查 disabled/stale。Background → Forward Opaque/Mask 或 Geometry/Lighting → Forward Blend →唯一 Display → RuntimeOverlay；两路径共享 RGBA16F SceneColor/Depth，Geometry/Opaque Depth STORE→Blend LOAD/test/no-write。各 phase 独立 Renderer UBO，长期资产仍由 coordinator 拥有。首次 initialize 加载资产，ready 后 recompile 保留资产/相机/UI；格式相关 Display/Lighting candidate 成功才发布。依赖单帧 Fence-safe/idle，不是多帧 retire。
+Mclaren UI/CLI 请求入队，`update()` 在 Engine 等待单帧 Fence、acquire 后、录制前构建/发布完整替换候选；失败保留 live state。resize 跳过帧保留请求。Mclaren、ForwardReuse、CornellBox 三示例的 ScenePrepare `execute()` 位于本帧 UI 后，生成稳定 snapshot；所有 scene consumer 显式 dependsOn prepare 并检查 disabled/stale。Background → Forward Opaque/Mask 或 Geometry/Lighting → Forward Blend →唯一 Display → RuntimeOverlay；两路径共享 RGBA16F SceneColor/Depth，Geometry/Opaque Depth STORE→Blend LOAD/test/no-write。各 phase 独立 Renderer UBO，长期资产仍由 coordinator 拥有。首次 initialize 加载资产，ready 后 recompile 保留资产/相机/UI；格式相关 Display/Lighting candidate 成功才发布。依赖单帧 Fence-safe/idle，不是多帧 retire。
 
 ## 初始化契约
 
@@ -72,7 +72,7 @@ ExternalImageBindingInfo提供image/imageView/extent/format/usage/aspect、initi
 
 Load 请求要求此前 contentsValid；Store=STORE 才保留可供后续使用的内容。缺失外部绑定、非法附件或无效 Load 会报错。
 
-Alpha3Pass 首节点用 Runtime 清屏默认值，后两节点 LOAD。Mclaren/ForwardReuse 已拆为无附件 Prepare、Background、Surface、可选 Lighting、Blend、Display 独立节点/Scope；Background CLEAR/STORE，Lighting LOAD/STORE 并 discard Empty，Display CLEAR/STORE 外部颜色，Overlay LOAD。SceneColor attachment/blend/sampled/transfer 能力显式前检。
+Alpha3Pass 首节点用 Runtime 清屏默认值，后两节点 LOAD。Mclaren/ForwardReuse/CornellBox 已拆为无附件 Prepare、Background、Surface、可选 Lighting、Blend、Display 独立节点/Scope；Background CLEAR/STORE，Lighting LOAD/STORE 并 discard Empty，Display CLEAR/STORE 外部颜色，Overlay LOAD。SceneColor attachment/blend/sampled/transfer 能力显式前检。
 
 ## UI 与最终状态
 
@@ -85,3 +85,5 @@ finalizeExternalImages 收束外部图像到 finalLayout，供 Engine 提交和�
 Graph 已管理真实 internal Image/Buffer allocation 和 synchronization2 image/buffer barrier；纯 CPU planner 在 disabled mask 后验证 RAW/WAR/WAW、range、writer epoch 与 first-use，并输出批量 barrier。RenderPipeline 仅在成功录制后提交 execution state/content shadow。`CallbackRenderPass` 经过 declare/prepare/execute：execute参数只读、declare/prepare可变、recompile 使 handle 失效、只稳定借用 RHIDevice；其 `GraphCommandContext` 仅解析已声明 handle/use/range，并记录 fill/copy、Compute pipeline/parameter binding/dispatch。受约束 native scope 必须声明已知 capability/side-effect 与 use 子集，执行期外失效；unknown flag 在构造时拒绝，attachment scope 禁止 Compute/Transfer。Forward 已将 SceneColor/Depth 作为 Graph internal targets，并经 Display sampled→SwapChain→Overlay→Present；资源别名、多 Queue 仍未实现。旧对象只能标为 `TrustedLegacyObject`，不能自动识别任意裸 Vulkan 命令。RenderPipeline 同时负责 candidate compile/resize、internal pool、external binding、执行和 ImGui Graph Debug 面板。
 
 callback的declare/prepare参数为可变Parameters&，execute才是const Parameters&；name/declare/execute必需，其余prepare/nativeContract/expectedStatistics可选，实际header为RenderGraphCallbackPass.h。现有接入步骤见[开发渲染特性](../usage/developing-render-features.md)。当前CPU测试覆盖逻辑依赖、循环/缺失依赖、Hazard、附件声明等；不是完整GPU执行回归。测试入口：[test_render_graph.cpp](../../tests/core/test_render_graph.cpp)。
+
+2026-10-21 CornellBox 通过既有 SceneViewerPasses 接入静态分支，默认 Deferred；不改变公共调度接口。其可选读回 Pass 在 Scope 外声明三图 TransferSource 与借用 staging TransferDestination/HOST_READ，update/onResize 在单帧 Fence 后检查，详见 [04](04-triangle-example-tech.md)。WP03-A“两例”仍指当时历史范围。

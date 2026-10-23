@@ -23,9 +23,9 @@ class SceneProbe final : public RenderPass {
 public:
     SceneProbe(SceneDrawSource& source,bool srgb):source(source),srgb(srgb){}
     std::string_view name()const override{return srgb?"ViewerSceneSRGB":"ViewerSceneUNORM";}
-    void initialize(const RenderContext& c)override {color=makeForwardGraphTargets(c).color;program.initialize(c.device,color.format,srgb?VK_FORMAT_R8G8B8A8_SRGB:VK_FORMAT_R8G8B8A8_UNORM);}
+    void initialize(const RenderContext& c)override {color=makeForwardGraphTargets(c).color;program.initialize(c.device,color.format,srgb?VK_FORMAT_R8G8B8A8_SRGB:VK_FORMAT_R8G8B8A8_UNORM,c.framesInFlight);}
     void setup(RenderGraphBuilder& b)override {source.declarePrepareDependency(b);input=b.createImage(forward_graph_resource::sceneColor,color);b.useImage(input,ImageUse::FragmentSampled);b.colorAttachment(b.createImage(name(),probe(srgb?VK_FORMAT_R8G8B8A8_SRGB:VK_FORMAT_R8G8B8A8_UNORM)),AttachmentLoadPolicy::Clear,AttachmentStorePolicy::Store);}
-    void execute(CommandList& c,const FrameData& f,RenderGraphResourceResolver& r)override {auto image=r.resolveImage(input,ImageUse::FragmentSampled);auto view=source.checkedSceneSnapshot(f).view;program.draw(c,image,calculateForwardDisplayUvTransform(f.viewerLayout.sceneFramebuffer,image.extent),view.environmentExposure,true);}
+    void execute(CommandList& c,const FrameData& f,RenderGraphResourceResolver& r)override {auto image=r.resolveImage(input,ImageUse::FragmentSampled);auto view=source.checkedSceneSnapshot(f).view;program.draw(c,image,calculateForwardDisplayUvTransform(f.viewerLayout.sceneFramebuffer,image.extent),view.environmentExposure,true,f.frameIndex);}
     std::optional<CommandListStatistics> expectedFrameStatistics()const override{return CommandListStatistics{1,3};}
 private:SceneDrawSource& source;bool srgb;ImageDesc color{};ImageHandle input{};ForwardDisplayProgram program;
 };
@@ -59,6 +59,8 @@ void ViewerPathSmoke::bind(RenderPass& a,RenderPass& b,RenderPass& c,RenderPass&
 uint64_t ViewerPathSmoke::completedSerial()const {const auto& completed=m_engine.completedFrameStatistics();return completed?completed->submittedFrame:0;}
 const ViewerPathSmoke::Selection& ViewerPathSmoke::selection()const{return m_steps.at(m_step);}
 void ViewerPathSmoke::update(const FrameData& frame) {
+    m_engine.waitForAllFrames(); // optional single-staging verification coordinator
+
     // External Graph bindings must exist even when their consuming node is
     // disabled. Keep the import alive; only enabled readbacks record copies.
     for(auto* readback:m_readbacks){readback->inspect();readback->update(frame);}

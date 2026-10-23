@@ -48,7 +48,7 @@ public:
         if(renderer.ready()) return;
         std::string error;
         require(program.initialize(c.device,sceneHdrFormat,c.depthFormat,c.depthCompareOp,error),error.c_str());
-        require(renderer.initialize(c.device,program,1,error),error.c_str());
+        require(renderer.initialize(c.device,program,1,error,c.framesInFlight),error.c_str());
     }
     void setup(RenderGraphBuilder& b) override {
         source.declarePrepareDependency(b);
@@ -56,7 +56,7 @@ public:
     }
     void execute(CommandList& cmd,const FrameData& f) override {
         auto view=source.checkedSceneSnapshot(f).view;view.skyboxEnabled=true;
-        std::string error;require(renderer.render(cmd,view,{},error),error.c_str());
+        std::string error;require(renderer.render(cmd,view,{},error,f.frameIndex),error.c_str());
     }
     std::optional<CommandListStatistics> expectedFrameStatistics() const override {return CommandListStatistics{1,3};}
 private:
@@ -153,6 +153,8 @@ void MclarenEditSmoke::requestStep() {
     KU_INFO("KUENGINE_EDIT_REQUEST step={} afterCompletedSubmit={}",m_step,m_after);
 }
 void MclarenEditSmoke::update(const FrameData& frame) {
+    m_engine.waitForAllFrames(); // optional single-staging verification coordinator
+
     for(auto* readback:m_readbacks){readback->inspect();readback->update(frame);}
     m_capture=false;
     if(m_done)return;

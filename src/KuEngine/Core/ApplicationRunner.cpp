@@ -130,7 +130,12 @@ ApplicationRunOptions parseApplicationRunOptions(
 
     for (size_t i = 0; i < arguments.size(); ++i) {
         const std::string_view argument = arguments[i];
-        if (argument == "--smoke-frames") {
+        if (argument == "--frames-in-flight") {
+            if (++i >= arguments.size()) throw std::invalid_argument("--frames-in-flight requires 1 or 2");
+            const auto value = parseUnsigned(arguments[i], "--frames-in-flight");
+            if (value < 1 || value > 2) throw std::invalid_argument("--frames-in-flight requires 1 or 2");
+            options.framesInFlight = static_cast<uint32_t>(value);
+        } else if (argument == "--smoke-frames") {
             if (++i >= arguments.size()) {
                 throw std::invalid_argument("--smoke-frames requires a value");
             }
@@ -206,6 +211,7 @@ int runApplication(
         return static_cast<int>(ApplicationExitCode::invalidArguments);
     }
 
+    if (options.framesInFlight) config.framesInFlight = *options.framesInFlight;
     auto validationMessages = std::make_shared<ValidationMessageTracker>();
     EngineRunResult result{};
     bool validationUnavailable = false;

@@ -21,7 +21,7 @@ void ForwardDisplayPass::initialize(const RenderContext& context)
     candidate->initialize(
         context.device,
         m_sceneColorDesc.format,
-        m_swapChainDesc.format);
+        m_swapChainDesc.format, context.framesInFlight);
     m_program = std::move(candidate);
 }
 
@@ -57,7 +57,7 @@ void ForwardDisplayPass::execute(
             frame.viewerLayout.sceneFramebuffer,
             sceneColor.extent);
     const auto view = m_viewProvider ? m_viewProvider(frame) : ForwardView{};
-    m_program->draw(commands, sceneColor, uvTransform, view.environmentExposure, view.outputGamma);
+    m_program->draw(commands, sceneColor, uvTransform, view.environmentExposure, view.outputGamma, frame.frameIndex);
 }
 
 } // namespace ku

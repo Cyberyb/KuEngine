@@ -13,8 +13,10 @@ M3-WP03 将其 RHIShader 调用迁移为显式 path/stage/entry 的唯一 vertex
 ```mermaid
 flowchart LR
     Scene["SceneData: MeshHandle / Instance"] --> Plan["variant plan + resolved material"]
-    Plan --> Mesh["GpuModelAsset: one per MeshHandle"]
+    Plan --> Mesh["GpuModelAsset: uploaded mesh"]
     Plan --> Material["MaterialGpuResources: descriptor variants"]
+    Procedural["CornellBox：程序化 MeshData / MaterialData"] --> Mesh
+    Procedural --> Material
     View["camera / lights / environment"] --> Renderer["ForwardRenderer"]
     Mesh --> Renderer
     Material --> Renderer
@@ -46,7 +48,7 @@ Prepare只构建snapshot，各Renderer在对应phase执行时准备/写入各自
 
 不透明和 Mask 先绘制；Blend 按对象中心相对相机的距离从后到前排序，距离相同按原始顺序稳定。Mask 执行 alpha discard 并写深度；Blend 使用 alpha blend、不开深度写；`doubleSided` 选择禁用 cull 的管线变体。排序是对象级，不解决相交透明几何。
 
-Mclaren 及 ForwardReuse 都在现有单帧 Fence-safe Runtime 中拥有 Program/Renderer。Mclaren 在模型替换成功时重建其 mesh/variant/draw、确保管线和 renderer 容量；环境替换只重建环境资源并 rebind。失败保留已发布 state。多帧 retire、异步加载和跨场景缓存尚未实现。
+Mclaren、ForwardReuse 及 CornellBox 都在现有单帧 Fence-safe Runtime 中拥有 Program/Renderer。Mclaren 在模型替换成功时重建其 mesh/variant/draw、确保管线和 renderer 容量；环境替换只重建环境资源并 rebind。失败保留已发布 state。多帧 retire、异步加载和跨场景缓存尚未实现。
 
 Forward/PBR/Unlit/Sky/Deferred Lighting 只输出线性颜色；Display 是唯一曝光、Reinhard（`c*exposure/(1+c*exposure)`）和显示转换阶段。Display 使用 `sceneFramebuffer` 的 UV scale/offset nearest 采样，UI 在转换后合成。UNORM 在 outputGamma 开启时手动 linear→sRGB；SRGB attachment 始终由硬件编码，不重复编码，其 UI gamma 开关禁用，不能通过该开关关闭硬件编码。曝光不改变显示前 SceneColor。
 
@@ -57,3 +59,5 @@ Forward/PBR/Unlit/Sky/Deferred Lighting 只输出线性颜色；Display 是唯�
 `ForwardReuseApp` 是最小公共使用者。它从 data-URI glTF semantic card 建立一个 mesh（4 primitives）和两个实例，产生两个 GPU descriptor variants、Forward+Display 精确 9 draws / 45 submitted vertices。它覆盖 PBR/Unlit、MR/AO/emissive UV、Opaque/Mask/Blend、double-sided、零光与背面视图预设；环境是内建 1×1 输入，不依赖外部 HDR。操作见 [ForwardReuse 使用说明](../usage/forward-reuse-example.md)。
 
 Mclaren 现在也完全经公共 Forward 提交；旧 `MclarenRenderResources` 与旧 shader 文件可能仍在树中，但不再构建或运行，不能视作当前主路径。
+
+2026-10-21 新公共消费者 [CornellBox](../usage/cornell-box-example.md) 使用程序化 MeshData、8 PBR/Opaque draws、四点光与中性环境，默认 Deferred，也可经既有静态分支切至 Forward；普通 Forward 的 Background 关闭 skybox、为0/0，8个几何draw加Display为9 draws/111 submitted vertices。SceneDrawSource、四 phase UBO、Graph targets 和析构借用契约保持；公共 Shader/Runtime 无修改。

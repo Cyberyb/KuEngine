@@ -1,6 +1,6 @@
 # KuEngine 产品需求
 
-更新日期：2026-10-11。本文是产品目标与功能范围的维护入口；REQ-01～13首个产品范围已获最终C QA ACCEPTED，C文档已同步，M4已由Lead最终审计闭环（DONE），M5未开始。当前实现见 [宏观架构](current-architecture.md)，开发顺序见 [roadmap](roadmap.md)，架构取舍见 [目标架构](target-architecture.md)。
+更新日期：2026-10-21。本文是产品目标与功能范围的维护入口；REQ-01～13首个产品范围已获最终C QA ACCEPTED，C文档已同步，M4已由Lead最终审计闭环（DONE），M5未开始。新增 REQ-15 康奈尔盒子示例，独立于 M5 实施。当前实现见 [宏观架构](current-architecture.md)，开发顺序见 [roadmap](roadmap.md)，架构取舍见 [目标架构](target-architecture.md)。
 
 ## 1. 产品定位
 
@@ -70,8 +70,12 @@ P0 表示首个完整产品闭环必需，不表示所有 P0 都必须先于所�
 | REQ-12 | Vulkan 原生扩展入口 | P0 | 已验收（首轮）：checked native capability/side-effect/use子集与执行期借用；after-execute失效为源码核对，专项永久误用测试缺席；不自动检查任意裸Vulkan | M3、M4 |
 | REQ-13 | 小型引擎上的特性开发闭环 | P0 | 已验收（首轮）：最终需求矩阵、完整查看器工作流与现有Graphics/Compute/native接入说明；不是任意新特性已实现声明 | M3、M4 |
 | REQ-14 | 正确性、可复现与扩展性能观测 | P1 | 部分实现：CPU/Smoke/SyncVal与WP02有界HDR/格式/深度/多材质像素检查已验收；非通用历史图像平台。逐帧隔离/逐Pass观测/低能力Timestamp实机仍属后续强化 | M0 完成、M5 强化 |
+| REQ-15 | 自建康奈尔盒子延迟 PBR 示例 | P1 | 已验收（2026-10-21 独立 QA ACCEPTED）：代码生成房间、红绿侧墙、两个旋转盒体和可见顶灯；默认 Deferred，复用公共 PBR / GBuffer / HDR 输出 | 独立示例工作包 CornellBox |
+| REQ-16 | Shadertoy 体积光积分复刻示例 | P1 | 未实现：复刻 SebH 的 XlBSRz（VolumetricIntegration），包含程序化场景、介质散射/消光、光照阴影与动画，可调参并提供可复现验证入口 | 独立示例工作包 VolumetricIntegration |
 
 REQ-14 中影响 P0 功能正确性的测试随对应阶段完成，不能以 P1 为由延后必要的同步和生命周期验证。
+
+2026-10-21 用户授权启动 REQ-14 的双帧子范围（M5-WP01）：仅实现最多 2 帧在途，保留单帧模式用于兼容和对照，不支持 3 帧。常规循环只等待复用帧槽，命令、动态 UBO、可变 Descriptor、Depth/HDR/GBuffer、Query 与完成提交统计按槽隔离。资源替换、编辑造成共享 GPU 对象变化、resize/recompile/退出须在明确安全点处理，允许这些低频操作等待全部在途工作。验收覆盖实际双槽轮转、完成提交归属、两渲染路径、调试输出、resize、资产替换与 Validation；不以 FPS 涨幅作为通过条件。批量上传、通用延迟回收、逐 Pass profiler、预设/导出和 M5 其他功能不在本次范围。当前状态：实施中，未验收。
 
 2026-10-11最终`build/qa-m4-wp03c-final/qa-report.md`与`req01-13-qa-matrix.md` ACCEPTED，依据当前冻结C276、A3与独立SessionB正常退出0/SyncVal error0、五新可视示例和明确继承的B回归。用户明确自测WASDQE全正确并跳过重复，又确认右键持续转向/UI文本capture/失焦正确并免重复人工；记录为USER-SELFTESTED/重复SKIPPED，不删除原功能需求、不扩大为GPU/模型验证豁免。专项diagonal/startup/mode/reset/epoch-held物理stress与exact rates新实机NOT RUN；18controller tests位于composite40证明数学/状态契约。Release CTest3pass/28skip77不是GPU通过，另20真实Release GPU组actual0；不是C全部重跑。REQ-14仍部分/M5未来，M4最终Lead闭环完成，M5未开始。物理OOM/device-loss/低caps/live-format/soak/RenderDoc未运行。具体会话/继承/限制见 [回归说明](../usage/regression-checks.md)，接入见 [开发渲染特性](../usage/developing-render-features.md)。
 
@@ -116,6 +120,26 @@ ShadingModel 回答“材质怎样响应光照”；RenderPath 回答“这些�
 - 至少提供一个带能力检查的 Vulkan 原生命令接入示例；设备不支持时明确跳过或报错，不默默改变算法。首轮不要求为每个 Vulkan 扩展编写封装。
 - 新增 ShadingModel 的改动集中在材质、Shader 与必要的渲染分派，不要求改动 Runtime 帧循环。新增 Pass 不要求编辑一个巨大的中央绘制函数。
 
+### 4.5 康奈尔盒子示例（REQ-15）
+
+- 在 `examples/cornell_box` 提供独立可构建、可启动的 `CornellBoxApp`，自行生成几何与材质，不依赖下载模型或外部 HDR。
+- 场景包含前方开口的房间、红色左墙、绿色右墙、白色地板/天花板/背墙、两个高度和旋转不同的盒体及可见顶灯；法线、绕序与深度遮挡正确。
+- 默认使用公共 Deferred Geometry → Lighting → HDR Display；表面使用公共 Metallic-Roughness PBR，保留 GBuffer 检查与实时统计。灯光及材质、曝光可调。
+- 顶灯发光表面与公共点光源共同表达照明；当前共享 PBR 近似保持既有语义，不将其宣称为真实面光源积分、阴影、全局光照或路径追踪结果。
+- 通过场景几何/材质 CPU 检查、真实 GPU 有限帧运行、Validation、resize/recompile 和可定位的画面检查后才能标记已验收；原有示例的相关回归保持通过。
+
+当前状态：已验收。2026-10-21 [独立 QA ACCEPTED](../../build/qa-cornell-box/qa-report.md)：Debug定向CTest7/7（含Triangle/ForwardReuse相关回归），两配置core142/142，显式SyncVal errors=0，真实Release两路径/resize-recompile、独立GPU几何/像素和GUI控件通过；设计/usage已同步。未执行完整33项CTest，其余范围见[回归](../usage/regression-checks.md)。
+
+### 4.6 Shadertoy 体积光积分示例（REQ-16）
+
+- 在 `examples/volumetric_integration` 提供独立的 `VolumetricIntegrationApp`，以 [SebH 的 XlBSRz](https://www.shadertoy.com/view/XlBSRz) 为场景和体积积分参考；保留作者、来源与所取得源码的许可说明，明确复刻差异和来源证据。
+- 复用公共 ApplicationRunner、RenderGraph、RHI 与 UIOverlay，示例自身负责全屏 Shader、程序化场景与介质，不将实验性体积效果扩展为公共 PBR 或通用 Shadertoy 播放器。
+- 保留参考的几何、灯光、介质、动画及改进积分核心；侧栏支持常用参数与复位，并有固定时间入口便于画面对比。噪声等外部输入应明确来源，或说明自包含替代产生的差异。
+- 正确处理主视口坐标、Vulkan Y 方向、交换链输出编码、resize/recompile 和 1/2 帧在途；不复制窗口、Swapchain 或帧循环。
+- 验收包含 Shader 构建、实际 GPU 有限帧与非空画面检查、Validation、resize/recompile、固定时间动画/参数响应，以及受影响的已有示例回归。构建通过不能代替视觉或 GPU 验收。
+
+当前状态：未实现，2026-10-24 开始独立工作包；不改变既有 M5 工作包的状态或验收范围。原站访问校验与公开源码替代来源必须在交付中如实说明。
+
 ## 5. 如何修改或增加需求
 
 本文管理“做什么、做到什么程度”，[目标架构](target-architecture.md) 管理“采用什么边界和约束”，[roadmap](roadmap.md) 管理“先后顺序与阶段验收”；不要在三个文件重复维护同一份进度表。
@@ -144,3 +168,5 @@ ShadingModel 回答“材质怎样响应光照”；RenderPath 回答“这些�
 |---|---|
 | 2026-09-13 | 根据产品目标建立 REQ-01～14，明确小型 Vulkan 渲染引擎定位、双渲染路径、查看器及 RDG 风格扩展边界 |
 | 2026-10-11 | REQ-01～13首轮范围依最终C QA已验收；仅修订人工重复程序，保留功能需求、独立证据/用户自测/未运行边界；REQ-14仍部分，M5未开始 |
+| 2026-10-21 | 新增 REQ-15：自建康奈尔盒子场景，默认复用延迟 PBR，独立示例工作包，不启动 M5 |
+| 2026-10-24 | 新增 REQ-16：复刻 Shadertoy XlBSRz 的独立体积光积分示例，验证与许可边界单独记录 |

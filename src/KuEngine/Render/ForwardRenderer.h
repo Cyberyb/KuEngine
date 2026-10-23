@@ -1,6 +1,7 @@
 // KuEngine public forward renderer: frame/draw UBO ownership and borrowed draw submission.
 #pragma once
 
+#include <vector>
 #include <memory>
 #include <span>
 #include <string>
@@ -28,7 +29,7 @@ public:
         RHIDevice& device,
         ForwardProgram& program,
         size_t initialCapacity,
-        std::string& errorMessage);
+        std::string& errorMessage, uint32_t framesInFlight = 1);
     [[nodiscard]] bool ensureCapacity(
         size_t drawCapacity,
         std::string& errorMessage);
@@ -38,11 +39,12 @@ public:
         CommandList& commandList,
         const ForwardView& view,
         std::span<const ForwardDraw> draws,
-        std::string& errorMessage);
+        std::string& errorMessage, uint32_t frameSlot = 0);
     [[nodiscard]] uint32_t capacity() const { return m_layout.capacity; }
     [[nodiscard]] bool ready() const;
 
 private:
+    std::vector<std::unique_ptr<ForwardRenderer>> m_additionalFrames;
     struct DynamicCandidate;
     [[nodiscard]] bool writeFrame(const ForwardView& view);
     [[nodiscard]] bool writeDraws(

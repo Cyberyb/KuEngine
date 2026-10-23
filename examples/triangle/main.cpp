@@ -12,7 +12,7 @@ int main(int argc, char* argv[])
     config.title = "KuEngine Triangle";
     config.width = 1280;
     config.height = 720;
-    config.framesInFlight = 1;
+    config.framesInFlight = 2;
     config.clearColor = {{0.08f, 0.09f, 0.12f, 1.0f}};
 
     return ku::runApplication(

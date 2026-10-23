@@ -259,6 +259,7 @@ ForwardRenderer& MclarenPass::sceneRenderer(SceneDrawPhase phase) {
 
 void MclarenPass::initialize(const RenderContext& context)
 {
+    m_waitForAllFrames = context.waitForAllFrames;
     m_outputAttachmentSrgb = isSrgbAttachmentFormat(context.colorFormat);
     if (m_forwardRenderer && m_forwardRenderer->ready()) return;
     KU_INFO("MclarenPass: initializing...");
@@ -352,7 +353,7 @@ void MclarenPass::initialize(const RenderContext& context)
         std::erase_if(geometryKeys, [](const auto& k) { return k.alphaMode == asset::AlphaMode::Blend; });
         if (!geometryProgram->ensurePipelines(geometryKeys, loadError)) throw std::runtime_error(loadError);
     }
-    if (!renderer->initialize(device, *program, model->draws.size(), loadError)) {
+    if (!renderer->initialize(device, *program, model->draws.size(), loadError, context.framesInFlight)) {
         throw std::runtime_error(loadError);
     }
     model->scene.releaseCpuMesh();
@@ -362,12 +363,12 @@ void MclarenPass::initialize(const RenderContext& context)
     m_geometryProgram = std::move(geometryProgram);
     if (pathControl().deferredAvailable()) {
         m_geometryRenderer = std::make_unique<ForwardRenderer>();
-        if (!m_geometryRenderer->initialize(device,*m_geometryProgram,model->draws.size(),loadError)) throw std::runtime_error(loadError);
+        if (!m_geometryRenderer->initialize(device,*m_geometryProgram,model->draws.size(),loadError, context.framesInFlight)) throw std::runtime_error(loadError);
     }
     m_blendRenderer = std::make_unique<ForwardRenderer>();
     m_backgroundRenderer = std::make_unique<ForwardRenderer>();
-    if (!m_blendRenderer->initialize(device, *m_forwardProgram, model->draws.size(), loadError)
-        || !m_backgroundRenderer->initialize(device, *m_forwardProgram, 1, loadError))
+    if (!m_blendRenderer->initialize(device, *m_forwardProgram, model->draws.size(), loadError, context.framesInFlight)
+        || !m_backgroundRenderer->initialize(device, *m_forwardProgram, 1, loadError, context.framesInFlight))
         throw std::runtime_error(loadError);
     m_environmentState = std::move(environment);
     m_modelState = std::move(model);
@@ -412,11 +413,11 @@ void MclarenPass::initialize(const RenderContext& context)
 void MclarenPass::update(const FrameData& frame)
 {
     pathControl().publishPending();
-    // Engine calls update only after waitForFrame() has completed. With the
-    // configured single frame in flight this is the fence-safe publication
-    // point, before command recording. Resize-skipped frames never enter here,
-    // so a pending request naturally survives until the next normal update.
+    // Runtime has waited the current slot. Shared GPU-object replacements and
+    // capacity/pipeline changes additionally drain all slots before publication.
+    // Resize-skipped frames preserve the queued request for the next update.
     queueStartupReplacement();
+    if ((m_replacement.pending() || m_editor.pending()) && m_waitForAllFrames) m_waitForAllFrames();
     processPendingReplacement();
     processPendingEdit();
     ++m_completedNormalUpdates;

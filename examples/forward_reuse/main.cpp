@@ -72,7 +72,7 @@ int main(int argc, char* argv[])
     config.title = "KuEngine Forward Reuse";
     config.width = 960;
     config.height = 540;
-    config.framesInFlight = 1;
+    config.framesInFlight = 2;
     config.enableDepth = true;
     config.clearColor = {{0.025f,0.03f,0.045f,1.0f}};
     return ku::runApplication(static_cast<int>(forwarded.size()),

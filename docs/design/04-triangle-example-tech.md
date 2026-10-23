@@ -1,10 +1,10 @@
 # 示例模块设计
 
-核对日期：2026-10-10。保留原 Triangle 文档路径，现在统一说明六个示例的当前装配。
+核对日期：2026-10-21。保留原 Triangle 文档路径，现在统一说明七个示例的当前装配。
 
 ## 公共入口
 
-六个 main 都创建 `EngineConfig`，再交给 `runApplication()` 统一解析参数、创建 Engine、注册 Pass、compile/run 和归纳退出码。Vulkan 帧循环、交换链、同步、深度和 UI Backend 由 Engine 持有。
+七个 main 都创建 `EngineConfig`，再交给 `runApplication()` 统一解析参数、创建 Engine、注册 Pass、compile/run 和归纳退出码。Vulkan 帧循环、交换链、同步、深度和 UI Backend 由 Engine 持有。
 
 | 示例 | Pass/组件 | 当前绘制 |
 |---|---|---|
@@ -13,11 +13,12 @@
 | [Alpha3Pass](../../examples/alpha3pass/AlphaPasses.cpp) | 三个 AlphaShapePass | 每个 3 顶点，显式依赖链，共享颜色附件 |
 | [Mclaren](../../examples/mclaren/MclarenPass.cpp) | MclarenPass ScenePrepare/替换/相机及公共 ScenePasses | Background → Forward Opaque 或 Geometry/Lighting → Blend → Display |
 | [ForwardReuse](../../examples/forward_reuse/ForwardReusePass.cpp) | ForwardReusePass ScenePrepare 与公共 ScenePasses | 两路径 semantic/HDR/normal fixtures，共享资产与稳定 snapshot |
+| [CornellBox](../../examples/cornell_box/CornellBoxPass.cpp) | CornellBoxPass ScenePrepare、公共 ScenePasses、可选 CornellBoxReadback | 程序化房间/两盒/顶灯，默认 Deferred 10 draws / 114 vertices；Forward 9/111 |
 | [GraphResourceProbe](../../examples/graph_resource_probe/GraphResourceProbePass.cpp) | GraphResourceProbePass | 六 Pass Graph：ImageClear、BufferFill、native Copy callback、normal Compute callback、SampleDraw、PostDrawCopy；固定 1 draw / 3 vertices |
 
 普通运行（无readback probe）含唯一 Display：Mclaren Forward91/9,202,884、Deferred92/9,202,887；ForwardReuse Forward9/45、Deferred10/48。Deferred 多一个 Lighting 全屏三角形；测试 UNORM/SRGB display probes 额外2 draws/6 vertices，fixture/天空开关也改变计数，不把探针计数当普通基线。
 
-六个示例共享以下非交互冒烟参数：`--smoke-frames N` 按成功提交的帧数停止（`0` 保持无限交互循环）；`--smoke-require-validation` 要求可捕获 Validation 消息；`--smoke-resize-after FRAME WIDTH HEIGHT` 在指定提交帧后请求窗口 resize，且帧上限至少比该帧多两帧；`--smoke-sidebar-collapsed` 从紧凑侧栏启动并核对布局；`--smoke-inject-validation-error` 仅用于受控负例，必须同时要求 Validation 与正帧数。普通不带参数的运行方式不变。
+七个示例共享以下非交互冒烟参数：`--smoke-frames N` 按成功提交的帧数停止（`0` 保持无限交互循环）；`--smoke-require-validation` 要求可捕获 Validation 消息；`--smoke-resize-after FRAME WIDTH HEIGHT` 在指定提交帧后请求窗口 resize，且帧上限至少比该帧多两帧；`--smoke-sidebar-collapsed` 从紧凑侧栏启动并核对布局；`--smoke-inject-validation-error` 仅用于受控负例，必须同时要求 Validation 与正帧数。普通不带参数的运行方式不变。
 
 各Pass可选提供`expectedFrameStatistics()`；RenderPipeline仅在所有启用Pass都有预期值时汇总，Runner将最后一个completed submit业务计数精确比较并输出`KUENGINE_COMPLETED_STATS ... status=matched`；不匹配/无快照/缺预期均smoke fail。Triangle1/3、Cube默认1/36、三Alpha3/9。MclarenSource Prepare为0/0；Background按sky开关0/0或1/3，Surface按snapshot每实例有效draw的indexCount累加，Display或GBufferDisplay始终1/3，DeferredLighting另1/3，Blend按实际分流计数。多实例按全部实际draw构成精确match，不仅单模型subMesh常数或正数检查；顶部默认计数含唯一Display，fixture/Clear/probe另按构成核对。
 
@@ -81,3 +82,33 @@ MclarenEditSmoke是示例局部有界验证，29samples/16edits/layout，两layo
 旧 MclarenRenderResources 仍可能作为未构建遗留文件存在，不是当前主干。CameraController 可以独立做 CPU 测试，其他示例绘制仍需 GPU 冒烟验证。当前没有通用 Scene/ECS 或编辑器。
 
 运行和回归操作见 [usage](../usage/README.md)，此处仅描述模块设计。
+
+## CornellBox 程序化延迟 PBR
+
+源码：[入口](../../examples/cornell_box/main.cpp)、[几何/材质](../../examples/cornell_box/CornellBoxScene.cpp)、[Source 接口](../../examples/cornell_box/CornellBoxPass.h)、[装配](../../examples/cornell_box/CornellBoxPass.cpp)、[读回](../../examples/cornell_box/CornellBoxReadback.cpp)。
+
+`cornell::makeScene()` 生成世界空间 MeshData：房间 x/z∈[-1,1]、y∈[0,2]，+Z 开口，五面内向法线，红左/绿右/白地顶背墙。短盒中心(-.4,.325,.3)、尺寸(.58,.65,.58)、yaw -17°；高盒中心(.36,.6,-.3)、尺寸(.58,1.2,.58)、yaw +19°；盒面外向平法线。独立顶灯 y=1.985，避免与 y=2 天花板重合。共 8 submeshes、72 顶点、108 indices，材质全部 PBR/Opaque，默认 metallic=0，短/高盒 roughness=.36/.72。几何、材质及 1×1 中性环境都由代码建立，不经过 SceneLoader、JSON、ModelLoader 或外部 HDR。
+
+顶灯固定 emissive=(12,10.8,9)，四个暖色点光提供直接照明，中性环境默认 fill=.25。Ceiling light 只缩放四点光，不关闭灯面 emissive。沿用公共简化 Metallic-Roughness PBR，无阴影、GI、真实面积积分或完整 IBL，不是路径追踪参考结果。
+
+`CornellBoxPass` 同时实现 RenderPass/SceneDrawSource，持有 CPU MeshData、GpuModelAsset、PBRMaterialResources、PBREnvironmentResources、Forward/Geometry Program 及 Background/Opaque/Geometry/Blend 四套独立 Renderer UBO。`sceneSnapshot()` 提供稳定 view/draws，`sceneRenderer(phase)` 借用对应 renderer；Fence-safe update 发布 path mask，post-UI execute 一次构建 8 draws snapshot。ready initialize/recompile 保留资源及 UI 参数；析构依次释放 renderer、材质/环境/model、program。Pipeline 拥有公共 Pass，Graph pool 拥有 HDR、depth 与四 RGBA16F MRT。
+
+```mermaid
+flowchart LR
+    CPU["CornellBoxScene：世界空间 MeshData / MaterialData"] --> Source["CornellBoxPass：GPU资产 / 四phase Renderer"]
+    UI["灯光 / 曝光 / fill / 两盒材质 / 相机 UI"] --> Source
+    Source --> Snapshot["post-UI SceneRenderSnapshot"]
+    Snapshot --> Background["Background"]
+    Background --> Surface["Geometry → Lighting 或 Forward Opaque"]
+    Surface --> Blend["Blend：无透明对象"]
+    Blend --> Display["HDR Display 或直接 MRT Debug"]
+    Display --> Overlay["UI → Present"]
+    Pool["Graph pool：HDR / depth / 4 MRT"] --> Surface
+    Pool --> Readback["可选 Transfer → staging → Fence 后 inspect"]
+```
+
+默认 1280×960、Deferred；`--render-path forward` 与公共 `--deferred`/smoke 参数可用。默认 skybox 关闭，Background 为 0/0；Geometry 8/108 + Lighting 1/3 + Display 1/3 = 10/114；Forward 为 Opaque 8/108 + Display 1/3 = 9/111；Prepare/Blend/读回均为 0/0。顶点统计是提交索引数，并非 72 个去重顶点。侧栏相机只提供 yaw/pitch/distance/Reset view，不接入鼠标 Orbit 或 FreeFly。
+
+可选 `--cornell-readback-prefix` 仅用于普通 Deferred 的有限帧验证。CornellBoxReadback 声明 BaseMetallic/PositionModel/HDR 三图 TransferSource、导入自有 staging 为 TransferDestination，依赖 ForwardDisplay，在 Rendering Scope 外复制；Graph 负责传输与 HOST_READ 边界，单帧 Fence 后的 update/onResize inspect 才 invalidate/map。容量为 2048² 像素×三张 RGBA16F；rawbin 为 width/height 两个 uint32 后接三平面 half，PPM 是场景 viewport HDR 经 CPU 曝光/Reinhard/sRGB 转换的预览，非 Swapchain 截图。它不支持将任意材质交互、Forward/debug 路径视为通用截图。
+
+2026-10-21 [独立 QA](../../build/qa-cornell-box/qa-report.md) ACCEPTED：两配置 core142，Debug 定向 CTest7/7（0skip），显式 SyncVal errors=0，Release 默认/resize-recompile/Forward 真实 GPU 退出0；独立 half 原始像素和 ray/plane/OBB 检查、真实 GUI 控件通过。未运行项及命令见 [使用说明](../usage/cornell-box-example.md) 和 [回归说明](../usage/regression-checks.md)。

@@ -41,7 +41,7 @@ void HdrDisplayProbePass::initialize(const RenderContext& context) {
     vkGetPhysicalDeviceFormatProperties(context.device.physicalDevice(), m_output.format, &properties);
     constexpr auto required = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
     if ((properties.optimalTilingFeatures & required) != required) throw std::runtime_error("HDR display probe format unavailable");
-    m_program.initialize(context.device, m_scene.format, m_output.format);
+    m_program.initialize(context.device, m_scene.format, m_output.format, context.framesInFlight);
 }
 void HdrDisplayProbePass::setup(RenderGraphBuilder& b) {
     b.dependsOn(m_source.scenePrepareName());
@@ -53,7 +53,7 @@ void HdrDisplayProbePass::execute(CommandList& c, const FrameData& frame, Render
     const auto& view = m_source.checkedSceneSnapshot(frame).view;
     // Probe covers the entire image, preserving source pixel coordinates/ROI.
     const auto image = r.resolveImage(m_input,ImageUse::FragmentSampled);
-    m_program.draw(c,image,calculateForwardDisplayUvTransform(frame.viewerLayout.sceneFramebuffer,image.extent),view.environmentExposure,true);
+    m_program.draw(c,image,calculateForwardDisplayUvTransform(frame.viewerLayout.sceneFramebuffer,image.extent),view.environmentExposure,true,frame.frameIndex);
 }
 DeferredReadbackPass::DeferredReadbackPass(RenderPipeline& pipeline,
     std::filesystem::path prefix, bool backface, bool deferred, bool semantic)
@@ -116,7 +116,8 @@ void DeferredReadbackPass::captureDepth(CommandList& c, RenderGraphResourceResol
     vkCmdCopyImageToBuffer(c,image.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,buffer.buffer,1,&copy);
 }
 void DeferredReadbackPass::update(const FrameData&) {
-    // Runtime has waited the previous frame fence before update().
+    // Bounded readback tool owns one staging allocation: wait before host access.
+    if (m_pending) m_device->waitIdle();
     inspect();
     m_pipeline.bindExternalBuffer({.resourceName = stagingName,
         .buffer = m_staging->buffer(), .size = stagingSize, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,

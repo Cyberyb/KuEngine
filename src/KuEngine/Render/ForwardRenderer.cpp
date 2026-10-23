@@ -99,7 +99,7 @@ ForwardRenderer::~ForwardRenderer() { reset(); }
 
 bool ForwardRenderer::initialize(
     RHIDevice& device, ForwardProgram& program, size_t initialCapacity,
-    std::string& errorMessage)
+    std::string& errorMessage, uint32_t framesInFlight)
 {
     reset();
     errorMessage.clear();
@@ -107,6 +107,7 @@ bool ForwardRenderer::initialize(
     m_program = &program;
     m_deviceHandle = device.device();
     try {
+        if (framesInFlight < 1 || framesInFlight > 2) throw std::invalid_argument("ForwardRenderer supports one or two slots");
         if (!program.ready()) {
             throw std::invalid_argument("ForwardRenderer requires a ready program");
         }
@@ -121,6 +122,11 @@ bool ForwardRenderer::initialize(
             sizeof(ForwardFrameUniforms));
         if (!ensureCapacity(std::max<size_t>(1, initialCapacity), errorMessage)) {
             throw std::runtime_error(errorMessage);
+        }
+        for (uint32_t slot = 1; slot < framesInFlight; ++slot) {
+            auto renderer = std::make_unique<ForwardRenderer>();
+            if (!renderer->initialize(device, program, initialCapacity, errorMessage, 1)) throw std::runtime_error(errorMessage);
+            m_additionalFrames.push_back(std::move(renderer));
         }
     } catch (const std::exception& error) {
         errorMessage = error.what();
@@ -137,6 +143,8 @@ bool ForwardRenderer::initialize(
 bool ForwardRenderer::ensureCapacity(size_t drawCapacity, std::string& errorMessage)
 {
     errorMessage.clear();
+    for (auto& renderer : m_additionalFrames)
+        if (!renderer->ensureCapacity(drawCapacity, errorMessage)) return false;
     if (m_device == nullptr || m_program == nullptr
         || m_deviceHandle == VK_NULL_HANDLE) {
         errorMessage = "ForwardRenderer capacity requested before initialization";
@@ -280,8 +288,12 @@ void ForwardRenderer::drawSkybox(CommandList& commandList,
 
 bool ForwardRenderer::render(CommandList& commandList,
     const ForwardView& view, std::span<const ForwardDraw> draws,
-    std::string& errorMessage)
+    std::string& errorMessage, uint32_t frameSlot)
 {
+    if (frameSlot > 0) {
+        if (frameSlot > m_additionalFrames.size()) { errorMessage = "ForwardRenderer frame slot out of range"; return false; }
+        return m_additionalFrames[frameSlot - 1]->render(commandList, view, draws, errorMessage);
+    }
     errorMessage.clear();
     if (!ready() || draws.size() > m_layout.capacity) {
         errorMessage = "ForwardRenderer is not ready or draw capacity is insufficient";
@@ -363,6 +375,7 @@ bool ForwardRenderer::ready() const
 
 void ForwardRenderer::reset()
 {
+    m_additionalFrames.clear();
     destroyDescriptors();
     m_drawBuffer.reset();
     m_frameBuffer.reset();

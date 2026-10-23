@@ -1,6 +1,7 @@
 // KuEngine frame statistics: draw accumulation, GPU timing state, and completed-submit snapshots.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <optional>
 
@@ -64,20 +65,24 @@ struct CompletedFrameStatistics {
     CommandListStatistics commands{};
 };
 
-// The current Runtime has one frame in flight, so at most one submitted frame
-// may be awaiting Fence completion. Skipped acquire/resize loops never call
-// recordSubmittedFrame and therefore cannot advance this sequence.
+// Each of the two possible slots may hold one pending submitted frame.
+// A slot may be completed only after its fence; publishing never regresses the
+// completed serial. Skipped acquire/resize loops do not advance the sequence.
 class CompletedFrameStatisticsTracker {
 public:
     [[nodiscard]] bool recordSubmittedFrame(
         float cpuTimeMilliseconds,
-        const CommandListStatistics& commands) noexcept;
+        const CommandListStatistics& commands, uint32_t frameSlot = 0) noexcept;
     [[nodiscard]] bool completePendingFrame(
-        const GpuTimeSample& gpuTime) noexcept;
+        const GpuTimeSample& gpuTime, uint32_t frameSlot = 0) noexcept;
 
-    [[nodiscard]] bool hasPendingFrame() const noexcept
+    [[nodiscard]] bool hasPendingFrame(uint32_t frameSlot = 0) const noexcept
     {
-        return m_pending.has_value();
+        return frameSlot < m_pending.size() && m_pending[frameSlot].has_value();
+    }
+    [[nodiscard]] uint64_t nextSubmittedFrame() const noexcept { return m_lastSubmittedFrame + 1; }
+    [[nodiscard]] uint64_t pendingSubmit(uint32_t slot) const noexcept {
+        return hasPendingFrame(slot) ? m_pending[slot]->submittedFrame : 0;
     }
     [[nodiscard]] const std::optional<CompletedFrameStatistics>& completedFrame() const noexcept
     {
@@ -92,7 +97,7 @@ private:
     };
 
     uint64_t m_lastSubmittedFrame = 0;
-    std::optional<PendingFrame> m_pending;
+    std::array<std::optional<PendingFrame>, 2> m_pending;
     std::optional<CompletedFrameStatistics> m_completed;
 };
 

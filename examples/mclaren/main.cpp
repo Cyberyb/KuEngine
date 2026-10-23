@@ -60,7 +60,7 @@ int main(int argc, char* argv[])
     config.title = "KuEngine Mclaren";
     config.width = 1280;
     config.height = 720;
-    config.framesInFlight = 1;
+    config.framesInFlight = 2;
     config.enableDepth = true;
     config.depthFormat = VK_FORMAT_UNDEFINED;
     config.clearColor = {{0.05f, 0.05f, 0.08f, 1.0f}};

@@ -217,39 +217,43 @@ makeGraphResourceComputeCallback()
             throw RuntimeUnavailableError(
                 "GraphResourceProbe requires compute support on the graphics queue");
         }
-        parameters.m_pipeline.reset();
-        parameters.m_parameters.reset();
+        parameters.m_pipeline.clear();
+        parameters.m_parameters.clear();
         parameters.m_shader.reset();
         const auto shaderPath = std::filesystem::current_path()
             / "shaders" / "graph_resource_probe.comp.spv";
         parameters.m_shader = std::make_unique<RHIShader>(
             context.device,
             ShaderDesc{shaderPath, VK_SHADER_STAGE_COMPUTE_BIT, "main"});
-        parameters.m_parameters = std::make_unique<RHIParameterSet>(
+        for (uint32_t slot=0;slot<context.framesInFlight;++slot) parameters.m_parameters.push_back(std::make_unique<RHIParameterSet>(
             context.device,
             std::vector<ParameterBindingDesc>{
                 {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                     VK_SHADER_STAGE_COMPUTE_BIT},
                 {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                    VK_SHADER_STAGE_COMPUTE_BIT}});
+                    VK_SHADER_STAGE_COMPUTE_BIT}}));
         ComputePipelineDesc pipelineDesc{};
         pipelineDesc.shader = parameters.m_shader.get();
-        pipelineDesc.descriptorSetLayouts = {parameters.m_parameters->layout()};
-        parameters.m_pipeline = std::make_unique<RHIComputePipeline>(
-            context.device, pipelineDesc);
+        for (const auto& set : parameters.m_parameters) {
+            pipelineDesc.descriptorSetLayouts = {set->layout()};
+            parameters.m_pipeline.push_back(std::make_unique<RHIComputePipeline>(
+                context.device, pipelineDesc));
+        }
         KU_INFO("KUENGINE_GRAPH_COMPUTE_READY local_size=32 groups=1");
     };
-    desc.execute = [](GraphCommandContext& context, const FrameData&, const auto& p) {
+    desc.execute = [](GraphCommandContext& context, const FrameData& frame, const auto& p) {
+        const auto& parameters = p.m_parameters.at(frame.frameIndex);
         const ResolvedBuffer input = context.resolveBuffer(
             p.m_compute, BufferUse::ComputeStorageRead, {0, kProbeBufferSize});
         const ResolvedBuffer draw = context.resolveBuffer(
             p.m_draw, BufferUse::ComputeStorageWrite, {0, kProbeBufferSize});
-        p.m_parameters->writeBuffer(
+        parameters->writeBuffer(
             0, input.buffer, input.size, 0, kProbeBufferSize);
-        p.m_parameters->writeBuffer(
+        parameters->writeBuffer(
             1, draw.buffer, draw.size, 0, kProbeBufferSize);
-        context.bindComputePipeline(*p.m_pipeline);
-        context.bindParameterSet(*p.m_pipeline, 0, *p.m_parameters);
+        const auto& pipeline = p.m_pipeline.at(frame.frameIndex);
+        context.bindComputePipeline(*pipeline);
+        context.bindParameterSet(*pipeline, 0, *parameters);
         context.dispatch(1, 1, 1);
     };
     desc.expectedStatistics = CommandListStatistics{0, 0};
@@ -268,13 +272,13 @@ void GraphResourceDrawPass::resetGpuResources() noexcept
     m_pipeline.reset();
     m_fragmentShader.reset();
     m_vertexShader.reset();
-    m_parameters.reset();
+    m_parameters.clear();
     if (m_sampler != VK_NULL_HANDLE && m_device != nullptr) {
         vkDestroySampler(m_device->device(), m_sampler, nullptr);
     }
     m_sampler = VK_NULL_HANDLE;
     m_device = nullptr;
-    m_boundImageGeneration = 0;
+    m_boundImageGeneration = {};
 }
 
 void GraphResourceDrawPass::initialize(const RenderContext& context)
@@ -296,11 +300,12 @@ void GraphResourceDrawPass::initialize(const RenderContext& context)
         context.device.device(), &samplerInfo, nullptr, &candidateSampler));
 
     try {
-        auto candidateParameters = std::make_unique<RHIParameterSet>(
+        std::vector<std::unique_ptr<RHIParameterSet>> candidateParameters;
+        for (uint32_t slot=0;slot<context.framesInFlight;++slot) candidateParameters.push_back(std::make_unique<RHIParameterSet>(
             context.device,
             std::vector<ParameterBindingDesc>{
                 {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                    VK_SHADER_STAGE_FRAGMENT_BIT}});
+                    VK_SHADER_STAGE_FRAGMENT_BIT}}));
         const auto shaderDir = std::filesystem::current_path() / "shaders";
         auto candidateVertexShader = std::make_unique<RHIShader>(
             context.device,
@@ -318,7 +323,7 @@ void GraphResourceDrawPass::initialize(const RenderContext& context)
             {0, sizeof(float) * 2, VK_VERTEX_INPUT_RATE_VERTEX}};
         pipelineDesc.vertexAttributes = {
             {0, 0, VK_FORMAT_R32G32_SFLOAT, 0}};
-        pipelineDesc.descriptorSetLayouts = {candidateParameters->layout()};
+        pipelineDesc.descriptorSetLayouts = {candidateParameters.front()->layout()};
         pipelineDesc.depthFormat = VK_FORMAT_UNDEFINED;
         pipelineDesc.cullMode = VK_CULL_MODE_NONE;
         pipelineDesc.depthTest = false;
@@ -367,9 +372,11 @@ void GraphResourceDrawPass::setup(RenderGraphBuilder& builder)
 
 void GraphResourceDrawPass::execute(
     CommandList& cmd,
-    const FrameData&,
+    const FrameData& frame,
     RenderGraphResourceResolver& resources)
 {
+    const auto& parameters = m_parameters.at(frame.frameIndex);
+    auto& boundGeneration = m_boundImageGeneration.at(frame.frameIndex);
     const ResolvedImage image = resources.resolveImage(
         m_image, ImageUse::FragmentSampled);
     const ResolvedBuffer vertex = resources.resolveBuffer(
@@ -383,17 +390,17 @@ void GraphResourceDrawPass::execute(
             "GraphResourceProbe draw pass received invalid contents");
     }
 
-    if (image.allocationGeneration != m_boundImageGeneration) {
-        m_parameters->writeImage(
+    if (image.allocationGeneration != boundGeneration) {
+        parameters->writeImage(
             0,
             m_sampler,
             image.imageView,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        m_boundImageGeneration = image.allocationGeneration;
+        boundGeneration = image.allocationGeneration;
     }
 
     m_pipeline->bind(cmd);
-    const VkDescriptorSet descriptorSet = m_parameters->set();
+    const VkDescriptorSet descriptorSet = parameters->set();
     vkCmdBindDescriptorSets(
         cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->layout(),
         0, 1, &descriptorSet, 0, nullptr);

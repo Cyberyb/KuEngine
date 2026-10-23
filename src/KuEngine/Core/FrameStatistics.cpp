@@ -109,15 +109,15 @@ const char* toString(GpuTimeStatus status) noexcept
 
 bool CompletedFrameStatisticsTracker::recordSubmittedFrame(
     float cpuTimeMilliseconds,
-    const CommandListStatistics& commands) noexcept
+    const CommandListStatistics& commands, uint32_t frameSlot) noexcept
 {
-    if (m_pending.has_value()
+    if (frameSlot >= m_pending.size() || m_pending[frameSlot].has_value()
         || m_lastSubmittedFrame == std::numeric_limits<uint64_t>::max()) {
         return false;
     }
 
     ++m_lastSubmittedFrame;
-    m_pending = PendingFrame{
+    m_pending[frameSlot] = PendingFrame{
         m_lastSubmittedFrame,
         cpuTimeMilliseconds,
         commands,
@@ -126,19 +126,20 @@ bool CompletedFrameStatisticsTracker::recordSubmittedFrame(
 }
 
 bool CompletedFrameStatisticsTracker::completePendingFrame(
-    const GpuTimeSample& gpuTime) noexcept
+    const GpuTimeSample& gpuTime, uint32_t frameSlot) noexcept
 {
-    if (!m_pending.has_value()) {
+    if (frameSlot >= m_pending.size() || !m_pending[frameSlot].has_value()) {
         return false;
     }
 
-    m_completed = CompletedFrameStatistics{
-        m_pending->submittedFrame,
-        m_pending->cpuTimeMilliseconds,
+    const auto pending = *m_pending[frameSlot];
+    if (!m_completed || pending.submittedFrame > m_completed->submittedFrame) m_completed = CompletedFrameStatistics{
+        pending.submittedFrame,
+        pending.cpuTimeMilliseconds,
         gpuTime,
-        m_pending->commands,
+        pending.commands,
     };
-    m_pending.reset();
+    m_pending[frameSlot].reset();
     return true;
 }
 

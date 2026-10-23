@@ -79,7 +79,10 @@ KuEngine/
 │   ├── triangle/          # Minimal draw and runtime UI control
 │   ├── cube/              # Solid/wireframe and input
 │   ├── alpha3pass/        # Three-pass graph execution
-│   └── mclaren/           # Model, materials, depth and PBR
+│   ├── mclaren/           # Model, materials, depth and PBR
+│   ├── forward_reuse/     # Shared Forward/Deferred rendering fixtures
+│   ├── graph_resource_probe/ # Graph graphics/compute resources
+│   └── cornell_box/       # Procedural Cornell box, deferred PBR
 ├── docs/                  # Documentation center
 │   ├── design/            # Current architecture and design contracts
 │   ├── logs/              # Concise daily iteration logs
@@ -98,11 +101,12 @@ KuEngine/
 - [RHI Layer Design](docs/design/01-rhi-layer.md)
 - [RenderPass Interface](docs/design/02-render-pass.md)
 - [Logging & Debugging](docs/design/03-logging.md)
-- [四个示例的设计](docs/design/04-triangle-example-tech.md)
+- [七个示例的设计](docs/design/04-triangle-example-tech.md)
 - [UI 与性能统计](docs/design/05-ui-layer.md)
 - [每日迭代日志](docs/logs/README.md)
 - [Bug 维护规则](docs/bugs/README.md)
 - [Triangle 示例运行指南](docs/usage/triangle-example.md)
+- [CornellBox 程序化延迟 PBR 示例](docs/usage/cornell-box-example.md)
 
 ## Version History
 

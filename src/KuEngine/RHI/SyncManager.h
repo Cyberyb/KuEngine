@@ -12,7 +12,6 @@ class RHIDevice;
 
 struct FrameSync {
     VkSemaphore imageAvailable = VK_NULL_HANDLE;
-    VkSemaphore renderFinished = VK_NULL_HANDLE;
     VkFence     inFlight = VK_NULL_HANDLE;
 };
 
@@ -22,6 +21,8 @@ public:
     ~SyncManager();
 
     void waitForFrame(uint32_t frame);
+    // Caller has waited device idle before swapchain replacement.
+    void recreatePresentSemaphores(uint32_t imageCount);
     void submit(uint32_t frame, VkQueue queue, std::span<VkCommandBuffer> cmds);
     bool present(uint32_t frame, VkQueue queue, VkSwapchainKHR swapChain, uint32_t imageIndex);
 
@@ -33,6 +34,7 @@ public:
 
 private:
     std::vector<FrameSync> m_frames;
+    std::vector<VkSemaphore> m_presentSemaphores;
     uint32_t m_currentFrame = 0;
     uint32_t m_currentImage = 0;
     const RHIDevice* m_device = nullptr;

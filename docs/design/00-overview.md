@@ -22,6 +22,7 @@ flowchart TB
     Schedule --> Pass
     Schedule --> RHI
     Pass --> Asset
+    Procedural["CornellBoxScene：程序化 MeshData / MaterialData"] --> Render
     Pass --> Render
     Pass --> UI
     Edit["Mclaren UI：实例/slot请求"] --> Candidate["示例CPU editor：元数据候选校验"]
@@ -32,7 +33,7 @@ flowchart TB
     UI --> RHI
 ```
 
-`ApplicationRunner`是六个示例的共享启动入口，解析有限帧/resize/Validation冒烟参数，构造Engine并在其销毁后归纳退出结果。Engine统一执行acquire、record、submit、present，并生成唯一ViewerLayout快照。RenderPipeline执行Graph编译结果、管理各节点Dynamic Rendering Scope；Pass记录业务命令。UIOverlay唯一拥有右侧栏状态，Pipeline只提供Pass/Graph内容；它们仍直接依赖ImGui。
+`ApplicationRunner`是七个示例的共享启动入口，解析有限帧/resize/Validation冒烟参数，构造Engine并在其销毁后归纳退出结果。Engine统一执行acquire、record、submit、present，并生成唯一ViewerLayout快照。RenderPipeline执行Graph编译结果、管理各节点Dynamic Rendering Scope；Pass记录业务命令。UIOverlay唯一拥有右侧栏状态，Pipeline只提供Pass/Graph内容；它们仍直接依赖ImGui。
 
 ## 所有权与初始化信息
 
@@ -50,8 +51,9 @@ flowchart TB
 | 内部 Image/Buffer allocation | RenderPipeline 的 RenderGraphResourcePool | pool 分配、缓存和销毁；candidate compile/resize 成功后才发布 |
 | 外部 Image/View/Buffer | Engine 等调用方 | `bindExternalImage` / `bindExternalBuffer` 借用；Graph 不取得所有权 |
 | SceneData的MeshAsset / SceneInstance | 示例Source的SceneAsset/场景state | Asset::SceneLoader构建CPU候选而非持有生命周期；稳定MeshHandle连接实例和唯一mesh，完整导入校验成功才发布 |
-| GpuModelAsset、MaterialGpuResources、PBREnvironmentResources | MclarenPass / ForwardReusePass | 前者按 MeshHandle 上传一次；材质 variant 拥有五 sampler descriptor/纹理，环境拥有 lat-long HDR descriptor/纹理 |
-| SceneDrawSource / snapshot / Renderer | MclarenPass / ForwardReusePass | post-UI稳定snapshot；Background/Opaque/Geometry/Blend四套独立UBO/descriptor，资产借用一提交 |
+| GpuModelAsset、MaterialGpuResources、PBREnvironmentResources | MclarenPass / ForwardReusePass / CornellBoxPass | 导入示例按 MeshHandle 上传一次，CornellBox 单个程序化 mesh 上传一次；材质 variant 拥有五 sampler descriptor/纹理，环境拥有 lat-long HDR descriptor/纹理 |
+| SceneDrawSource / snapshot / Renderer | MclarenPass / ForwardReusePass / CornellBoxPass | post-UI稳定snapshot；Background/Opaque/Geometry/Blend四套独立UBO/descriptor，资产借用一提交 |
+| CornellBox MeshData、材质参数与可选 staging | CornellBoxPass / CornellBoxReadback | 程序化 CPU 几何直接上传，不经过 SceneLoader/ModelLoader；读回 Pass 自有 staging，Graph 只借用 buffer，附件仍归 pool |
 | ScenePathControl / GBufferDisplayPass | Source / RenderPipeline | 前者非拥有静态Pass引用，CPU请求下一Fence-safe update发布mask；后者自有pipeline/参数/sampler，直接采样Graph-owned MRT八视图 |
 | ForwardProgram、ForwardRenderer | 各使用者 coordinator | Program 拥有固定 layout/shader/有限 pipeline cache；Renderer 不拥有资产或 Graph targets |
 | DeferredGeometryPass、DeferredLightingPass | RenderPipeline | Geometry 只适配 MRT/depth 声明并借用公共 draw；Lighting 拥有采样 descriptor/frame UBO/pipeline，图像归 Graph pool |
@@ -68,7 +70,7 @@ flowchart TB
 - Graph 已有 typed image/buffer descriptor、内部 allocation pool、checked handle/use/range resolve、candidate resize、synchronization2、Compute callback、受约束 native scope，以及 Graph-owned Forward SceneColor/Depth → Display → Overlay → Present 输出；内部 allocation 可缓存但内容逐帧失效。资源别名、多 Queue 尚未实现；系统不能自动检测任意裸 Vulkan 命令。
 - RHI 中实际类为 `RHITexture`，持有 Image/View/VMA allocation；Sampler 由上层持有。没有独立 RHIImage 或公共 Descriptor Builder。
 - AssetPath 统一规范资源根下相对路径并生成去重键；SceneLoader 以候选 SceneData 加载、验证并发布。HDRImage 是严格校验尺寸、元素溢出和 HDR 像素的纯 CPU 资产，不持有 Vulkan 资源。
-- `ForwardProgram` / `ForwardRenderer` 是 Mclaren 与 ForwardReuse 的公共绘制路径；Mclaren 不再合并公共主 mesh 或使用旧 renderer 主路径。树中旧 `MclarenRenderResources`/shader 文件未构建、未运行。
+- `ForwardProgram` / `ForwardRenderer` 是 Mclaren、ForwardReuse 与 CornellBox 的公共绘制路径；Mclaren 不再合并公共主 mesh 或使用旧 renderer 主路径。树中旧 `MclarenRenderResources`/shader 文件未构建、未运行。
 - MaterialData 显式表达 PBR/Unlit、Opaque/Mask/Blend/cutoff/doubleSided、五个独立纹理和各自 UV；Scene 实例持有 TRS、material reference 和可选 override。材质 variant 只按 descriptor 资源差异去重，scalar/UV 在 draw UBO。
 - Mclaren Sidebar/CLI 对模型/HDR 仅排队不可变请求；当前单帧 Runtime 在 Fence 已完成、acquire 后、录制前同步构建候选。成功原子交换已发布 state，失败保留活跃路径、generation、相机和统计；没有异步加载、watcher、缓存或多帧 retire。
 - Mclaren 相机提供 OrbitInspect / FreeFly 两种模式和统一 `CameraFrame`，`CameraInputSample` 仅将 Runtime Input/ImGui 状态适配到示例控制器；Cube 保持原有拖动控制，尚未接入 FreeFly。`OrbitCameraController` 的历史文件名在双模式后仍保留，是当前示例层技术债。
@@ -80,3 +82,5 @@ flowchart TB
 ## 架构图片
 
 原架构 PNG 已保留在 [历史架构图片](../structure/archive/kuengine-architecture.png)。其中“Engine::render 是占位”和“示例持有深度”的文字对应迁移前状态；当前模块关系以上方 Mermaid 和专项设计为准。
+
+2026-10-21 核对：CornellBox 新增示例层装配，公共接口和所有权契约未改；其 Renderer 在材质、环境、model、Program 之前释放。读回仅用于普通 Deferred 有限帧验证，详见 [示例设计](04-triangle-example-tech.md)。

@@ -229,7 +229,8 @@ private:
     uint64_t m_nextExternalBindingGeneration = 1;
     RHIDevice* m_device = nullptr;
     RenderGraph m_renderGraph;
-    RenderGraphResourcePool m_resourcePool;
+    std::vector<RenderGraphResourcePool> m_resourcePools;
+    uint32_t m_activeFrame = 0;
     std::shared_ptr<ExportLifetimeState> m_exportLifetime;
     const PassNode* m_currentPass = nullptr;
     std::vector<PlannedResourceFinalState> m_executionResourceStates;

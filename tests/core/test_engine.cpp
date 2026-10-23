@@ -1,4 +1,4 @@
-﻿// KuEngine core tests
+// KuEngine core tests
 #include <gtest/gtest.h>
 #include <KuEngine/Core/Engine.h>
 
@@ -53,13 +53,13 @@ TEST(KuEngineTest, RuntimeClockIsMonotonic)
     EXPECT_TRUE(ku::Engine::Clock::is_steady);
 }
 
-TEST(KuEngineTest, RuntimeConfigUsesSingleFrameBaseline)
+TEST(KuEngineTest, RuntimeConfigUsesDualFrameBaseline)
 {
     const ku::EngineConfig config{};
 
     EXPECT_EQ(config.width, 1280u);
     EXPECT_EQ(config.height, 720u);
-    EXPECT_EQ(config.framesInFlight, 1u);
+    EXPECT_EQ(config.framesInFlight, 2u);
     EXPECT_TRUE(config.showStats);
     EXPECT_FALSE(config.enableDepth);
     EXPECT_EQ(config.depthFormat, VK_FORMAT_UNDEFINED);
@@ -69,14 +69,11 @@ TEST(KuEngineTest, RuntimeConfigUsesSingleFrameBaseline)
 
 TEST(KuEngineTest, RuntimeRejectsUnsupportedMultiFrameConfiguration)
 {
-    ku::EngineConfig config{};
-    config.framesInFlight = 2;
-
-    EXPECT_THROW(
-        {
-            ku::Engine engine(config);
-        },
-        std::invalid_argument);
+    for (const uint32_t count : {0u, 3u}) {
+        ku::EngineConfig config{};
+        config.framesInFlight = count;
+        EXPECT_THROW({ ku::Engine engine(config); }, std::invalid_argument);
+    }
 }
 
 TEST(KuEngineTest, RenderPipelineUpdatesOnlyEnabledPasses)

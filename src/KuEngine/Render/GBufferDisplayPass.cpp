@@ -32,6 +32,8 @@ void GBufferDisplayPass::initialize(const RenderContext& c) {
     VkFormatFeatureFlags required=VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
     if (m_fixedFormat != VK_FORMAT_UNDEFINED) required |= VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
     if ((properties.optimalTilingFeatures & required) != required) throw std::runtime_error("GBuffer display output format unsupported");
+    std::vector<std::unique_ptr<State>> candidates;
+    for(uint32_t slot=0;slot<c.framesInFlight;++slot) {
     auto s=std::make_unique<State>(); s->device=&c.device;
     VkSamplerCreateInfo sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     sampler.minFilter=sampler.magFilter=VK_FILTER_NEAREST; sampler.mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST;
@@ -46,7 +48,9 @@ void GBufferDisplayPass::initialize(const RenderContext& c) {
     GraphicsPipelineDesc desc{}; desc.shaders={*s->vertex,*s->fragment}; desc.colorFormats={m_output.format};
     desc.descriptorSetLayouts={s->images->layout()}; desc.pushConstantRanges={{VK_SHADER_STAGE_FRAGMENT_BIT,0,32}};
     desc.depthTest=desc.depthWrite=false; desc.cullMode=VK_CULL_MODE_NONE;
-    s->pipeline=std::make_unique<RHIPipeline>(c.device,desc); m_state=std::move(s);
+    s->pipeline=std::make_unique<RHIPipeline>(c.device,desc); candidates.push_back(std::move(s));
+    }
+    m_states.swap(candidates);
 }
 void GBufferDisplayPass::setup(RenderGraphBuilder& b) {
     m_source.declarePrepareDependency(b);
@@ -55,6 +59,7 @@ void GBufferDisplayPass::setup(RenderGraphBuilder& b) {
     b.colorAttachment(output,AttachmentLoadPolicy::Clear,AttachmentStorePolicy::Store);
 }
 void GBufferDisplayPass::execute(CommandList& commands,const FrameData& frame,RenderGraphResourceResolver& r) {
+    auto& state = *m_states.at(frame.frameIndex);
     const auto view=m_source.pathControl().view();
     if(m_source.pathControl().path()!=asset::RenderPath::Deferred || view==GBufferView::Scene) throw std::runtime_error("GBuffer display requires active Deferred debug view");
     (void)m_source.checkedSceneSnapshot(frame);
@@ -63,17 +68,17 @@ void GBufferDisplayPass::execute(CommandList& commands,const FrameData& frame,Re
         const auto image=r.resolveImage(m_images[i],ImageUse::FragmentSampled);
         if(!image.complete() || !image.contentsValid || image.format!=gbufferFormat || image.currentLayout!=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL || !(image.usage&VK_IMAGE_USAGE_SAMPLED_BIT) || (i && (extent.width!=image.extent.width || extent.height!=image.extent.height))) throw std::runtime_error("Invalid GBuffer display input");
         extent=image.extent;
-        if(forwardDisplaySourceChanged(m_state->generations[i],m_state->views[i],image.allocationGeneration,image.imageView)) {
-            m_state->images->writeImage(static_cast<uint32_t>(i),m_state->sampler,image.imageView,image.currentLayout);
-            m_state->generations[i]=image.allocationGeneration; m_state->views[i]=image.imageView;
+        if(forwardDisplaySourceChanged(state.generations[i],state.views[i],image.allocationGeneration,image.imageView)) {
+            state.images->writeImage(static_cast<uint32_t>(i),state.sampler,image.imageView,image.currentLayout);
+            state.generations[i]=image.allocationGeneration; state.views[i]=image.imageView;
             KU_INFO("KUENGINE_GBUFFER_DISPLAY_BIND name={} slot={} generation={} extent={}x{}",m_name,i,image.allocationGeneration,extent.width,extent.height);
         }
     }
     const auto uv=calculateForwardDisplayUvTransform(frame.viewerLayout.sceneFramebuffer,extent);
     struct Push {std::array<float,2> scale,offset;std::array<float,4> params;};
     const Push push{uv.scale,uv.offset,{float(static_cast<uint32_t>(view)),needsManualDisplayEncoding(m_output.format,true)?1.f:0.f,0,0}};
-    m_state->pipeline->bind(commands); auto set=m_state->images->set();
-    vkCmdBindDescriptorSets(commands,VK_PIPELINE_BIND_POINT_GRAPHICS,m_state->pipeline->layout(),0,1,&set,0,nullptr);
-    vkCmdPushConstants(commands,m_state->pipeline->layout(),VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(push),&push); commands.draw(3);
+    state.pipeline->bind(commands); auto set=state.images->set();
+    vkCmdBindDescriptorSets(commands,VK_PIPELINE_BIND_POINT_GRAPHICS,state.pipeline->layout(),0,1,&set,0,nullptr);
+    vkCmdPushConstants(commands,state.pipeline->layout(),VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(push),&push); commands.draw(3);
 }
 }

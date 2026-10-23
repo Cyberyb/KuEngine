@@ -72,3 +72,9 @@ WP02历史局部ACCEPTED依据为`build/qa-m4-wp02/qa-report.md`：独立Debug/R
 WP03-A正式QA`build/qa-m4-wp03a/qa-report.md`：fresh两配置完整build，各core137/camera32，Debug显式SyncVal30/30/0skip，ReleaseCTest3pass27skip另19真实GPU groups（paths8/200+config、HDR18/22、light4、replacement7、apps6、extras3）。两例官方GUI24图操作路径/八views/恢复/侧栏resize保留参数，exit0/errors0。这是A历史局部证据，不替代B或C。
 
 历史B局部依据（以下C待项是2026-10-10当时状态，最终C已ACCEPTED，见[回归](../usage/regression-checks.md)）：2026-10-10 B正式独立`build/qa-m4-wp03b/qa-fix-01/qa-report.md` ACCEPTED：fresh两配置build0，各core137/camera40；Debug显式SyncVal31/31/0skip/0fail actual0(190.13s)，Release3pass28skip/0fail actual0(12.17s)，另20真实Release GPU groups actual0。29samples/16edits/layout×2/config，独立fixture geometry/model/world-position与1px ROI/原阈值，非空Unlit10263RGB。Clear50/F52/GBuffer54/resize-recompile56/LoadB58/badedit60，viewport import非黑/Clear黑/失败字节保留及GPU reset寿命证据通过。同一最终官方GUI33原图、actual app0、显式SyncVal errors0；87输入冻结。低caps/物理OOM或device-loss注入/forced live-format/soak/RenderDoc未运行，C持续held相机/text/focus/minimize未运行；C/WP03/M4/REQ整体未验收。详见usage，旧REJECTED/blocked/unknown退出历史保留，不拼接旧截图代替最终会话。
+
+## CornellBox 当前接入
+
+2026-10-21 [CornellBoxPass](../../examples/cornell_box/CornellBoxPass.cpp) 成为第三个公共 SceneDrawSource 消费者，默认 Deferred，8 个程序化 PBR/Opaque submeshes 直接复用 Geometry/Lighting 和 path/GBuffer 控件。无透明对象，Blend节点保持空；普通 Deferred 10 draws/114 submitted vertices。Graph 仍拥有四 RGBA16F MRT、共享 HDR/depth；Source 拥有资产/四 phase Renderer，公共 Shader、格式和同步契约未改。原文“两例”和旧计数是各 M4 日期化验收范围。
+
+[局部读回](../../examples/cornell_box/CornellBoxReadback.cpp) 仅复制 BaseMetallic、PositionModel、HDR 至自有2048²容量 staging，Graph声明 TransferSource/TransferDestination 和 HOST_READ，Fence 后 inspect。rawbin 的三个 half 平面供独立几何/表面检查，PPM只做CPU显示转换预览，非Swapchain截图或通用交互读回。独立 QA ACCEPTED 验证默认/resize/recompile、两配置原始像素及灯面 HDR>12，并检查实际 GUI；未新增 GI、阴影、真实面光积分或完整 IBL，精确范围见 [回归](../usage/regression-checks.md)。

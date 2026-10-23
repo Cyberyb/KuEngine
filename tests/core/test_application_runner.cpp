@@ -7,6 +7,21 @@
 
 namespace {
 
+TEST(ApplicationRunner, ParsesOnlyOneOrTwoFramesInFlight)
+{
+    for (const auto count : {"1", "2"}) {
+        const std::array<std::string_view, 2> arguments{"--frames-in-flight", count};
+        const auto options = ku::parseApplicationRunOptions(arguments);
+        ASSERT_TRUE(options.framesInFlight);
+        EXPECT_EQ(*options.framesInFlight, uint32_t(count[0] - '0'));
+        EXPECT_FALSE(options.smokeArgumentsPresent);
+    }
+    for (const auto count : {"0", "3", "-1", "4294967296"}) {
+        const std::array<std::string_view, 2> arguments{"--frames-in-flight", count};
+        EXPECT_THROW((void)ku::parseApplicationRunOptions(arguments), std::invalid_argument);
+    }
+}
+
 TEST(ApplicationRunner, DefaultsToUnlimitedInteractiveRun)
 {
     const ku::ApplicationRunOptions options =
