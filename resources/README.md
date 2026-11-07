@@ -1,8 +1,5 @@
-# Resources 目录说明
+# 运行时资源
 
-该目录用于存放 KuEngine 的运行时资产与原始资产。
+资源路径、Scene/Material配置、支持格式与所有权统一见[资产契约](../docs/design/README.md#assets)；具体模型/HDR加载操作见[示例手册](../docs/usage/examples.md#mclaren)。
 
-请优先阅读并遵循：
-- `docs/design/07-resource-asset-spec.md`
-
-本目录中的分类结构已按 v0.3 资产规范初始化，可直接开始投放模型、纹理和材质。
+本目录含模型、场景/材质JSON、环境HDR和公共Shader。部分分类目录是占位；目录存在不代表对应格式已被运行时支持。Registry文件当前不负责自动发现。

@@ -1,6 +1,6 @@
 # KuEngine 现有代码架构分析
 
-> 历史未完成草稿，仅用于追溯；当前架构见 [current-architecture.md](../current-architecture.md)。
+> 历史未完成草稿，仅用于追溯；当前架构见 [current-architecture.md](../../design/README.md)。
 
 > 文档日期：2026-07-25  
 > 分析对象：当前仓库中的 `src/`、`examples/`、`resources/`、`tests/` 与 CMake 配置  

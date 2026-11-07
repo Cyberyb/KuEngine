@@ -1,49 +1,30 @@
-# KuEngine 文档中心
+# KuEngine 文档
 
-文档按职责维护。当前设计以工作区源码为准，包含尚未提交的实现；历史快照只用于对比。最近同步2026-10-24：VolumetricIntegration / REQ-16 独立 QA ACCEPTED + DOCUMENTED，Lead 最终核对待完成；[使用与证据](usage/volumetric-integration-example.md)。M5-WP01 仍实施中、未整体验收。2026-10-21：CornellBox / REQ-15 独立 QA ACCEPTED，设计与使用说明已同步；M4历史状态保持。2026-10-11：M4-WP03-C最终QA ACCEPTED + DOCUMENTED，REQ-01～13首轮范围已验收，WP01/02/A/B既有门禁已闭；WP03/M4已由Lead最终审计闭环（DONE），M5未开始。人工证据区分独立观察与用户自测/重复豁免，见[回归说明](usage/regression-checks.md)。
+KuEngine 是基于 Vulkan 1.3 的小型图形实验框架。当前有公共 Runtime、Graphics/Compute RenderGraph、Forward/Deferred、模型/HDR 输入和八个示例；支持 1/2 帧在途，默认 2 帧。
 
-## 目录职责
+## 按目的阅读
 
-| 目录 | 内容 | 维护方式 |
-|---|---|---|
-| [design](design/README.md) | 各模块当前职责、接口、所有权、数据流和实现约束 | 模块代码发生任何修改，都必须检查并同步对应设计说明 |
-| [logs](logs/README.md) | 每日迭代简记 | 一天一个 `YYYY-MM-DD.md`，一段完成概述加模块更新列表 |
-| [structure](structure/README.md) | 产品需求、目标架构、当前宏观架构和开发路线 | 需求变化先改产品需求，再同步目标架构与路线图；已实现架构变化更新现状 |
-| [usage](usage/README.md) | 构建、运行、调试和回归操作 | 命令、路径、交互或检查方法变化时同步 |
-| [bugs](bugs/README.md) | 具体问题的复现、根因和修复记录 | 在同一个问题文件内持续更新状态 |
-| [prompts](prompts/README.md) | 多智能体角色工作方式、交接格式和阶段 Prompt | 固定角色变化时更新角色 Prompt；阶段计划变化时同步相应阶段 Prompt |
-
-## 阅读入口
-
-- 了解项目：[当前宏观架构](structure/current-architecture.md)。
-- 明确产品方向：[产品需求](structure/product-requirements.md) 与 [目标架构](structure/target-architecture.md)。
-- 阅读模块：[设计索引](design/README.md)。
-- 查看下一步：[开发路线图](structure/roadmap.md)。
-- 运行项目：[使用说明索引](usage/README.md)。
-- 回顾迭代：[按日期的日志](logs/README.md)。
-- 组织多智能体开发：[团队协作方式](structure/team-workflow.md) 与 [Prompt 索引](prompts/README.md)。
-- 对比历史：[架构快照与历史资料](structure/archive/README.md)。
-
-## 代码与文档同步约定
-
-每次修改模块代码，都在同一轮工作中核对对应 design 文档，修订受影响的职责、流程、参数、约束、图示和源码链接。即使公共接口没有变化，内部行为变化也需要反映；若修改确实不影响设计事实，明确记录已核对，无需制造无意义改写。
-
-| 修改范围 | 必须核对的 design 文档 |
+| 你要做什么 | 从这里开始 |
 |---|---|
-| Core/Engine、Window、Input | [Core Runtime](design/06-core-runtime.md) |
-| RHI、同步、上传、命令统计、Timestamp Query | [RHI](design/01-rhi-layer.md) |
-| RenderPass、RenderContext、RenderGraph、RenderPipeline | [渲染调度](design/02-render-pass.md) |
-| Deferred Geometry/Lighting、GBuffer 与公共着色分派 | [Deferred](design/13-deferred-rendering.md)、[公共 Forward](design/11-forward-rendering.md)、[Graph 资源](design/12-graph-resources.md) |
-| Core/Log、Vulkan 错误处理 | [日志与诊断](design/03-logging.md) |
-| UIOverlay、性能统计口径 | [UI 与统计](design/05-ui-layer.md) |
-| AssetConfig、资源路径、JSON | [资产配置](design/07-resource-asset-spec.md) |
-| ModelLoader、glTF 数据转换 | [模型加载](design/08-gltf-model-loading.md) |
-| GpuMesh、TextureFactory、Material、PBR、Mclaren 资源 | [PBR 与 GPU 资源](design/10-pbr-rendering.md) |
-| 八个示例的装配、Pass 和相机 | [示例设计](design/04-triangle-example-tech.md) |
-| CMake、Shader、启动与编译脚本 | [构建与 Shader](design/09-shader-source-debug-mode.md) |
+| 编译并看画面 | [开发与运行](usage/README.md#build)，再选一个[示例](usage/examples.md) |
+| 看懂项目、修改算法 | [当前架构](design/README.md)，再读[新增渲染特性](usage/README.md#feature) |
+| 决定下一步做什么 | [路线图](structure/roadmap.md)；需要确认范围时查[需求](structure/product-requirements.md) |
 
-跨模块变更还需核对 design 总览和 structure 宏观架构；未来任务只进入 structure，完成记录只进入当日日志。移动或重命名文档时同步修复引用。
+日常只维护下面 **6 份文档**，不需要全部通读：
 
-新增或调整产品功能时，先更新 structure/product-requirements.md 中的稳定需求编号、范围和验收口径，再调整目标架构及路线图依赖。代码交付后同步需求状态和阶段状态；尚未落地的目标不得写成 design 中的当前事实。
+| 文档 | 唯一职责 |
+|---|---|
+| 本页 | 阅读入口 |
+| [当前架构](design/README.md) | 已实现的模块、所有权、数据流和限制 |
+| [开发与运行](usage/README.md) | 构建、调试、接入算法和验证方法 |
+| [示例手册](usage/examples.md) | 八个示例的专用参数与操作 |
+| [产品需求](structure/product-requirements.md) | 稳定 REQ 编号、范围和验收口径 |
+| [路线图](structure/roadmap.md) | 阶段状态、后续顺序和未来架构约束 |
 
-这些是仓库维护约定，并非已经实现的自动文档生成或 CI 检查。
+字段与实现以文中的源码链接为准。进度只在路线图集中维护，历史测试流水不重复粘贴到每篇说明。
+
+## 需要追溯时
+
+[历史与验收记录](structure/archive/README.md) 保留旧架构、每日简记、任务包及 QA 证据入口。整理前全文已按原始字节备份，可恢复旧路径与未提交内容。
+
+维护约定见根目录 [AGENTS.md](../AGENTS.md)。Agent 专用角色说明在 [.codex/prompts](../.codex/prompts)，不属于日常阅读材料。

@@ -1,152 +1,81 @@
-# KuEngine 开发路线图
+# 路线图与未来架构约束
 
-更新日期：2026-10-24。本路线以“小型 Vulkan 渲染引擎，服务渲染特性的快速开发与验证”为目标。不预设发布日期，M0～M5 是工作阶段，不是软件发布版本。
+整理：2026-10-28。这里集中维护阶段状态、后续顺序和未实现的架构方向。产品范围见[需求](product-requirements.md)，当前代码组织见[架构](../design/README.md)。M0～M5 是工作阶段，CMake/版本宏仍为0.1.0，不据历史v0.2/v0.3称谓宣布发布。
 
-需求见 [产品需求](product-requirements.md)，边界见 [目标架构](target-architecture.md)，实现见 [宏观架构](current-architecture.md)。M0～M3完成；M4已完成（WP01/02/A/B/C门禁已闭，最终QA ACCEPTED、Planner DOCUMENTED、Lead审计通过，REQ-01～13首轮已验收）；M5未开始。
+<a id="status"></a>
+## 当前阶段
 
-## 1. 最终交付形态
+| 阶段或工作包 | 状态 | 已确认范围 |
+|---|---|---|
+| M0 基线 | 已完成 | CPU/有限GPU/Validation最小诊断与统计口径 |
+| M1 查看器交互 | 已完成 | 侧栏/统一视口、Mclaren Orbit/FreeFly与输入边界 |
+| M2 公共资产与Forward | 已完成 | Scene/窄GPU资源、同步替换、材质语义、公共Renderer及第二消费者 |
+| M3 图资源与执行 | 已完成 | typed allocation/lifecycle、同步2、Compute/callback/native、Graph-owned输出 |
+| M4 Deferred与产品闭环 | 已完成 | REQ-01～13首轮；WP01/02/03-A/B/C门禁，2026-10-11 Lead闭环 |
+| M5-WP01 双帧子范围 | 代码已实现；已有独立 QA ACCEPTED | 默认2、兼容1、真实双槽/按槽资源/完成统计；原任务Lead收尾不由本次文档整理追认 |
+| M5 整体 | 未完成 | 批量上传、通用回收、逐Pass观测、预设/结果复现等仍未完成 |
+| CornellBox / REQ-15 | 独立示例已验收并闭环 | 2026-10-21，程序化场景复用公共Deferred/PBR |
+| VolumetricIntegration / REQ-16 | 独立示例已验收并闭环 | 2026-10-24，来源/差异/专用显示/有界读回；含格式补验 |
+| 默认示例回归范围 / REQ-14 | 已实现，独立QA ACCEPTED | 2026-10-30 用户要求：默认仅 Mclaren/CornellBox，CPU 契约保留；其他示例与混合矩阵显式开启 |
 
-一个可导入模型/HDR、切换 PBR/Unlit 和 Forward/Deferred、通过侧栏与双模式相机观察场景的小型渲染查看器；一个可被其他实验复用的公共引擎库；一组演示 Graph 资源、Graphics/Compute 和 Vulkan 原生扩展入口的精简示例。
+双帧状态依据当前源码与 [2026-10-21独立QA](../../build/qa-m5-dual-frame/qa-report.md)。旧文档中“M5未开始/未验收”的阶段快照保留在归档，不再当作当前代码能力。该子范围 ACCEPTED 不等于 M5 整体完成，也不是本次重新跑过GPU。
 
-“查看器”是引擎的验证应用，不是完整编辑器。新的渲染特性能够接入公共资源与图调度，无需复制设备、Swapchain、帧循环和通用同步代码。
+2026-10-30默认回归子范围依据[独立QA报告](../../build/qa-test-default-viewers-2026-10-30/qa-report.md)：GPU关闭3项、默认16项、扩展原40项仅注册、preset恢复16项、非法组合拒绝、默认禁用Python仍配置成功。独立Debug构建与串行显式SyncVal默认16/16通过（0失败/0skip，CPU189用例），仅实际启动Mclaren/CornellBox；5个直接App另核真实exit0。未执行扩展/其他六例、Release或人工GUI，既有runner判据弱点未修；REQ-14仍部分实现，M5整体仍未完成。Lead另在普通preset目录核对16项注册，未在该目录重复GPU运行。
 
-## 2. 开发顺序与依赖
+历史局部验收、人工自测/豁免、未运行项及原报告统一见[验收记录](archive/README.md#verification)，不在各篇重复测试流水。
+
+<a id="order"></a>
+## 开发顺序与出口
 
 ```mermaid
 flowchart LR
-    M0["M0：基线与最小回归"]
-    M1["M1：侧栏与双模式相机"]
-    M2["M2：公共资产 / 材质 / Forward"]
-    M3["M3：RDG 风格资源与执行"]
-    M4["M4：Deferred 与产品闭环"]
-    M5["M5：并行帧与实验效率"]
-    M0 --> M1 --> M2 --> M3 --> M4 --> M5
+    M0["M0 基线"] --> M1["M1 交互"] --> M2["M2 资产/Forward"]
+    M2 --> M3["M3 图资源/同步"] --> M4["M4 Deferred闭环"] --> M5["M5 实验效率"]
 ```
 
-这是建议交付顺序，不是所有任务的硬依赖：M1 的相机/侧栏不依赖多帧并行；M2 的 CPU 资产语义与 M3 的状态设计可以独立推进；M4 的延迟渲染必须依赖 M2 的统一材质和 M3 的真实中间资源管理。正确性测试跟随每阶段，不集中拖到 M5。
+这表示主要交付顺序。M2 的CPU资产与M3状态模型可独立演进；M4依赖统一材质与真实中间图。正确性检查跟随每阶段，不能积压到M5。
 
-| 阶段 | 主要交付 | 对应需求 | 阶段出口 |
-|---|---|---|---|
-| M0 | 可重复基线与最小 GPU 诊断（已完成） | REQ-07、14 | 四示例和现有统计可重复检查，验证结果有依据 |
-| M1 | 查看器交互框架（已完成） | REQ-07～10 | 侧栏收展、双模式相机、输入焦点与现有参数/统计均已验收 |
-| M2 | 公共资产、材质、环境和前向路径（已完成） | REQ-01～05、08 | 公共 Scene/GPU 资源、替换、实例材质语义和公共 Forward/ForwardReuse 均已验收；不包含 M3 图资源或 M4 Deferred |
-| M3 | Graph 管理资源、同步与执行（已完成） | REQ-01、05、11～13 | WP01～04 已验收 typed allocation/lifecycle、synchronization2、Compute/callback/native contract 与 Graph-owned Forward output/display |
-| M4 | 延迟路径与首个完整产品闭环（已完成） | REQ-04、06、13 | 同场景切换路径，材质语义一致，透明/输出/UI 完整 |
-| M5 | 资源并行与实验效率强化 | REQ-14 | 按帧资源安全，性能观测与结果复现更完整 |
+| 后续工作范围 | 出口要求 |
+|---|---|
+| 双帧子范围收尾 | 保留原QA证据及Lead/文档状态边界，核对1/2帧、resize、替换、debug与正常退出 |
+| 上传与资源回收 | 批量化减少queueWaitIdle；资源在GPU完成后回收，有明确完成边界和失败行为 |
+| 性能与复现 | 逐Pass计时/曲线、参数预设、结果导出；记录设备、分辨率、同步/呈现条件 |
+| 二次开发效率 | 以第二个真实算法验证公共API；完善图像对比、能力检查与开发说明 |
 
-M4 完成后按 REQ-01～13 的验收口径进行整体检查，形成首个功能完整基线；M5 不应阻塞此前的可用版本。
+以上仍需按具体需求拆工作包与验收，不视为本次已批准实施的功能。原 M4/M5 任务包仅保留[历史副本](archive/README.md#tasks)，恢复工作时以当前用户授权与源码重新确认范围。
 
-## 3. 各阶段工作包
+<a id="architecture"></a>
+## 后续实现应保持的架构约束
 
-### M0：保住现有能力，建立最小验证基线
+- 公共 Runtime 管生命周期/提交，算法只装配 Pass；不在 Engine 中加入算法专属中央分支。
+- 声明、编译、执行分离。资源/副作用必须可见，原生访问保留明确状态和同步交接。
+- 长期资产归 Source/资源对象，临时附件归 Graph；导出是借用，不是所有权或退役句柄。
+- Forward/Deferred 共用场景、材质/灯光语义、资产与输出，差异集中在 Pass 与中间图。新增模型说明 GBuffer 表达或 Forward-only 限制。
+- 帧槽、交换链image与实际submit编号分离；可变GPU资源和Query按槽，呈现信号按image寿命。正常帧不全局idle，低频共享对象替换可全帧等候。
+- 新特性先查询并显式启用设备能力，能力缺失给出失败/跳过/有标注的回退。原生句柄不能代替设备创建期的feature协商。
+- 新资源形态与参数封装由实际算法驱动，验证失败回滚、resize、跨帧寿命和第二消费者，不靠增加类数量证明进展。
+- CornellBox 保持示例层程序化场景；体积积分保持独立Pass与专用参考显示，不扩大公共PBR或通用Shadertoy承诺。
+- 当前轻量定位保持，不同时引入多后端、完整ECS、节点编辑器、通用反射和任务系统。
 
-状态：已完成（2026-09-14）。
+上述是未来工作的约束；尚未存在的类/接口不能写入当前设计为已实现。
 
-范围：Core、RHI 诊断、统计、tests、usage。保持现有单帧模式。
+<a id="candidates"></a>
+## 后续候选池
 
-- 固定四示例的构建/CTest/运行操作与测试资源；记录当前画面、拖动交互及性能统计口径。
-- 接入可收集 Validation 错误的诊断通路，建立有限帧数运行、正常退出与 resize 的最小 GPU 冒烟检查。验证层/设备不可用时明确记为跳过，而非通过。
-- 核对 CPU 计时使用单调时钟的需求、CPU/GPU 样本帧归属、Timestamp 有效性和无数据状态；先消除影响后续比较的歧义，不在这里建设完整 Profiler。
-
-验收：CPU 测试可执行；在有 Vulkan 环境的机器上，四示例可启动、绘制、退出，并检查窗口重建。Validation 错误被明确报告，脚本化检查能返回失败。现有指标没有被规划性改动破坏。
-
-### M1：可折叠侧栏与双模式相机
-
-状态：已完成（2026-09-14）。侧栏、主视口/输入边界与 Mclaren 自由相机/模式切换均已验收。
-
-范围：UIOverlay、Core/Input、示例相机与 Mclaren 装配。先复用现有场景，不等待资产层重构。
-
-- 建立统一侧栏容器，分组放置场景、材质、相机、灯光、环境、统计与 Graph 调试内容；先挂接当前已有参数，缺少的数据模型由 M2 补齐。
-- 明确主视口矩形，联动投影、Viewport/Scissor 和输入命中；可以直接绘制到交换链子区域，首轮不强制依赖离屏 UI 纹理。
-- 保留当前拖动查看控制器，增加自由摄像机控制器和统一的相机帧数据输出；WASDQE 漫游、右键转向、速度调节、复位与模式切换。
-- UI 捕获键鼠、输入框编辑、失焦、拖动结束和 resize 必须正确处理。侧栏收起时保留可选紧凑统计显示。
-
-验收：两种模式可切换；拖动旧场景体验保留；输入文字不触发相机移动；不同帧率下漫游速度近似一致。侧栏收展、窗口缩放后视口比例与输入区域正确，既有性能指标仍可查看。
-
-### M2：公共资产、材质与前向渲染
-
-状态：已完成（2026-09-16）。公共 SceneData/HDR/窄 GPU 资源、Mclaren 同步替换、实例材质语义和公共 Forward 已验收。
-
-范围：Asset、Render/Material、GpuMesh/TextureFactory、公共环境资源、MclarenRenderResources、Viewer。
-
-- 从 Mclaren 抽出轻量场景数据和通用 Mesh/Texture/材质/环境持有逻辑；保留示例装配，不只给大资源类换名字。
-- 将 glTF/GLB、HDR 加载接入配置与侧栏路径入口；定义失败保留旧场景、资源替换和 GPU 完成后释放的规则。首轮允许同步加载，不提前建设流式资产系统。
-- 补齐独立实例变换与材质引用，修复独立 AO/MR、emissive UV 等已知资产语义问题；区分 Opaque、Mask、Blend。
-- 建立 PBR / Unlit 材质标识与参数，统一 Shader 输入及 per-draw 数据；灯光、相机与环境状态不继续保存在业务 Pass 的零散全局参数中。
-- 形成公共 Forward Renderer，统一方向光/环境输入并加入基础点光源；保留 PBR 动态 UBO 的对齐和容量检查。M2 可暂时使用当前 Graph 外部附件，离屏输出由 M3 接管。
-
-验收：不改 C++ 即可替换受支持模型和 HDR；至少两个实例能独立调材质/变换；坏路径不使已加载场景失效。PBR 响应灯光，Unlit 不响应光照；另一个小示例能复用同一套资产与 Forward 装配。现有四示例保持可运行。
-
-### M3：让 Graph 承担真实资源与同步管理
-
-状态：已完成。WP01～04 已验收 typed Image/Buffer、同步2、Compute/callback/受约束 native access，以及 SceneColor/Depth/display 交接。
-
-范围：RenderGraph、RenderPipeline、CommandList、RHI Pipeline/Descriptor、Runtime 资源交接。
-
-- 将只有名字/外部标记的资源描述扩展为可创建的 Image/Buffer 描述；明确 Handle、物理资源、帧生命周期与长期资源导入/导出。
-- 建立统一 Stage/Access/Layout/子资源状态与读写用途，落实 synchronization2，补齐 Buffer、采样、Storage 与 Transfer 的屏障计划。
-- 支持普通参数结构与执行回调表达 Pass；保留现有 RenderPass 的适配路径，避免一次重写所有示例。
-- 补齐 Compute Pipeline、显式 Shader Stage 与基础参数绑定，先在单队列验证 Graphics/Compute/Copy 依赖，不同时引入 Async Compute。
-- 将 Forward 的 SceneColor/Depth 转为可由图管理的目标，建立离屏 → 采样/输出链路；声明最终呈现与 UI 阶段的状态交接。
-- 提供受约束的 Vulkan 原生访问与能力检查示例；让 Graph 能看到相关资源和副作用，不提供无法追踪的隐式全局提交。
-
-验收：离屏附件由 Graph 创建、resize、复用并安全释放；Graphics 写后采样、Compute 写后 Graphics 读、Buffer 依赖均有示例或测试。通过图接口访问未声明资源、无效初始内容、可检查的错误状态交接等能诊断；原生命令的声明一致性还需代码检查与 Validation，不声称能自动识别任意裸 Vulkan 调用。GPU 路径通过 Validation 检查，新增这些示例不复制帧循环和普通跨 Pass 屏障。
-
-资源别名、自动 Pass 裁剪、多队列和并行录制不属于本阶段出口。先得到小而正确的图执行系统。
-
-### M4：延迟渲染与完整查看器闭环
-
-状态：已完成，Lead最终审计通过（2026-10-11）。WP01/02/A/B门禁已闭；C最终QA ACCEPTED、完整REQ-01～13矩阵与[开发者接入说明](../usage/developing-render-features.md)已同步。人工输入按用户明确修订的自测/重复豁免程序验收，不删减功能需求；独立观察、自测和专项NOT RUN见[回归](../usage/regression-checks.md)。
-
-范围：公共 Renderer、Material/Shader、Graph Pass、Viewer 渲染路径选择。
-
-- 设计最小 GBuffer 格式与 ShadingModel 编码，建立 GBuffer Pass、Deferred Lighting Pass；复用 Forward 的材质与灯光语义。
-- 完成 PBR 与 Unlit 在两条路径中的分派，不复制两套资产/材质系统。最初用方向光和基础点光源验证，不以分块光照优化作为前提。
-- 对齐前向/延迟的天空背景、前向透明阶段、线性 HDR SceneColor、曝光/色调映射和显示转换；UI 不进入场景曝光计算。
-- 增加路径切换和 GBuffer 调试查看；明确透明排序与不支持组合的提示，不把所有透明材质强塞进延迟几何阶段。
-
-验收：同一包含 PBR、Unlit、Opaque、Mask、Blend 的场景可切换路径，保留相机、灯光和材质状态；受支持部分画面近似一致。GBuffer 随视口正确重建，Unlit 不受光照污染，透明与 UI 合成顺序正确。逐项检查 REQ-01～13，补齐开发者接入示例与使用说明。
-
-### M5：多帧安全与实验效率
-
-状态：2026-10-21 用户明确启动双帧子范围 M5-WP01，实施中，未验收；本轮仅支持 2 帧在途（保留 1 帧兼容），其余 M5 要求不实施，M5 整体不标为完成。
-
-范围：Runtime、动态资源、Uploader、统计、Graph 调试与测试。
-
-- 本次先隔离各帧槽的命令、UBO、Descriptor、Depth、中间资源和 Timestamp Query，再放开 2 帧在途；校验 CPU/GPU 样本与帧槽/提交的对应关系。共享资源变化允许显式全帧等待，正常帧只等待复用槽；3 帧不在本次范围。
-- 批量上传、减少不必要的 queueWaitIdle，建立安全延迟回收；保留明确的资源替换等待边界。
-- 增加逐 Pass 计时、必要的统计曲线、场景/渲染参数预设与结果导出，便于对同一实验反复比较。新增统计分别定义含义，不改变旧指标却沿用旧标签。
-- 完善图像对比场景、GPU 自动回归、能力检查和二次开发文档；基于实际使用收窄依赖与 API，修正构建/日志边界问题。
-
-验收：多帧运行、resize、资产替换和路径切换无资源提前复用；Validation 检查通过。可用同一预设重复比较两条路径，能区分场景变化与计时采样变化；对比基线时记录设备、分辨率、同步/呈现设置，不把提升 FPS 当作唯一成功标准。
-
-## 4. 下一轮建议执行的范围
-
-2026-10-24 独立示例工作包 VolumetricIntegration（REQ-16），状态：ACCEPTED + DOCUMENTED，Lead 最终核对待完成。[独立 QA](../../build/qa-volumetric-integration/qa-report.md) 已通过两配置构建/core145/options4、Debug定向CTest8/8与Release3/3（0skip）、各11场景36实际提交、显式Debug SyncVal、无噪声原作CPU参考/像素编码、真实GUI/bat及相关示例回归。实现17文件冻结，来源/许可、替代噪声/固定机位、专用gamma显示与有界读回已同步 [设计](../design/04-triangle-example-tech.md) 和 [usage](../usage/volumetric-integration-example.md)。原站403，实时逐像素与强制sRGB实机等未运行边界如实保留。本包仅消费并验证新例1/2槽，不改变 M4/M5 既有状态，M5-WP01 仍 IMPLEMENTING。
-
-2026-10-21 独立示例工作包 CornellBox（REQ-15），状态：QA 已验收（ACCEPTED）、文档已同步（DOCUMENTED）、Lead 最终核对完成（DONE）。程序化房间/两盒/顶灯已接入现有 SceneDrawSource / Deferred / PBR / HDR Display；[独立 QA](../../build/qa-cornell-box/qa-report.md)通过 CPU 几何、真实 GPU 像素/GUI、显式 SyncVal 与 resize/recompile，Debug定向CTest7/7，两配置core142/142，另3组真实Release GPU；未跑完整33项CTest。Lead 已核对 design / usage /需求现状、217 个本地引用与12个实现文件冻结哈希；图示已静态检查，未渲染。该工作包复用 M4 已有能力，不启动 M5，不重开已闭合的 M4 验收。
-
-WP01/02/A/B门禁已闭；2026-10-11 C最终QA `build/qa-m4-wp03c-final/qa-report.md` ACCEPTED + DOCUMENTED，REQ-01～13首轮已验收。Lead已核对冻结输入、完整REQ-01～13证据、文档与阶段出口，M4 DONE；不派新实现或重复豁免的人工作业。范围与依赖遵守 [实施工作包](implementation-plan.md) 和 [M4任务包](../prompts/m4-task-packets.md)，M4已闭环并停止，不进入M5。
-
-WP01过去的临时display-ready/透明排除已由WP02共享线性HDR/天空/Blend替代。完整IBL/OIT/HDR显示器/alias/multiQueue/多帧不是首轮完成条件，未实现或未运行边界不会随QA ACCEPTED消失。
-
-## 5. 后续候选池
-
-以下尚未承诺进入上述阶段；采纳时新增需求编号、验收和依赖，不静默扩大首轮范围。
-
-| 方向 | 候选功能 | 纳入前需要明确 |
+| 方向 | 候选 | 纳入前需明确 |
 |---|---|---|
-| 光照完整性 | 基础阴影、IBL 预过滤与 BRDF LUT、更多灯型 | 要解决的画面问题、算法范围与参考场景 |
-| 屏幕空间/后处理 | SSAO、Bloom、FXAA/TAA | 深度/运动矢量/历史资源需求与画质目标 |
-| 大场景效率 | 剔除、实例化、Indirect Draw、Clustered Lighting | 真实规模瓶颈与性能基线 |
-| Vulkan 扩展实验 | Descriptor Indexing、Buffer Device Address、Mesh Shader、Ray Tracing | 设备支持、原生入口及不支持时行为 |
-| Graph 优化 | 资源别名、Pass 裁剪、Async Compute、多 Queue、并行录制 | 正确性覆盖与可测量收益 |
-| 资产和工具 | 更多模型/环境格式、压缩纹理、动画、Shader 热重载、文件选择器 | 对渲染实验的直接收益与维护成本 |
+| 光照 | 阴影、IBL预滤波/BRDF LUT、更多灯型 | 参考场景、资源形态、算法范围 |
+| 屏幕空间/后处理 | SSAO、Bloom、FXAA/TAA | 深度采样、mip/多分辨率、运动与历史资源 |
+| 大场景 | 剔除、实例化、Indirect、Clustered | 真实规模瓶颈与性能基线 |
+| Vulkan扩展 | Descriptor Indexing、BDA、Mesh Shader、Ray Tracing | 设备feature/extension请求、支持/启用区分、能力缺失行为 |
+| Graph | aliasing、裁剪、Async Compute、多Queue、并行录制 | 状态/所有权正确性与可测收益 |
+| 资产工具 | 新格式、压缩纹理、动画、热重载、文件选择器 | 对实验的直接收益与维护成本 |
 
-游戏玩法、网络、物理和完整编辑器不是等待排期的候选，而是当前产品边界之外的方向。
+候选不是交付承诺。纳入时新增或调整稳定REQ、明确依赖/验收；不能把“现代管线”解释为一次实现全部特效。
 
-## 6. 维护与交付规则
+<a id="maintenance"></a>
+## 状态更新规则
 
-功能或优先级变化先更新 [产品需求](product-requirements.md)，再调整阶段；架构边界变化同步 [目标架构](target-architecture.md)。不要从路线图推断代码已经完成。
+用户范围变化先改需求；已实现设计只改 design/README。阶段状态只据实际实现与独立QA推进，操作变更改 usage。一次验收的详细命令/矩阵留构建证据目录，长期入口在归档；当日日志只写一段概述和模块列表。
 
-每个工作包交付时同步受影响的 [模块设计](../design/README.md)、必要的 [宏观现状](current-architecture.md)、需求与阶段状态，以及 [当日日志](../logs/README.md)。测试操作放 [usage](../usage/regression-checks.md)，Bug 细节放 [bugs](../bugs/README.md)。真实 GPU 验证未执行时必须注明，不用 CTest 通过代替 GPU 验收。
+2026-10-28文档整理未改代码、测试、Shader或构建定义，也未重跑构建/CTest/GPU（该句仅记当日历史）。前一轮架构审阅指出的资源复制、feature语义、Compute/Transfer图像导出等问题未修复，当前设计如实列为限制。

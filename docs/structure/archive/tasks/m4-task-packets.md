@@ -8,7 +8,7 @@ Developer：GPT-6.1 Sol / high，唯一代码写者；QA：GPT-6.1 Sol / high，
 
 ## M4-WP01：最小 GBuffer 与 Deferred Lighting
 
-执行状态：2026-10-08 QA ACCEPTED（最终 `build/qa-m4-wp01/qa-final-report.md`，首次 REJECTED 的脚本 ignore 交付问题已精确修复/复验）。已实现边界见 [Deferred 设计](../design/13-deferred-rendering.md)，验证与未运行项见 [回归说明](../usage/regression-checks.md)。本包验收不代表 WP02/03 或 M4 已完成。
+执行状态：2026-10-08 QA ACCEPTED（最终 `build/qa-m4-wp01/qa-final-report.md`，首次 REJECTED 的脚本 ignore 交付问题已精确修复/复验）。已实现边界见 [Deferred 设计](../../../design/README.md#rendering)，验证与未运行项见 [回归说明](../../../usage/README.md#verification)。本包验收不代表 WP02/03 或 M4 已完成。
 
 - 需求：REQ-01、04、06、11、13。前置：M3-WP01～04 已验收。
 - 目标：公共 GBuffer descriptor/布局及 ShadingModel 编码、Geometry Pass 和 Deferred Lighting Pass。Opaque/Mask 写 GBuffer；PBR 与 Unlit 明确分派，方向光/最多四点光沿用公共材质和灯光语义。Graph 管理 MRT、深度和输出的 allocation、同步与 resize。
@@ -97,7 +97,7 @@ Developer：GPT-6.1 Sol / high，唯一代码写者；QA：GPT-6.1 Sol / high，
 
 执行状态：2026-10-11最终`build/qa-m4-wp03c-final/qa-report.md` ACCEPTED + DOCUMENTED。Developer覆盖审计未发现需修复代码缺口，C无实现修改；完整矩阵、现有接入recipe与七个正常可视GPU会话有最终证据。REQ-01～13首轮已验收，WP03/M4已由Lead最终审计闭环（DONE），M5未开始。
 
-最终人工程序修订：用户明确自测WASDQE全正确并跳过重复；右键持续转向/UI文本capture/失焦自测正确并免重复人工，标USER-SELFTESTED/重复SKIPPED。独立持续Orbit/释放/UI-origin/W/S仍分列，普通true minimize/restore与真实resize另有证据。专门diagonal/startup/mode/reset/epoch-held stress/exact rates新实机NOT RUN，18controller测试仅CPU数学/状态契约；不删除以下功能要求或扩大到GPU/模型验证豁免。证据与限制见[回归](../usage/regression-checks.md)，现有开发流程见[接入说明](../usage/developing-render-features.md)。
+最终人工程序修订：用户明确自测WASDQE全正确并跳过重复；右键持续转向/UI文本capture/失焦自测正确并免重复人工，标USER-SELFTESTED/重复SKIPPED。独立持续Orbit/释放/UI-origin/W/S仍分列，普通true minimize/restore与真实resize另有证据。专门diagonal/startup/mode/reset/epoch-held stress/exact rates新实机NOT RUN，18controller测试仅CPU数学/状态契约；不删除以下功能要求或扩大到GPU/模型验证豁免。证据与限制见[回归](../../../usage/README.md#verification)，现有开发流程见[接入说明](../../../usage/README.md#feature)。
 
 - 逐项建立 REQ-01～13 的输入、操作、期望、源码入口、实际测试/GUI/图像证据矩阵，继承已有证据但不以局部通过证明整个需求。
 - 补齐最终 Mclaren 两实例、多材质、模型/HDR 导入→材质/路径→灯光/相机→GBuffer→统计工作流；双模式相机真实长按拖动/WASDQE 六向/右键转向、UI/text/focus 输入隔离、侧栏收展、resize、最小化恢复。必要项无法执行则 VERIFICATION_BLOCKED，不虚报通过。

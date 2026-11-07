@@ -86,23 +86,32 @@ set_target_properties(test_mclaren_camera PROPERTIES
 add_test(NAME mclaren_camera_tests COMMAND test_mclaren_camera)
 
 if(KUENGINE_ENABLE_GPU_SMOKE_TESTS)
-    find_package(Python3 COMPONENTS Interpreter REQUIRED)
-    add_test(NAME gpu_smoke_volumetric_integration
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_volumetric_checks.py
-            --app $<TARGET_FILE:VolumetricIntegrationApp>
-            --evidence ${CMAKE_CURRENT_BINARY_DIR}/volumetric-evidence/$<CONFIG>
-            --validation $<IF:$<CONFIG:Debug>,required,optional>
-        COMMAND_EXPAND_LISTS)
-    set_tests_properties(gpu_smoke_volumetric_integration PROPERTIES
-        LABELS "gpu-smoke;volumetric" SKIP_RETURN_CODE 77 TIMEOUT 240
-        PASS_REGULAR_EXPRESSION "KUENGINE_VOLUMETRIC_CHECKS_OK"
-        FAIL_REGULAR_EXPRESSION "Traceback;KUENGINE_VALIDATION_ERROR;KUENGINE_SMOKE_FAIL")
     if(NOT KUENGINE_BUILD_EXAMPLES)
         message(FATAL_ERROR
             "KUENGINE_ENABLE_GPU_SMOKE_TESTS requires KUENGINE_BUILD_EXAMPLES=ON")
     endif()
 
+    if(KUENGINE_ENABLE_EXTENDED_GPU_TESTS)
+        find_package(Python3 COMPONENTS Interpreter REQUIRED)
+        add_test(NAME gpu_smoke_volumetric_integration
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_volumetric_checks.py
+                --app $<TARGET_FILE:VolumetricIntegrationApp>
+                --evidence ${CMAKE_CURRENT_BINARY_DIR}/volumetric-evidence/$<CONFIG>
+                --validation $<IF:$<CONFIG:Debug>,required,optional>
+            COMMAND_EXPAND_LISTS)
+        set_tests_properties(gpu_smoke_volumetric_integration PROPERTIES
+            LABELS "gpu-smoke;volumetric" SKIP_RETURN_CODE 77 TIMEOUT 240
+            PASS_REGULAR_EXPRESSION "KUENGINE_VOLUMETRIC_CHECKS_OK"
+            FAIL_REGULAR_EXPRESSION "Traceback;KUENGINE_VALIDATION_ERROR;KUENGINE_SMOKE_FAIL")
+    endif()
+
     function(kuengine_add_gpu_smoke name target stats_pattern)
+        # Ordinary feature regression may launch only these two applications.
+        if(NOT KUENGINE_ENABLE_EXTENDED_GPU_TESTS
+            AND NOT target STREQUAL "MclarenApp"
+            AND NOT target STREQUAL "CornellBoxApp")
+            return()
+        endif()
         add_test(
             NAME ${name}
             COMMAND ${target} ${ARGN})
@@ -228,18 +237,20 @@ if(KUENGINE_ENABLE_GPU_SMOKE_TESTS)
     kuengine_add_gpu_smoke(gpu_smoke_mclaren_deferred MclarenApp
         "KUENGINE_COMPLETED_STATS.*status=matched"
         --deferred --smoke-frames 3 --smoke-require-validation --smoke-recompile-after-setup --smoke-resize-after 1 960 540)
-    add_test(NAME gpu_hdr_semantics COMMAND ${CMAKE_COMMAND}
-        -DAPP=$<TARGET_FILE:ForwardReuseApp> -DCHECKER=$<TARGET_FILE:hdr_pixel_checks>
-        -DWORKING_DIR=$<TARGET_FILE_DIR:ForwardReuseApp> -DEVIDENCE_DIR=${CMAKE_BINARY_DIR}/hdr-evidence/$<CONFIG>
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/run_hdr_semantics.cmake)
-    set_tests_properties(gpu_hdr_semantics PROPERTIES LABELS "gpu-smoke;hdr" SKIP_REGULAR_EXPRESSION "KUENGINE_HDR_SKIP" TIMEOUT 240)
-    add_test(NAME gpu_viewer_paths COMMAND ${CMAKE_COMMAND}
-        -DAPP=$<TARGET_FILE:ForwardReuseApp> -DMCLAREN=$<TARGET_FILE:MclarenApp>
-        -DCHECKER=$<TARGET_FILE:path_pixel_checks> -DWORKING_DIR=$<TARGET_FILE_DIR:ForwardReuseApp>
-        -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DEVIDENCE_DIR=${CMAKE_BINARY_DIR}/path-evidence/$<CONFIG>
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/run_viewer_paths.cmake)
-    set_tests_properties(gpu_viewer_paths PROPERTIES LABELS "gpu-smoke;paths"
-        SKIP_REGULAR_EXPRESSION "KUENGINE_PATH_SKIP" TIMEOUT 240)
+    if(KUENGINE_ENABLE_EXTENDED_GPU_TESTS)
+        add_test(NAME gpu_hdr_semantics COMMAND ${CMAKE_COMMAND}
+            -DAPP=$<TARGET_FILE:ForwardReuseApp> -DCHECKER=$<TARGET_FILE:hdr_pixel_checks>
+            -DWORKING_DIR=$<TARGET_FILE_DIR:ForwardReuseApp> -DEVIDENCE_DIR=${CMAKE_BINARY_DIR}/hdr-evidence/$<CONFIG>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_hdr_semantics.cmake)
+        set_tests_properties(gpu_hdr_semantics PROPERTIES LABELS "gpu-smoke;hdr" SKIP_REGULAR_EXPRESSION "KUENGINE_HDR_SKIP" TIMEOUT 240)
+        add_test(NAME gpu_viewer_paths COMMAND ${CMAKE_COMMAND}
+            -DAPP=$<TARGET_FILE:ForwardReuseApp> -DMCLAREN=$<TARGET_FILE:MclarenApp>
+            -DCHECKER=$<TARGET_FILE:path_pixel_checks> -DWORKING_DIR=$<TARGET_FILE_DIR:ForwardReuseApp>
+            -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DEVIDENCE_DIR=${CMAKE_BINARY_DIR}/path-evidence/$<CONFIG>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_viewer_paths.cmake)
+        set_tests_properties(gpu_viewer_paths PROPERTIES LABELS "gpu-smoke;paths"
+            SKIP_REGULAR_EXPRESSION "KUENGINE_PATH_SKIP" TIMEOUT 240)
+    endif()
     add_test(NAME gpu_mclaren_edits COMMAND ${CMAKE_COMMAND}
         -DAPP=$<TARGET_FILE:MclarenApp> -DCHECKER=$<TARGET_FILE:edit_pixel_checks>
         -DWORKING_DIR=$<TARGET_FILE_DIR:MclarenApp> -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
@@ -247,13 +258,15 @@ if(KUENGINE_ENABLE_GPU_SMOKE_TESTS)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/run_mclaren_edits.cmake)
     set_tests_properties(gpu_mclaren_edits PROPERTIES LABELS "gpu-smoke;edits"
         SKIP_REGULAR_EXPRESSION "KUENGINE_EDIT_SKIP" TIMEOUT 300)
-    add_test(NAME gpu_deferred_light_semantics COMMAND ${CMAKE_COMMAND}
-        -DAPP=$<TARGET_FILE:ForwardReuseApp>
-        -DWORKING_DIR=$<TARGET_FILE_DIR:ForwardReuseApp>
-        -DEVIDENCE_DIR=${CMAKE_BINARY_DIR}/deferred-evidence/$<CONFIG>
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/run_deferred_light_semantics.cmake)
-    set_tests_properties(gpu_deferred_light_semantics PROPERTIES LABELS "gpu-smoke;deferred"
-        SKIP_REGULAR_EXPRESSION "KUENGINE_DEFERRED_LIGHT_SKIP" TIMEOUT 180)
+    if(KUENGINE_ENABLE_EXTENDED_GPU_TESTS)
+        add_test(NAME gpu_deferred_light_semantics COMMAND ${CMAKE_COMMAND}
+            -DAPP=$<TARGET_FILE:ForwardReuseApp>
+            -DWORKING_DIR=$<TARGET_FILE_DIR:ForwardReuseApp>
+            -DEVIDENCE_DIR=${CMAKE_BINARY_DIR}/deferred-evidence/$<CONFIG>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_deferred_light_semantics.cmake)
+        set_tests_properties(gpu_deferred_light_semantics PROPERTIES LABELS "gpu-smoke;deferred"
+            SKIP_REGULAR_EXPRESSION "KUENGINE_DEFERRED_LIGHT_SKIP" TIMEOUT 180)
+    endif()
     kuengine_add_gpu_smoke(
         gpu_smoke_graph_resource_probe_recompile
         GraphResourceProbeApp
@@ -311,26 +324,28 @@ if(KUENGINE_ENABLE_GPU_SMOKE_TESTS)
         --smoke-require-validation
         --smoke-sidebar-collapsed)
 
-    add_test(
-        NAME gpu_smoke_validation_injection
-        COMMAND ${CMAKE_COMMAND}
-            -DKUENGINE_SMOKE_APP=$<TARGET_FILE:TriangleApp>
-            -DKUENGINE_SMOKE_WORKING_DIRECTORY=$<TARGET_FILE_DIR:TriangleApp>
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/expect_validation_failure.cmake)
-    set_tests_properties(gpu_smoke_validation_injection PROPERTIES
-        LABELS "gpu-smoke;negative"
-        SKIP_REGULAR_EXPRESSION "KUENGINE_EXPECTED_VALIDATION_SKIP"
-        TIMEOUT 90)
+    if(KUENGINE_ENABLE_EXTENDED_GPU_TESTS)
+        add_test(
+            NAME gpu_smoke_validation_injection
+            COMMAND ${CMAKE_COMMAND}
+                -DKUENGINE_SMOKE_APP=$<TARGET_FILE:TriangleApp>
+                -DKUENGINE_SMOKE_WORKING_DIRECTORY=$<TARGET_FILE_DIR:TriangleApp>
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/expect_validation_failure.cmake)
+        set_tests_properties(gpu_smoke_validation_injection PROPERTIES
+            LABELS "gpu-smoke;negative"
+            SKIP_REGULAR_EXPRESSION "KUENGINE_EXPECTED_VALIDATION_SKIP"
+            TIMEOUT 90)
 
-    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/missing_runtime_assets")
-    add_test(
-        NAME gpu_missing_shader_initialization_failure
-        COMMAND ${CMAKE_COMMAND}
-            -DKUENGINE_SMOKE_APP=$<TARGET_FILE:TriangleApp>
-            -DKUENGINE_SMOKE_WORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/missing_runtime_assets
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/expect_initialization_failure.cmake)
-    set_tests_properties(gpu_missing_shader_initialization_failure PROPERTIES
-        LABELS "gpu-negative;negative"
-        SKIP_REGULAR_EXPRESSION "KUENGINE_EXPECTED_INITIALIZATION_SKIP"
-        TIMEOUT 90)
+        file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/missing_runtime_assets")
+        add_test(
+            NAME gpu_missing_shader_initialization_failure
+            COMMAND ${CMAKE_COMMAND}
+                -DKUENGINE_SMOKE_APP=$<TARGET_FILE:TriangleApp>
+                -DKUENGINE_SMOKE_WORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/missing_runtime_assets
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/expect_initialization_failure.cmake)
+        set_tests_properties(gpu_missing_shader_initialization_failure PROPERTIES
+            LABELS "gpu-negative;negative"
+            SKIP_REGULAR_EXPRESSION "KUENGINE_EXPECTED_INITIALIZATION_SKIP"
+            TIMEOUT 90)
+    endif()
 endif()
